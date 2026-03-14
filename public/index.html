@@ -382,6 +382,31 @@
     </div>
   </div>
 
+  <!-- Agent Messages Drawer -->
+  <div id="messages-drawer" class="drawer-overlay" style="display:none" onclick="closeDrawerOnOverlay(event)">
+    <div class="drawer">
+      <div class="drawer-header">
+        <div class="drawer-title-wrap">
+          <div id="drawer-agent-icon" class="agent-icon" style="width:28px;height:28px;font-size:13px"></div>
+          <div>
+            <div id="drawer-agent-name" class="drawer-title"></div>
+            <div id="drawer-agent-cwd" class="drawer-subtitle"></div>
+          </div>
+        </div>
+        <div style="display:flex;gap:8px;align-items:center">
+          <span id="drawer-msg-count" class="drawer-count"></span>
+          <button class="btn btn-ghost btn-sm" id="drawer-refresh-btn" onclick="refreshDrawer()">
+            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="23 4 23 10 17 10"/><path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"/></svg>
+          </button>
+          <button class="modal-close" onclick="closeMessagesDrawer()">
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+          </button>
+        </div>
+      </div>
+      <div id="drawer-messages" class="drawer-messages"></div>
+    </div>
+  </div>
+
   <!-- Toast -->
   <div id="toast" class="toast"></div>
 

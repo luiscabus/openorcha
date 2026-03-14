@@ -447,7 +447,7 @@ async function loadAgents() {
         ? `<span class="app-badge app-badge-${a.terminalApp.toLowerCase()}">${escHtml(a.terminalApp)}</span>`
         : '';
 
-      return `<div class="agent-card">
+      return `<div class="agent-card" style="cursor:pointer" onclick="openAgentMessages('${escAttr(a.pid)}','${escAttr(a.agentId)}','${escAttr(a.agentName)}','${escAttr(a.cwd||'')}')" title="Click to view conversation">
         <div class="agent-card-header">
           <div class="agent-icon agent-icon-${a.agentId}">${meta.label}</div>
           <div class="agent-name">${escHtml(a.agentName)}</div>
@@ -477,7 +477,7 @@ async function loadAgents() {
             <span>CPU <span class="agent-metric-val">${a.cpu}%</span></span>
             <span>MEM <span class="agent-metric-val">${a.mem}%</span></span>
           </div>
-          <div style="display:flex;gap:6px">
+          <div style="display:flex;gap:6px" onclick="event.stopPropagation()">
             ${a.tty && a.terminalApp ? `<button class="btn btn-ghost btn-sm" onclick="focusSession('${escAttr(a.tty)}','${escAttr(a.terminalApp || '')}')">Focus</button>` : ''}
             <button class="btn btn-danger btn-sm" onclick="killAgent('${escAttr(a.pid)}','${escAttr(a.agentName)}')">Kill</button>
           </div>
@@ -488,6 +488,113 @@ async function loadAgents() {
   } catch (err) {
     list.innerHTML = `<div class="empty-state"><p style="color:var(--danger)">${escHtml(err.message)}</p></div>`;
   }
+}
+
+// ─── Agent Messages Drawer ────────────────────────────────────────────────────
+
+let drawerCurrentPid = null;
+
+async function openAgentMessages(pid, agentId, agentName, cwd) {
+  drawerCurrentPid = pid;
+  const meta = AGENT_META[agentId] || { label: '?', color: 'aider' };
+
+  // Set up header
+  const icon = document.getElementById('drawer-agent-icon');
+  icon.textContent = meta.label;
+  icon.className = `agent-icon agent-icon-${agentId}`;
+  document.getElementById('drawer-agent-name').textContent = agentName;
+  document.getElementById('drawer-agent-cwd').textContent = cwd || '';
+  document.getElementById('drawer-msg-count').textContent = '';
+  document.getElementById('drawer-messages').innerHTML = `<div class="drawer-loading">Loading conversation…</div>`;
+
+  document.getElementById('messages-drawer').style.display = 'flex';
+  await fetchAndRenderMessages(pid);
+}
+
+async function fetchAndRenderMessages(pid) {
+  const container = document.getElementById('drawer-messages');
+  try {
+    const data = await api('GET', `/api/agents/${pid}/messages`);
+    const { messages, total, note } = data;
+
+    document.getElementById('drawer-msg-count').textContent =
+      total > messages.length ? `last ${messages.length} of ${total}` : `${messages.length} messages`;
+
+    if (!messages.length) {
+      container.innerHTML = `<div class="drawer-empty">
+        ${note ? escHtml(note) : 'No messages found for this session.'}
+      </div>`;
+      return;
+    }
+
+    container.innerHTML = messages.map(m => renderMessage(m)).join('');
+    container.scrollTop = container.scrollHeight;
+  } catch (err) {
+    container.innerHTML = `<div class="drawer-empty" style="color:var(--danger)">${escHtml(err.message)}</div>`;
+  }
+}
+
+async function refreshDrawer() {
+  if (drawerCurrentPid) await fetchAndRenderMessages(drawerCurrentPid);
+}
+
+function closeMessagesDrawer() {
+  document.getElementById('messages-drawer').style.display = 'none';
+  drawerCurrentPid = null;
+}
+
+function closeDrawerOnOverlay(e) {
+  if (e.target === document.getElementById('messages-drawer')) closeMessagesDrawer();
+}
+
+function renderMessage(msg) {
+  const isUser = msg.role === 'user';
+  const timeStr = msg.timestamp ? new Date(msg.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : '';
+
+  const toolsHtml = (msg.tools || []).map(t => {
+    const icon = toolIcon(t.name);
+    return `<span class="msg-tool-pill">${icon}${escHtml(t.name)}</span>`;
+  }).join('');
+
+  const bodyText = simpleMarkdown(msg.text || '');
+
+  return `<div class="msg-entry ${isUser ? 'user' : 'assistant'}">
+    <div class="msg-role-row">
+      <span class="msg-role-label ${isUser ? 'msg-role-user' : 'msg-role-assistant'}">${isUser ? 'You' : 'Agent'}</span>
+      ${timeStr ? `<span class="msg-timestamp">${timeStr}</span>` : ''}
+    </div>
+    ${bodyText ? `<div class="msg-body">${bodyText}</div>` : ''}
+    ${toolsHtml ? `<div class="msg-tools">${toolsHtml}</div>` : ''}
+  </div>`;
+}
+
+function toolIcon(name) {
+  const icons = {
+    Read:    '<svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="margin-right:3px"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/></svg>',
+    Write:   '<svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="margin-right:3px"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>',
+    Edit:    '<svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="margin-right:3px"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>',
+    Bash:    '<svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="margin-right:3px"><polyline points="4 17 10 11 4 5"/><line x1="12" y1="19" x2="20" y2="19"/></svg>',
+    Glob:    '<svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="margin-right:3px"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>',
+    Grep:    '<svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="margin-right:3px"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>',
+  };
+  return icons[name] || '<svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="margin-right:3px"><circle cx="12" cy="12" r="3"/></svg>';
+}
+
+function simpleMarkdown(text) {
+  if (!text) return '';
+  // Escape HTML first
+  let out = text
+    .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+  // Code blocks (```...```)
+  out = out.replace(/```[\w]*\n?([\s\S]*?)```/g, (_, code) =>
+    `<pre>${code.trimEnd()}</pre>`);
+  // Inline code
+  out = out.replace(/`([^`\n]+)`/g, '<code>$1</code>');
+  // Bold
+  out = out.replace(/\*\*([^*]+)\*\*/g, '<strong>$1</strong>');
+  // Newlines
+  out = out.replace(/\n/g, '<br>');
+  return out;
 }
 
 function agentFullName(id) {
