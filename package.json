@@ -1,0 +1,15 @@
+{
+  "name": "ssh-config-ui",
+  "version": "1.0.0",
+  "description": "UI for managing SSH configurations, known hosts, and keys",
+  "main": "server.js",
+  "scripts": {
+    "start": "nodemon server.js"
+  },
+  "dependencies": {
+    "express": "^4.18.2"
+  },
+  "devDependencies": {
+    "nodemon": "^3.1.14"
+  }
+}

@@ -1,0 +1,390 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>SSH Manager</title>
+  <link rel="stylesheet" href="styles.css" />
+</head>
+<body>
+  <div class="layout">
+    <nav class="sidebar">
+      <div class="sidebar-header">
+        <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+          <rect x="2" y="3" width="20" height="14" rx="2"/>
+          <path d="M8 21h8M12 17v4"/>
+        </svg>
+        <span>SSH Manager</span>
+      </div>
+      <ul class="nav-list">
+        <li><a href="#" class="nav-item active" data-tab="hosts">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><path d="M2 12h20M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"/></svg>
+          SSH Hosts
+        </a></li>
+        <li><a href="#" class="nav-item" data-tab="keys">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="m21 2-2 2m-7.61 7.61a5.5 5.5 0 1 1-7.778 7.778 5.5 5.5 0 0 1 7.777-7.777zm0 0L15.5 7.5m0 0 3 3L22 7l-3-3m-3.5 3.5L19 4"/></svg>
+          SSH Keys
+        </a></li>
+        <li><a href="#" class="nav-item" data-tab="known-hosts">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 11l3 3L22 4"/><path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"/></svg>
+          Known Hosts
+        </a></li>
+        <li><a href="#" class="nav-item" data-tab="agents">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 2a4 4 0 0 1 4 4v1h1a2 2 0 0 1 2 2v2a2 2 0 0 1-2 2h-1v1a4 4 0 0 1-8 0v-1H7a2 2 0 0 1-2-2V9a2 2 0 0 1 2-2h1V6a4 4 0 0 1 4-4z"/><circle cx="9" cy="10" r="1"/><circle cx="15" cy="10" r="1"/></svg>
+          AI Agents
+        </a></li>
+        <li><a href="#" class="nav-item" data-tab="sessions">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="2" y="3" width="20" height="14" rx="2"/><path d="M8 21h8M12 17v4"/><path d="M6 8l3 3-3 3"/><path d="M12 14h4"/></svg>
+          Sessions
+        </a></li>
+        <li><a href="#" class="nav-item" data-tab="raw-config">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="16 18 22 12 16 6"/><polyline points="8 6 2 12 8 18"/></svg>
+          Raw Config
+        </a></li>
+      </ul>
+    </nav>
+
+    <main class="main">
+      <!-- SSH Hosts Tab -->
+      <div id="tab-hosts" class="tab-content active">
+        <div class="page-header">
+          <div>
+            <h1>SSH Hosts</h1>
+            <p class="subtitle">Manage your ~/.ssh/config entries</p>
+          </div>
+          <button class="btn btn-primary" onclick="openHostModal()">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+            Add Host
+          </button>
+        </div>
+        <div id="hosts-list" class="cards-grid"></div>
+      </div>
+
+      <!-- SSH Keys Tab -->
+      <div id="tab-keys" class="tab-content">
+        <div class="page-header">
+          <div>
+            <h1>SSH Keys</h1>
+            <p class="subtitle">Manage SSH key pairs in ~/.ssh/</p>
+          </div>
+          <button class="btn btn-primary" onclick="openKeyModal()">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+            Generate Key
+          </button>
+        </div>
+        <div id="keys-list" class="cards-grid"></div>
+      </div>
+
+      <!-- Known Hosts Tab -->
+      <div id="tab-known-hosts" class="tab-content">
+        <div class="page-header">
+          <div>
+            <h1>Known Hosts</h1>
+            <p class="subtitle">Entries in ~/.ssh/known_hosts</p>
+          </div>
+          <div class="search-wrap">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
+            <input type="text" id="known-hosts-search" placeholder="Filter hosts..." oninput="filterKnownHosts()" />
+          </div>
+        </div>
+        <div id="known-hosts-list" class="table-wrap">
+          <table class="data-table">
+            <thead><tr><th>Host / IP</th><th>Key Type</th><th>Fingerprint</th><th></th></tr></thead>
+            <tbody id="known-hosts-body"></tbody>
+          </table>
+        </div>
+      </div>
+
+      <!-- AI Agents Tab -->
+      <div id="tab-agents" class="tab-content">
+        <div class="page-header">
+          <div>
+            <h1>AI Agents</h1>
+            <p class="subtitle">Running CLI agent sessions — Claude Code, Codex, Gemini, OpenCode, Aider</p>
+          </div>
+          <div style="display:flex;gap:8px;align-items:center">
+            <label class="auto-refresh-label">
+              <input type="checkbox" id="agents-auto-refresh" onchange="toggleAgentAutoRefresh()" />
+              Auto-refresh
+            </label>
+            <button class="btn btn-ghost btn-sm" onclick="loadAgents()">
+              <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="23 4 23 10 17 10"/><path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"/></svg>
+              Refresh
+            </button>
+          </div>
+        </div>
+
+        <div id="agents-summary" class="agents-summary"></div>
+        <div id="agents-list" class="agents-grid"></div>
+      </div>
+
+      <!-- Sessions Tab -->
+      <div id="tab-sessions" class="tab-content">
+        <div class="page-header">
+          <div>
+            <h1>Sessions</h1>
+            <p class="subtitle">Quick connect, active SSH processes, and multiplexer sessions</p>
+          </div>
+          <div style="display:flex;gap:8px;align-items:center">
+            <label style="font-size:12px;color:var(--text2)">Terminal:</label>
+            <select id="terminal-picker" class="terminal-select"></select>
+            <button class="btn btn-ghost btn-sm" onclick="loadSessions()">
+              <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="23 4 23 10 17 10"/><path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"/></svg>
+              Refresh
+            </button>
+          </div>
+        </div>
+
+        <!-- Quick Connect -->
+        <div class="sessions-section">
+          <div class="section-header">
+            <h3>Quick Connect</h3>
+            <span class="section-hint">Connect to a configured host</span>
+          </div>
+          <div id="quick-connect-list" class="quick-connect-grid"></div>
+          <div class="custom-connect-row">
+            <div class="custom-connect-label">Custom command</div>
+            <input type="text" id="custom-ssh-cmd" class="custom-ssh-input" placeholder="ssh user@host -p 22" />
+            <button class="btn btn-primary btn-sm" onclick="launchCustom()">Launch</button>
+          </div>
+        </div>
+
+        <!-- Terminal Sessions -->
+        <div class="sessions-section">
+          <div class="section-header">
+            <h3>Open Terminal Sessions</h3>
+            <span class="section-hint">All open windows and panes across Warp, iTerm2, and Terminal</span>
+          </div>
+          <div id="terminal-sessions-body"></div>
+        </div>
+
+        <!-- Active SSH Processes -->
+        <div class="sessions-section">
+          <div class="section-header">
+            <h3>Active SSH Processes</h3>
+            <span class="section-hint">Outgoing SSH client connections on this machine</span>
+          </div>
+          <div class="table-wrap">
+            <table class="data-table">
+              <thead><tr><th>PID</th><th>Command</th><th>User</th><th>CPU</th><th>MEM</th><th>Time</th><th></th></tr></thead>
+              <tbody id="ssh-procs-body"></tbody>
+            </table>
+          </div>
+        </div>
+
+        <!-- Screen Sessions -->
+        <div class="sessions-section" id="screen-section">
+          <div class="section-header">
+            <h3>Screen Sessions</h3>
+            <span class="section-hint">Local GNU screen multiplexer sessions</span>
+            <button class="btn btn-ghost btn-sm" style="margin-left:auto" onclick="openNewScreenModal()">
+              <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+              New Session
+            </button>
+          </div>
+          <div id="screen-sessions-body"></div>
+        </div>
+
+        <!-- Tmux Sessions -->
+        <div class="sessions-section" id="tmux-section">
+          <div class="section-header">
+            <h3>Tmux Sessions</h3>
+            <span class="section-hint">Local tmux multiplexer sessions</span>
+            <button class="btn btn-ghost btn-sm" style="margin-left:auto" id="tmux-new-btn" onclick="openNewTmuxModal()" style="display:none">
+              <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+              New Session
+            </button>
+          </div>
+          <div id="tmux-sessions-body"></div>
+        </div>
+      </div>
+
+      <!-- Raw Config Tab -->
+      <div id="tab-raw-config" class="tab-content">
+        <div class="page-header">
+          <div>
+            <h1>Raw Config</h1>
+            <p class="subtitle">Edit ~/.ssh/config directly</p>
+          </div>
+          <button class="btn btn-primary" onclick="saveRawConfig()">Save Changes</button>
+        </div>
+        <div class="editor-wrap">
+          <textarea id="raw-config-editor" class="code-editor" spellcheck="false"></textarea>
+        </div>
+      </div>
+    </main>
+  </div>
+
+  <!-- Host Modal -->
+  <div id="host-modal" class="modal-overlay" style="display:none">
+    <div class="modal">
+      <div class="modal-header">
+        <h2 id="host-modal-title">Add SSH Host</h2>
+        <button class="modal-close" onclick="closeModal('host-modal')">
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+        </button>
+      </div>
+      <form id="host-form" onsubmit="saveHost(event)">
+        <input type="hidden" id="host-original-name" />
+        <div class="form-grid">
+          <div class="form-group">
+            <label>Host Alias *</label>
+            <input type="text" id="host-alias" placeholder="myserver" required />
+          </div>
+          <div class="form-group">
+            <label>HostName</label>
+            <input type="text" id="host-hostname" placeholder="example.com or 192.168.1.1" />
+          </div>
+          <div class="form-group">
+            <label>User</label>
+            <input type="text" id="host-user" placeholder="ubuntu" />
+          </div>
+          <div class="form-group">
+            <label>Port</label>
+            <input type="number" id="host-port" placeholder="22" min="1" max="65535" />
+          </div>
+          <div class="form-group">
+            <label>IdentityFile</label>
+            <input type="text" id="host-identity" placeholder="~/.ssh/id_ed25519" />
+          </div>
+          <div class="form-group">
+            <label>ProxyJump</label>
+            <input type="text" id="host-proxyjump" placeholder="jumphost" />
+          </div>
+          <div class="form-group">
+            <label>ServerAliveInterval</label>
+            <input type="number" id="host-alive" placeholder="30" min="0" />
+          </div>
+          <div class="form-group">
+            <label>ForwardAgent</label>
+            <select id="host-forward-agent">
+              <option value="">(not set)</option>
+              <option value="yes">yes</option>
+              <option value="no">no</option>
+            </select>
+          </div>
+          <div class="form-group form-group-full">
+            <label>Extra Options <span class="label-hint">(key value, one per line)</span></label>
+            <textarea id="host-extra" placeholder="StrictHostKeyChecking no&#10;Compression yes" rows="4"></textarea>
+          </div>
+        </div>
+        <div class="form-actions">
+          <button type="button" class="btn btn-ghost" onclick="closeModal('host-modal')">Cancel</button>
+          <button type="submit" class="btn btn-primary">Save Host</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <!-- Key Modal -->
+  <div id="key-modal" class="modal-overlay" style="display:none">
+    <div class="modal">
+      <div class="modal-header">
+        <h2>Generate SSH Key</h2>
+        <button class="modal-close" onclick="closeModal('key-modal')">
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+        </button>
+      </div>
+      <form id="key-form" onsubmit="generateKey(event)">
+        <div class="form-grid">
+          <div class="form-group">
+            <label>Key Name *</label>
+            <input type="text" id="key-name" placeholder="id_ed25519_github" required pattern="[\w.\-]+" title="Letters, numbers, dots, hyphens, underscores only" />
+          </div>
+          <div class="form-group">
+            <label>Key Type</label>
+            <select id="key-type">
+              <option value="ed25519">ed25519 (recommended)</option>
+              <option value="rsa">RSA 4096</option>
+              <option value="ecdsa">ECDSA</option>
+            </select>
+          </div>
+          <div class="form-group form-group-full">
+            <label>Comment</label>
+            <input type="text" id="key-comment" placeholder="user@hostname or description" />
+          </div>
+          <div class="form-group form-group-full">
+            <label>Passphrase <span class="label-hint">(leave empty for no passphrase)</span></label>
+            <input type="password" id="key-passphrase" placeholder="optional" />
+          </div>
+        </div>
+        <div class="form-actions">
+          <button type="button" class="btn btn-ghost" onclick="closeModal('key-modal')">Cancel</button>
+          <button type="submit" class="btn btn-primary">Generate</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <!-- View Public Key Modal -->
+  <div id="pubkey-modal" class="modal-overlay" style="display:none">
+    <div class="modal modal-wide">
+      <div class="modal-header">
+        <h2 id="pubkey-modal-title">Public Key</h2>
+        <button class="modal-close" onclick="closeModal('pubkey-modal')">
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+        </button>
+      </div>
+      <div class="pubkey-box">
+        <code id="pubkey-content"></code>
+      </div>
+      <div class="form-actions">
+        <button class="btn btn-ghost" onclick="closeModal('pubkey-modal')">Close</button>
+        <button class="btn btn-primary" onclick="copyPubKey()">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>
+          Copy to Clipboard
+        </button>
+      </div>
+    </div>
+  </div>
+
+  <!-- New Screen Session Modal -->
+  <div id="screen-modal" class="modal-overlay" style="display:none">
+    <div class="modal" style="width:400px">
+      <div class="modal-header">
+        <h2>New Screen Session</h2>
+        <button class="modal-close" onclick="closeModal('screen-modal')">
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+        </button>
+      </div>
+      <form onsubmit="createScreenSession(event)">
+        <div class="form-group" style="margin-bottom:20px">
+          <label>Session Name</label>
+          <input type="text" id="screen-session-name" placeholder="mysession" required pattern="[\w.\-]+" title="Letters, numbers, dots, hyphens, underscores only" />
+        </div>
+        <div class="form-actions">
+          <button type="button" class="btn btn-ghost" onclick="closeModal('screen-modal')">Cancel</button>
+          <button type="submit" class="btn btn-primary">Create</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <!-- New Tmux Session Modal -->
+  <div id="tmux-modal" class="modal-overlay" style="display:none">
+    <div class="modal" style="width:400px">
+      <div class="modal-header">
+        <h2>New Tmux Session</h2>
+        <button class="modal-close" onclick="closeModal('tmux-modal')">
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+        </button>
+      </div>
+      <form onsubmit="createTmuxSession(event)">
+        <div class="form-group" style="margin-bottom:20px">
+          <label>Session Name</label>
+          <input type="text" id="tmux-session-name" placeholder="mysession" required pattern="[\w.\-]+" title="Letters, numbers, dots, hyphens, underscores only" />
+        </div>
+        <div class="form-actions">
+          <button type="button" class="btn btn-ghost" onclick="closeModal('tmux-modal')">Cancel</button>
+          <button type="submit" class="btn btn-primary">Create</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <!-- Toast -->
+  <div id="toast" class="toast"></div>
+
+  <script src="app.js"></script>
+</body>
+</html>
