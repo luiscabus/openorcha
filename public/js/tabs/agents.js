@@ -86,10 +86,16 @@ export async function loadAgents() {
     window._agentMux = {};
     for (const a of agents) window._agentMux[a.pid] = a.multiplexer || null;
 
-    list.innerHTML = agents.map(a => {
+    const interactive = agents.filter(a => a.multiplexer);
+    const background = agents.filter(a => !a.multiplexer);
+
+    const renderCard = a => {
       const meta = AGENT_META[a.agentId] || { label: '?', color: 'aider', accent: '#888' };
       const termBadge = a.terminalApp
         ? `<span class="app-badge app-badge-${a.terminalApp.toLowerCase()}">${escHtml(a.terminalApp)}</span>`
+        : '';
+      const muxBadge = a.multiplexer
+        ? `<span class="app-badge app-badge-mux" title="${escAttr(a.multiplexer.type + ': ' + (a.multiplexer.target || a.multiplexer.session || ''))}">${escHtml(a.multiplexer.type)}</span>`
         : '';
 
       return `<div class="agent-card" style="cursor:pointer" onclick="window.openAgentMessages('${escAttr(a.pid)}','${escAttr(a.agentId)}','${escAttr(a.agentName)}','${escAttr(a.cwd||'')}')" title="Click to view conversation">
@@ -97,6 +103,7 @@ export async function loadAgents() {
           <div class="agent-icon agent-icon-${a.agentId}">${meta.label}</div>
           <div class="agent-name">${escHtml(a.agentName)}</div>
           ${termBadge}
+          ${muxBadge}
           <span class="agent-pid">PID ${escHtml(a.pid)}</span>
         </div>
         <div class="agent-card-body">
@@ -128,7 +135,18 @@ export async function loadAgents() {
           </div>
         </div>
       </div>`;
-    }).join('');
+    };
+
+    let html = '';
+    if (interactive.length) {
+      html += `<div class="agents-group-label">Interactive <span class="agents-group-count">${interactive.length}</span></div>`;
+      html += `<div class="agents-grid-inner">${interactive.map(renderCard).join('')}</div>`;
+    }
+    if (background.length) {
+      html += `<div class="agents-group-label">Background <span class="agents-group-count">${background.length}</span></div>`;
+      html += `<div class="agents-grid-inner">${background.map(renderCard).join('')}</div>`;
+    }
+    list.innerHTML = html;
 
   } catch (err) {
     list.innerHTML = `<div class="empty-state"><p style="color:var(--danger)">${escHtml(err.message)}</p></div>`;
