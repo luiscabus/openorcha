@@ -31,6 +31,7 @@ import {
   sendAgentMessage,
   openLaunchAgentModal,
   launchAgent,
+  selectLaunchSession,
   switchDrawerView,
   sendKey,
   clickPromptOption,
@@ -118,6 +119,7 @@ window.closeDrawerOnOverlay = closeDrawerOnOverlay;
 window.sendAgentMessage = sendAgentMessage;
 window.openLaunchAgentModal = openLaunchAgentModal;
 window.launchAgent = launchAgent;
+window.selectLaunchSession = selectLaunchSession;
 window.switchDrawerView = switchDrawerView;
 window.sendKey = sendKey;
 window.clickPromptOption = clickPromptOption;

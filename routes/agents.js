@@ -3,7 +3,7 @@ const path = require('path');
 const os = require('os');
 const fs = require('fs');
 const { execSync } = require('child_process');
-const { AGENT_DEFS, findClaudeSessionFile, parseClaudeSession, findCodexSessionFile, parseCodexSession, parseOpenCodeSession } = require('../lib/agentParsers');
+const { AGENT_DEFS, findClaudeSessionFile, parseClaudeSession, findCodexSessionFile, parseCodexSession, parseOpenCodeSession, listClaudeSessions, listCodexSessions } = require('../lib/agentParsers');
 const { buildProcTable, findAncestorApp, getCwdMap } = require('../lib/processTree');
 
 const router = express.Router();
@@ -230,9 +230,32 @@ const AGENT_SKIP_PERMISSIONS_FLAG = {
   claude: '--dangerously-skip-permissions',
 };
 
+// ─── List previous sessions for resume ────────────────────────────────────────
+
+const AGENT_RESUME_FLAG = {
+  claude: (sessionId) => `--resume ${sessionId}`,
+  codex:  (sessionId) => `resume ${sessionId}`,
+};
+
+router.get('/sessions', (req, res) => {
+  try {
+    let { agentId, cwd } = req.query;
+    if (!agentId || !cwd) return res.status(400).json({ error: 'agentId and cwd are required' });
+    cwd = cwd.trim().replace(/^~(?=\/|$)/, os.homedir());
+
+    let sessions = [];
+    if (agentId === 'claude') sessions = listClaudeSessions(cwd);
+    else if (agentId === 'codex') sessions = listCodexSessions(cwd);
+
+    res.json({ sessions, supportsResume: !!AGENT_RESUME_FLAG[agentId] });
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
 router.post('/launch', (req, res) => {
   try {
-    let { agentId, cwd, sessionName, skipPermissions } = req.body;
+    let { agentId, cwd, sessionName, skipPermissions, resumeSessionId } = req.body;
     let cmd = AGENT_COMMANDS[agentId];
     if (!cmd) return res.status(400).json({ error: `Unknown agent: ${agentId}` });
     if (!cwd || !cwd.trim()) return res.status(400).json({ error: 'Working directory is required' });
@@ -246,6 +269,11 @@ router.post('/launch', (req, res) => {
 
     if (skipPermissions && AGENT_SKIP_PERMISSIONS_FLAG[agentId]) {
       cmd = `${cmd} ${AGENT_SKIP_PERMISSIONS_FLAG[agentId]}`;
+    }
+
+    // Append resume flag if resuming a previous session
+    if (resumeSessionId && AGENT_RESUME_FLAG[agentId]) {
+      cmd = `${cmd} ${AGENT_RESUME_FLAG[agentId](resumeSessionId)}`;
     }
 
     // Use a login shell so the user's PATH (~/.zshrc, nvm, homebrew, etc.) is sourced

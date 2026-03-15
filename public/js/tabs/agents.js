@@ -167,13 +167,94 @@ export async function loadAgents() {
   }
 }
 
+let launchSelectedSessionId = null;
+let launchSessionsDebounce = null;
+
 export function openLaunchAgentModal() {
   document.getElementById('launch-agent-id').value = 'claude';
   document.getElementById('launch-agent-cwd').value = '';
   document.getElementById('launch-agent-session').value = '';
   document.getElementById('launch-skip-permissions').checked = false;
+  launchSelectedSessionId = null;
+  document.getElementById('launch-sessions-group').style.display = 'none';
   document.getElementById('launch-agent-modal').style.display = 'flex';
   setTimeout(() => document.getElementById('launch-agent-cwd').focus(), 50);
+
+  // Wire up session fetching on cwd/agent change
+  const cwdInput = document.getElementById('launch-agent-cwd');
+  const agentSelect = document.getElementById('launch-agent-id');
+  const handler = () => { clearTimeout(launchSessionsDebounce); launchSessionsDebounce = setTimeout(fetchLaunchSessions, 400); };
+  cwdInput.oninput = handler;
+  agentSelect.onchange = handler;
+}
+
+async function fetchLaunchSessions() {
+  const agentId = document.getElementById('launch-agent-id').value;
+  const cwd = document.getElementById('launch-agent-cwd').value.trim();
+  const group = document.getElementById('launch-sessions-group');
+  const list = document.getElementById('launch-sessions-list');
+
+  if (!cwd || cwd.length < 2) {
+    group.style.display = 'none';
+    launchSelectedSessionId = null;
+    return;
+  }
+
+  group.style.display = '';
+  list.innerHTML = '<div class="sessions-loading">Loading sessions…</div>';
+
+  try {
+    const { sessions, supportsResume } = await api('GET', `/api/agents/sessions?agentId=${encodeURIComponent(agentId)}&cwd=${encodeURIComponent(cwd)}`);
+    if (!supportsResume || !sessions.length) {
+      group.style.display = 'none';
+      launchSelectedSessionId = null;
+      return;
+    }
+
+    launchSelectedSessionId = null;
+    let html = `<div class="session-option session-option-selected" data-session-id="" onclick="window.selectLaunchSession(this, '')">
+      <div class="session-option-title">New Session</div>
+      <div class="session-option-detail">Start a fresh conversation</div>
+    </div>`;
+
+    for (const s of sessions.slice(0, 10)) {
+      const date = new Date(s.updatedAt);
+      const ago = formatTimeAgo(date);
+      const preview = escHtml(s.firstMessage.length > 100 ? s.firstMessage.slice(0, 100) + '…' : s.firstMessage);
+      const model = s.model ? s.model.replace('claude-', '').replace(/-\d{8}$/, '') : '';
+      html += `<div class="session-option" data-session-id="${escAttr(s.id)}" onclick="window.selectLaunchSession(this, '${escAttr(s.id)}')">
+        <div class="session-option-header">
+          <span class="session-option-msgs">${s.messageCount} msgs</span>
+          ${model ? `<span class="session-option-model">${escHtml(model)}</span>` : ''}
+          <span class="session-option-date">${escHtml(ago)}</span>
+          <span class="session-option-size">${s.sizeMB} MB</span>
+        </div>
+        <div class="session-option-preview">${preview}</div>
+      </div>`;
+    }
+
+    list.innerHTML = html;
+  } catch {
+    group.style.display = 'none';
+    launchSelectedSessionId = null;
+  }
+}
+
+export function selectLaunchSession(el, sessionId) {
+  launchSelectedSessionId = sessionId || null;
+  const list = document.getElementById('launch-sessions-list');
+  for (const opt of list.querySelectorAll('.session-option')) {
+    opt.classList.toggle('session-option-selected', opt === el);
+  }
+}
+
+function formatTimeAgo(date) {
+  const sec = Math.floor((Date.now() - date.getTime()) / 1000);
+  if (sec < 60) return 'just now';
+  if (sec < 3600) return `${Math.floor(sec / 60)}m ago`;
+  if (sec < 86400) return `${Math.floor(sec / 3600)}h ago`;
+  if (sec < 604800) return `${Math.floor(sec / 86400)}d ago`;
+  return date.toLocaleDateString();
 }
 
 export async function launchAgent(e) {
@@ -182,11 +263,12 @@ export async function launchAgent(e) {
   const cwd             = document.getElementById('launch-agent-cwd').value.trim();
   const sessionName     = document.getElementById('launch-agent-session').value.trim();
   const skipPermissions = document.getElementById('launch-skip-permissions').checked;
+  const resumeSessionId = launchSelectedSessionId || null;
 
   try {
-    const { sessionName: name } = await api('POST', '/api/agents/launch', { agentId, cwd, sessionName, skipPermissions });
+    const { sessionName: name } = await api('POST', '/api/agents/launch', { agentId, cwd, sessionName, skipPermissions, resumeSessionId });
     closeModal('launch-agent-modal');
-    toast(`Launched in tmux session "${name}"`);
+    toast(`${resumeSessionId ? 'Resumed' : 'Launched'} in tmux session "${name}"`);
     setTimeout(loadAgents, 3000);
   } catch (err) {
     toast(err.message, 'error');

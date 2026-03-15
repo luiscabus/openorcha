@@ -495,6 +495,12 @@
           <label>Project Directory</label>
           <input type="text" id="launch-agent-cwd" placeholder="~/projects/myapp" required />
         </div>
+        <div class="form-group" id="launch-sessions-group" style="display:none">
+          <label>Resume Previous Session <span style="color:var(--text3);font-weight:400">(or start new)</span></label>
+          <div id="launch-sessions-list" class="sessions-list">
+            <div class="sessions-loading">Loading sessions…</div>
+          </div>
+        </div>
         <div class="form-group">
           <label>tmux Session Name <span style="color:var(--text3);font-weight:400">(optional — auto-generated if blank)</span></label>
           <input type="text" id="launch-agent-session" placeholder="claude-myapp" pattern="[\w.\-]+" title="Letters, numbers, dots, hyphens, underscores only" />
