@@ -531,11 +531,14 @@ function renderMessage(msg) {
 function renderTool(t) {
   const icon = toolIcon(t.name);
   const detail = toolDetailText(t);
-  const hasResult = t.result != null && t.result !== '';
+  const hasPatch = t.patch && Array.isArray(t.patch) && t.patch.length > 0;
+  const hasResult = !hasPatch && t.result != null && t.result !== '';
   const hasError = t.resultError != null && t.resultError !== '';
 
   let resultHtml = '';
-  if (hasResult || hasError) {
+  if (hasPatch) {
+    resultHtml = renderDiff(t.patch);
+  } else if (hasResult || hasError) {
     const resultContent = truncateResult(t.result || '');
     const errorContent = hasError ? truncateResult(t.resultError) : '';
     resultHtml = `<details class="tool-result-details">
@@ -552,6 +555,24 @@ function renderTool(t) {
     </div>
     ${resultHtml}
   </div>`;
+}
+
+function renderDiff(hunks) {
+  let added = 0, removed = 0;
+  const hunkHtmls = hunks.map(h => {
+    const lines = (h.lines || []).map(line => {
+      if (line.startsWith('+')) { added++; return `<div class="diff-add">${escHtml(line)}</div>`; }
+      if (line.startsWith('-')) { removed++; return `<div class="diff-del">${escHtml(line)}</div>`; }
+      return `<div class="diff-ctx">${escHtml(line)}</div>`;
+    }).join('');
+    return `<div class="diff-hunk-header">@@ -${h.oldStart},${h.oldLines} +${h.newStart},${h.newLines} @@</div>${lines}`;
+  }).join('');
+
+  const stats = `<span class="diff-stat-add">+${added}</span> <span class="diff-stat-del">-${removed}</span>`;
+  return `<details class="tool-result-details" open>
+    <summary class="tool-result-summary">Diff ${stats}</summary>
+    <div class="diff-view">${hunkHtmls}</div>
+  </details>`;
 }
 
 function toolDetailText(t) {
