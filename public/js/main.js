@@ -33,6 +33,7 @@ import {
   launchAgent,
   switchDrawerView,
   sendKey,
+  clickPromptOption,
 } from './tabs/agents.js';
 
 // ─── Expose all functions referenced by HTML onclick handlers ─────────────────
@@ -91,6 +92,7 @@ window.openLaunchAgentModal = openLaunchAgentModal;
 window.launchAgent = launchAgent;
 window.switchDrawerView = switchDrawerView;
 window.sendKey = sendKey;
+window.clickPromptOption = clickPromptOption;
 
 // ─── Navigation ───────────────────────────────────────────────────────────────
 
@@ -131,4 +133,4 @@ function initNav() {
 
 // ─── Init ─────────────────────────────────────────────────────────────────────
 initNav();
-loadHosts();
+loadAgents();

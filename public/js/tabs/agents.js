@@ -196,6 +196,7 @@ let drawerCurrentPid = null;
 let drawerView = 'messages'; // 'messages' | 'terminal'
 let drawerHasMux = false;
 let terminalRefreshTimer = null;
+let promptPollTimer = null;
 
 function updateDrawerSendVisibility() {
   const inTerminal = drawerView === 'terminal';
@@ -226,8 +227,61 @@ export async function openAgentMessages(pid, agentId, agentName, cwd) {
   // Always start on messages view
   switchDrawerView('messages');
 
+  // Poll for permission prompts in messages view when tmux is available
+  clearInterval(promptPollTimer);
+  promptPollTimer = null;
+  if (drawerHasMux) {
+    promptPollTimer = setInterval(() => checkForPrompt(drawerCurrentPid), 2500);
+  }
+
   document.getElementById('messages-drawer').style.display = 'flex';
   await fetchAndRenderMessages(pid);
+}
+
+async function checkForPrompt(pid) {
+  if (!pid || drawerView !== 'messages') return;
+  try {
+    const data = await api('GET', `/api/agents/${pid}/prompt`);
+    const banner = document.getElementById('drawer-prompt');
+    if (!data.hasPrompt) {
+      banner.style.display = 'none';
+      return;
+    }
+    banner.style.display = 'flex';
+    banner.innerHTML = `
+      ${data.context ? `<div class="drawer-prompt-context">${escHtml(data.context)}</div>` : ''}
+      <div class="drawer-prompt-question">${escHtml(data.question)}</div>
+      <div class="drawer-prompt-options">
+        ${data.options.map((opt, i) =>
+          `<button class="drawer-prompt-option${i === data.selectedIdx && !data.isNumbered ? ' selected' : ''}"
+            onclick="clickPromptOption(${i}, ${data.isNumbered}, ${data.selectedIdx})"
+          >${escHtml(opt.label)}</button>`
+        ).join('')}
+      </div>`;
+  } catch {}
+}
+
+export async function clickPromptOption(targetIdx, isNumbered, currentIdx) {
+  if (!drawerCurrentPid) return;
+  try {
+    if (isNumbered) {
+      // Numbered prompts: send the digit key directly (no Enter)
+      await api('POST', `/api/agents/${drawerCurrentPid}/send`, { message: String(targetIdx + 1), noEnter: true });
+    } else {
+      // Arrow-key prompts: navigate to target then Enter
+      const delta = targetIdx - currentIdx;
+      const key = delta > 0 ? 'Down' : 'Up';
+      for (let i = 0; i < Math.abs(delta); i++) {
+        await api('POST', `/api/agents/${drawerCurrentPid}/send`, { message: key, noEnter: true });
+      }
+      await api('POST', `/api/agents/${drawerCurrentPid}/send`, { message: 'Enter', noEnter: true });
+    }
+    // Hide prompt immediately and refresh messages shortly after
+    document.getElementById('drawer-prompt').style.display = 'none';
+    setTimeout(() => fetchAndRenderMessages(drawerCurrentPid), 2000);
+  } catch (err) {
+    toast(err.message, 'error');
+  }
 }
 
 export function switchDrawerView(view) {
@@ -249,11 +303,21 @@ export function switchDrawerView(view) {
     term.style.display = 'none';
     refreshBtn.onclick = () => refreshDrawer();
     sendInput.placeholder = 'Type a message and press Enter…';
+    // Restart prompt polling
+    clearInterval(promptPollTimer);
+    if (drawerHasMux && drawerCurrentPid) {
+      checkForPrompt(drawerCurrentPid);
+      promptPollTimer = setInterval(() => checkForPrompt(drawerCurrentPid), 2500);
+    }
   } else {
     msgs.style.display = 'none';
     term.style.display = 'block';
     refreshBtn.onclick = () => fetchAndRenderTerminal(drawerCurrentPid);
     sendInput.placeholder = 'Type a response and press Enter (e.g. y, 1, 2)…';
+    // Stop prompt polling — terminal view shows it live anyway
+    clearInterval(promptPollTimer);
+    promptPollTimer = null;
+    document.getElementById('drawer-prompt').style.display = 'none';
     fetchAndRenderTerminal(drawerCurrentPid);
     // Auto-refresh terminal every 2s to catch permission prompts
     terminalRefreshTimer = setInterval(() => fetchAndRenderTerminal(drawerCurrentPid), 2000);
@@ -343,6 +407,9 @@ export function closeMessagesDrawer() {
   drawerCurrentPid = null;
   clearInterval(terminalRefreshTimer);
   terminalRefreshTimer = null;
+  clearInterval(promptPollTimer);
+  promptPollTimer = null;
+  document.getElementById('drawer-prompt').style.display = 'none';
 }
 
 export function closeDrawerOnOverlay(e) {

@@ -267,6 +267,85 @@ router.post('/launch', (req, res) => {
   }
 });
 
+// Parse a tmux pane capture looking for a Claude Code permission prompt
+function parsePermissionPrompt(text) {
+  const lines = text.split('\n');
+
+  // Find the "Do you want to proceed?" (or similar) trigger line
+  let triggerIdx = -1;
+  for (let i = lines.length - 1; i >= 0; i--) {
+    if (/do you want to|allow this|proceed\?/i.test(lines[i])) {
+      triggerIdx = i;
+      break;
+    }
+  }
+  if (triggerIdx === -1) return null;
+
+  // Collect context: strip box-drawing chars from lines above trigger
+  const contextLines = [];
+  for (let i = Math.max(0, triggerIdx - 15); i < triggerIdx; i++) {
+    const l = lines[i].replace(/[╭╮╰╯│─]/g, '').trim();
+    if (l) contextLines.push(l);
+  }
+
+  // Parse options that follow the trigger
+  const options = [];
+  let selectedIdx = 0;
+  let isNumbered = false;
+
+  for (let i = triggerIdx + 1; i < Math.min(lines.length, triggerIdx + 12); i++) {
+    const line = lines[i];
+    // Arrow-key style: ❯ selected option
+    const selectedArrow = line.match(/[❯>]\s+(.+)/);
+    // Arrow-key style: unselected option (2+ leading spaces, no ❯)
+    const unselectedArrow = line.match(/^ {2,}([A-Za-z].+)/);
+    // Numbered style: 1. option
+    const numbered = line.match(/^\s*(\d+)[.)]\s+(.+)/);
+
+    if (numbered) {
+      isNumbered = true;
+      options.push({ label: numbered[2].trim(), key: numbered[1] });
+    } else if (selectedArrow) {
+      selectedIdx = options.length;
+      options.push({ label: selectedArrow[1].trim(), key: null });
+    } else if (unselectedArrow && options.length > 0 && !isNumbered) {
+      options.push({ label: unselectedArrow[1].trim(), key: null });
+    } else if (line.trim() === '' && options.length > 0) {
+      break;
+    }
+  }
+
+  if (!options.length) return null;
+
+  return {
+    context: contextLines.slice(-5).join('\n'), // last 5 context lines
+    question: lines[triggerIdx].trim(),
+    options,
+    selectedIdx,
+    isNumbered,
+  };
+}
+
+router.get('/:pid/prompt', (req, res) => {
+  try {
+    const { pid } = req.params;
+    const procs = buildProcTable();
+    if (!procs[pid]) return res.status(404).json({ error: 'Process not found' });
+
+    const tty = procs[pid]?.tty;
+    const mux = detectMultiplexer(pid, tty, procs, buildTmuxPaneMap(), buildScreenMap());
+    if (!mux || mux.type !== 'tmux') return res.json({ hasPrompt: false });
+
+    const text = execSync(`tmux capture-pane -t ${shellEscape(mux.target)} -p -S -60 2>/dev/null`, { encoding: 'utf8', timeout: 3000 });
+    const prompt = parsePermissionPrompt(text);
+    if (!prompt) return res.json({ hasPrompt: false });
+
+    res.json({ hasPrompt: true, ...prompt });
+  } catch (e) {
+    res.json({ hasPrompt: false });
+  }
+});
+
 router.get('/:pid/terminal', (req, res) => {
   try {
     const { pid } = req.params;

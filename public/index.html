@@ -17,7 +17,11 @@
         <span>SSH Manager</span>
       </div>
       <ul class="nav-list">
-        <li><a href="#" class="nav-item active" data-tab="hosts">
+        <li><a href="#" class="nav-item active" data-tab="agents">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 2a4 4 0 0 1 4 4v1h1a2 2 0 0 1 2 2v2a2 2 0 0 1-2 2h-1v1a4 4 0 0 1-8 0v-1H7a2 2 0 0 1-2-2V9a2 2 0 0 1 2-2h1V6a4 4 0 0 1 4-4z"/><circle cx="9" cy="10" r="1"/><circle cx="15" cy="10" r="1"/></svg>
+          AI Agents
+        </a></li>
+        <li><a href="#" class="nav-item" data-tab="hosts">
           <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><path d="M2 12h20M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"/></svg>
           SSH Hosts
         </a></li>
@@ -28,10 +32,6 @@
         <li><a href="#" class="nav-item" data-tab="known-hosts">
           <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 11l3 3L22 4"/><path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"/></svg>
           Known Hosts
-        </a></li>
-        <li><a href="#" class="nav-item" data-tab="agents">
-          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 2a4 4 0 0 1 4 4v1h1a2 2 0 0 1 2 2v2a2 2 0 0 1-2 2h-1v1a4 4 0 0 1-8 0v-1H7a2 2 0 0 1-2-2V9a2 2 0 0 1 2-2h1V6a4 4 0 0 1 4-4z"/><circle cx="9" cy="10" r="1"/><circle cx="15" cy="10" r="1"/></svg>
-          AI Agents
         </a></li>
         <li><a href="#" class="nav-item" data-tab="sessions">
           <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="2" y="3" width="20" height="14" rx="2"/><path d="M8 21h8M12 17v4"/><path d="M6 8l3 3-3 3"/><path d="M12 14h4"/></svg>
@@ -46,7 +46,7 @@
 
     <main class="main">
       <!-- SSH Hosts Tab -->
-      <div id="tab-hosts" class="tab-content active">
+      <div id="tab-hosts" class="tab-content">
         <div class="page-header">
           <div>
             <h1>SSH Hosts</h1>
@@ -96,7 +96,7 @@
       </div>
 
       <!-- AI Agents Tab -->
-      <div id="tab-agents" class="tab-content">
+      <div id="tab-agents" class="tab-content active">
         <div class="page-header">
           <div>
             <h1>AI Agents</h1>
@@ -456,6 +456,7 @@
       <div id="drawer-session-meta" class="drawer-session-meta" style="display:none"></div>
       <div id="drawer-messages" class="drawer-messages"></div>
       <div id="drawer-terminal" class="drawer-terminal" style="display:none"></div>
+      <div id="drawer-prompt" class="drawer-prompt" style="display:none"></div>
       <div id="drawer-quickkeys" class="drawer-quickkeys" style="display:none">
         <button class="btn btn-ghost btn-sm qk" onclick="sendKey('Up')">↑</button>
         <button class="btn btn-ghost btn-sm qk" onclick="sendKey('Down')">↓</button>
