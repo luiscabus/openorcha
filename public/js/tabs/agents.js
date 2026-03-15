@@ -49,6 +49,19 @@ function agentFullName(id) {
   return names[id] || id;
 }
 
+function contextWindowSize(model) {
+  const m = (model || '').toLowerCase();
+  if (m.includes('haiku')) return 200_000;
+  if (m.includes('opus')) return 200_000;
+  if (m.includes('sonnet')) return 200_000;
+  // Gemini, GPT-4o, Codex, etc.
+  if (m.includes('gemini')) return 1_000_000;
+  if (m.includes('gpt-4o')) return 128_000;
+  if (m.includes('gpt-4')) return 128_000;
+  if (m.includes('o3') || m.includes('o4')) return 200_000;
+  return 200_000; // safe default
+}
+
 export async function loadAgents() {
   const list = document.getElementById('agents-list');
   const summary = document.getElementById('agents-summary');
@@ -408,14 +421,18 @@ function renderSessionMeta(meta) {
   if (meta.totalCacheRead) {
     pills.push(`<span class="meta-pill" title="Cache read tokens">${(meta.totalCacheRead / 1000).toFixed(1)}k cached</span>`);
   }
+  if (meta.lastContextTokens && meta.model) {
+    const maxCtx = contextWindowSize(meta.model);
+    const pctUsed = Math.min(100, (meta.lastContextTokens / maxCtx) * 100);
+    const pctLeft = Math.max(0, 100 - pctUsed);
+    const cls = pctLeft < 15 ? 'meta-pill-ctx-low' : pctLeft < 35 ? 'meta-pill-ctx-mid' : 'meta-pill-ctx-ok';
+    pills.push(`<span class="meta-pill ${cls}" title="${meta.lastContextTokens.toLocaleString()} / ${maxCtx.toLocaleString()} tokens used">${pctLeft.toFixed(0)}% ctx</span>`);
+  }
   if (meta.costUSD != null && meta.costUSD > 0) {
     pills.push(`<span class="meta-pill meta-pill-cost" title="Estimated cost">$${meta.costUSD < 0.01 ? meta.costUSD.toFixed(4) : meta.costUSD.toFixed(2)}</span>`);
   }
   if (meta.etime) {
     pills.push(`<span class="meta-pill" title="Runtime">${escHtml(formatEtime(meta.etime))}</span>`);
-  }
-  if (meta.cpu != null) {
-    pills.push(`<span class="meta-pill" title="CPU / MEM">CPU ${meta.cpu}% &middot; MEM ${meta.mem}%</span>`);
   }
   if (meta.pid) {
     pills.push(`<span class="meta-pill" title="Process ID">PID ${escHtml(meta.pid)}</span>`);

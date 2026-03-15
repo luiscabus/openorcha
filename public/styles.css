@@ -937,6 +937,27 @@ body {
   font-weight: 600;
 }
 
+.meta-pill-ctx-ok {
+  background: rgba(62,207,142,0.10);
+  color: var(--success);
+  border-color: rgba(62,207,142,0.25);
+  font-weight: 600;
+}
+
+.meta-pill-ctx-mid {
+  background: rgba(245,158,11,0.12);
+  color: var(--warning, #f59e0b);
+  border-color: rgba(245,158,11,0.25);
+  font-weight: 600;
+}
+
+.meta-pill-ctx-low {
+  background: rgba(239,68,68,0.12);
+  color: var(--danger);
+  border-color: rgba(239,68,68,0.25);
+  font-weight: 600;
+}
+
 /* Message usage & model badges */
 .msg-usage {
   font-size: 10px;
