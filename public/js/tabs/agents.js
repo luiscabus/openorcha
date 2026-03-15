@@ -51,15 +51,14 @@ function agentFullName(id) {
 
 function contextWindowSize(model) {
   const m = (model || '').toLowerCase();
-  if (m.includes('haiku')) return 200_000;
-  if (m.includes('opus')) return 200_000;
-  if (m.includes('sonnet')) return 200_000;
-  // Gemini, GPT-4o, Codex, etc.
-  if (m.includes('gemini')) return 1_000_000;
-  if (m.includes('gpt-4o')) return 128_000;
-  if (m.includes('gpt-4')) return 128_000;
-  if (m.includes('o3') || m.includes('o4')) return 200_000;
-  return 200_000; // safe default
+  if (m.includes('haiku')) return 200000;
+  if (m.includes('opus')) return 200000;
+  if (m.includes('sonnet')) return 200000;
+  if (m.includes('gemini')) return 1000000;
+  if (m.includes('gpt-4o')) return 128000;
+  if (m.includes('gpt-4')) return 128000;
+  if (m.includes('o3') || m.includes('o4')) return 200000;
+  return 200000;
 }
 
 export async function loadAgents() {
@@ -220,7 +219,7 @@ export async function killAgent(pid, name) {
 // ─── Agent Messages Drawer ────────────────────────────────────────────────────
 
 let drawerCurrentPid = null;
-let drawerView = 'messages'; // 'messages' | 'terminal'
+let drawerView = 'messages'; // 'messages' | 'terminal' | 'context'
 let drawerHasMux = false;
 let terminalRefreshTimer = null;
 let promptPollTimer = null;
@@ -228,9 +227,10 @@ let messagesPollTimer = null;
 
 function updateDrawerSendVisibility() {
   const inTerminal = drawerView === 'terminal';
-  document.getElementById('drawer-send-area').style.display = drawerHasMux ? 'flex' : 'none';
+  const inContext = drawerView === 'context';
+  document.getElementById('drawer-send-area').style.display = (drawerHasMux && !inContext) ? 'flex' : 'none';
   document.getElementById('drawer-quickkeys').style.display = (drawerHasMux && inTerminal) ? 'flex' : 'none';
-  document.getElementById('drawer-no-mux').style.display = (!drawerHasMux && !inTerminal) ? 'flex' : 'none';
+  document.getElementById('drawer-no-mux').style.display = (!drawerHasMux && !inTerminal && !inContext) ? 'flex' : 'none';
 }
 
 export async function openAgentMessages(pid, agentId, agentName, cwd) {
@@ -322,19 +322,26 @@ export function switchDrawerView(view) {
 
   const msgs = document.getElementById('drawer-messages');
   const term = document.getElementById('drawer-terminal');
+  const ctx  = document.getElementById('drawer-context');
   const refreshBtn = document.getElementById('drawer-refresh-btn');
+  const metaBar = document.getElementById('drawer-session-meta');
 
   document.getElementById('drawer-tab-messages').classList.toggle('active', view === 'messages');
   document.getElementById('drawer-tab-terminal').classList.toggle('active', view === 'terminal');
+  document.getElementById('drawer-tab-context').classList.toggle('active', view === 'context');
   updateDrawerSendVisibility();
+
+  // Hide all panels
+  msgs.style.display = 'none';
+  term.style.display = 'none';
+  ctx.style.display  = 'none';
 
   const sendInput = document.getElementById('drawer-send-input');
   if (view === 'messages') {
     msgs.style.display = 'flex';
-    term.style.display = 'none';
+    if (metaBar) metaBar.style.display = '';
     refreshBtn.onclick = () => refreshDrawer();
     sendInput.placeholder = 'Type a message and press Enter…';
-    // Restart prompt + messages polling
     clearInterval(promptPollTimer);
     clearInterval(messagesPollTimer);
     if (drawerHasMux && drawerCurrentPid) {
@@ -342,20 +349,28 @@ export function switchDrawerView(view) {
       promptPollTimer   = setInterval(() => checkForPrompt(drawerCurrentPid), 2500);
       messagesPollTimer = setInterval(() => fetchAndRenderMessages(drawerCurrentPid), 5000);
     }
-  } else {
-    msgs.style.display = 'none';
+  } else if (view === 'terminal') {
     term.style.display = 'block';
+    if (metaBar) metaBar.style.display = 'none';
     refreshBtn.onclick = () => fetchAndRenderTerminal(drawerCurrentPid);
     sendInput.placeholder = 'Type a response and press Enter (e.g. y, 1, 2)…';
-    // Stop message/prompt polling — terminal view shows everything live
     clearInterval(promptPollTimer);
     clearInterval(messagesPollTimer);
     promptPollTimer = null;
     messagesPollTimer = null;
     document.getElementById('drawer-prompt').style.display = 'none';
     fetchAndRenderTerminal(drawerCurrentPid);
-    // Auto-refresh terminal every 2s to catch permission prompts
     terminalRefreshTimer = setInterval(() => fetchAndRenderTerminal(drawerCurrentPid), 2000);
+  } else if (view === 'context') {
+    ctx.style.display = 'block';
+    if (metaBar) metaBar.style.display = 'none';
+    clearInterval(promptPollTimer);
+    clearInterval(messagesPollTimer);
+    promptPollTimer = null;
+    messagesPollTimer = null;
+    document.getElementById('drawer-prompt').style.display = 'none';
+    refreshBtn.onclick = () => fetchAndRenderContext(drawerCurrentPid);
+    fetchAndRenderContext(drawerCurrentPid);
   }
 }
 
@@ -442,6 +457,99 @@ function renderSessionMeta(meta) {
 
 export async function refreshDrawer() {
   if (drawerCurrentPid) await fetchAndRenderMessages(drawerCurrentPid);
+}
+
+// ─── Context Tab ──────────────────────────────────────────────────────────────
+
+async function fetchAndRenderContext(pid) {
+  const container = document.getElementById('drawer-context');
+  container.innerHTML = `<div class="drawer-loading">Loading context…</div>`;
+  try {
+    const data = await api('GET', `/api/agents/${pid}/context`);
+    const { sections, agentId, cwd } = data;
+
+    if (!sections || !sections.length) {
+      container.innerHTML = `<div class="drawer-empty">No configuration or context data found for this agent.</div>`;
+      return;
+    }
+
+    container.innerHTML = sections.map(s => renderContextSection(s)).join('');
+  } catch (err) {
+    container.innerHTML = `<div class="drawer-empty" style="color:var(--danger)">${escHtml(err.message)}</div>`;
+  }
+}
+
+function renderContextSection(section) {
+  const scopeBadge = `<span class="ctx-scope ctx-scope-${section.scope}">${section.scope}</span>`;
+  const icon = contextIcon(section.icon);
+
+  // MCP servers section
+  if (section.servers) {
+    const rows = section.servers.map(s => {
+      const sBadge = `<span class="ctx-scope ctx-scope-${s.scope}">${s.scope}</span>`;
+      return `<div class="ctx-server-row">
+        <span class="ctx-server-name">${escHtml(s.name)}</span>
+        <span class="ctx-server-type">${escHtml(s.type)}</span>
+        <span class="ctx-server-plugin">${escHtml(s.plugin)}</span>
+        ${sBadge}
+      </div>`;
+    }).join('');
+    return `<div class="ctx-section">
+      <div class="ctx-section-header">${icon}<span class="ctx-section-title">${escHtml(section.title)}</span>${scopeBadge}</div>
+      <div class="ctx-servers">${rows}</div>
+    </div>`;
+  }
+
+  // Memory section
+  if (section.memories) {
+    const mems = section.memories.map(m => {
+      const typeBadge = `<span class="ctx-mem-type">${escHtml(m.type)}</span>`;
+      return `<details class="ctx-memory">
+        <summary class="ctx-memory-summary">${typeBadge}<span class="ctx-memory-name">${escHtml(m.name)}</span>${m.description ? `<span class="ctx-memory-desc">${escHtml(m.description)}</span>` : ''}</summary>
+        <pre class="ctx-memory-body">${escHtml(m.body)}</pre>
+      </details>`;
+    }).join('');
+    return `<div class="ctx-section">
+      <div class="ctx-section-header">${icon}<span class="ctx-section-title">${escHtml(section.title)}</span>${scopeBadge}</div>
+      ${mems}
+    </div>`;
+  }
+
+  // Markdown content section (CLAUDE.md, AGENTS.md etc)
+  if (section.content) {
+    return `<div class="ctx-section">
+      <div class="ctx-section-header">${icon}<span class="ctx-section-title">${escHtml(section.title)}</span>${scopeBadge}</div>
+      <pre class="ctx-doc-content">${escHtml(section.content)}</pre>
+    </div>`;
+  }
+
+  // Key-value items section
+  if (section.items) {
+    const rows = section.items.map(item =>
+      `<div class="ctx-item-row">
+        <span class="ctx-item-label">${escHtml(item.label)}</span>
+        <span class="ctx-item-value">${escHtml(item.value)}</span>
+      </div>`
+    ).join('');
+    return `<div class="ctx-section">
+      <div class="ctx-section-header">${icon}<span class="ctx-section-title">${escHtml(section.title)}</span>${scopeBadge}</div>
+      <div class="ctx-items">${rows}</div>
+    </div>`;
+  }
+
+  return '';
+}
+
+function contextIcon(name) {
+  const icons = {
+    settings: '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>',
+    chart:    '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="20" x2="18" y2="10"/><line x1="12" y1="20" x2="12" y2="4"/><line x1="6" y1="20" x2="6" y2="14"/></svg>',
+    plug:     '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 2v6M8 2v6M16 2v6M4 10h16v4a8 8 0 0 1-16 0v-4z"/></svg>',
+    block:    '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><line x1="4.93" y1="4.93" x2="19.07" y2="19.07"/></svg>',
+    doc:      '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/></svg>',
+    brain:    '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 2a7 7 0 0 0-7 7c0 3 1.5 5 3 6.5V20a2 2 0 0 0 2 2h4a2 2 0 0 0 2-2v-4.5c1.5-1.5 3-3.5 3-6.5a7 7 0 0 0-7-7z"/><line x1="10" y1="22" x2="14" y2="22"/></svg>',
+  };
+  return `<span class="ctx-icon">${icons[name] || icons.doc}</span>`;
 }
 
 export function closeMessagesDrawer() {

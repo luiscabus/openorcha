@@ -1,6 +1,7 @@
 const express = require('express');
 const path = require('path');
 const os = require('os');
+const fs = require('fs');
 const { execSync } = require('child_process');
 const { AGENT_DEFS, findClaudeSessionFile, parseClaudeSession, findCodexSessionFile, parseCodexSession, parseOpenCodeSession } = require('../lib/agentParsers');
 const { buildProcTable, findAncestorApp, getCwdMap } = require('../lib/processTree');
@@ -262,6 +263,269 @@ router.post('/launch', (req, res) => {
     execSync(`tmux send-keys -t ${shellEscape(sessionName)} ${shellEscape(cmd)} Enter`, { timeout: 5000 });
 
     res.json({ ok: true, sessionName });
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
+// ─── Agent Context / Config endpoint ─────────────────────────────────────────
+
+function readJsonSafe(fp) {
+  try { return JSON.parse(fs.readFileSync(fp, 'utf8')); } catch { return null; }
+}
+
+function readTextSafe(fp) {
+  try { return fs.readFileSync(fp, 'utf8'); } catch { return null; }
+}
+
+function readTomlSafe(fp) {
+  try {
+    const text = fs.readFileSync(fp, 'utf8');
+    // Simple TOML parser for flat + section keys
+    const result = {};
+    let section = null;
+    for (const line of text.split('\n')) {
+      const trimmed = line.trim();
+      if (!trimmed || trimmed.startsWith('#')) continue;
+      const secMatch = trimmed.match(/^\[(.+)\]$/);
+      if (secMatch) { section = secMatch[1]; result[section] = result[section] || {}; continue; }
+      const kvMatch = trimmed.match(/^([\w.-]+)\s*=\s*"?(.*?)"?\s*$/);
+      if (kvMatch) {
+        const target = section ? (result[section] = result[section] || {}) : result;
+        target[kvMatch[1]] = kvMatch[2];
+      }
+    }
+    return result;
+  } catch { return null; }
+}
+
+function getClaudeContext(cwd) {
+  const home = os.homedir();
+  const sections = [];
+
+  // Global settings
+  const settings = readJsonSafe(path.join(home, '.claude', 'settings.json'));
+  if (settings) {
+    sections.push({
+      title: 'Settings',
+      scope: 'global',
+      icon: 'settings',
+      items: [
+        { label: 'Model', value: settings.model || '—' },
+        ...(settings.statusLine ? [{ label: 'Status Line', value: settings.statusLine.command ? 'Custom command' : settings.statusLine.type || 'enabled' }] : []),
+      ],
+    });
+  }
+
+  // Global stats
+  const stats = readJsonSafe(path.join(home, '.claude', 'stats-cache.json'));
+  if (stats) {
+    const models = stats.modelUsage ? Object.keys(stats.modelUsage) : [];
+    sections.push({
+      title: 'Usage Stats',
+      scope: 'global',
+      icon: 'chart',
+      items: [
+        { label: 'Total Sessions', value: String(stats.totalSessions || 0) },
+        { label: 'Total Messages', value: String(stats.totalMessages || 0) },
+        { label: 'First Session', value: stats.firstSessionDate ? new Date(stats.firstSessionDate).toLocaleDateString() : '—' },
+        { label: 'Models Used', value: models.map(m => m.replace('claude-', '').replace(/-\d{8}$/, '')).join(', ') || '—' },
+      ],
+    });
+  }
+
+  // MCP Servers (plugins)
+  const mcpServers = [];
+  const pluginsDir = path.join(home, '.claude', 'plugins', 'marketplaces');
+  try {
+    const marketplaces = fs.readdirSync(pluginsDir);
+    for (const mp of marketplaces) {
+      const extDir = path.join(pluginsDir, mp, 'external_plugins');
+      if (!fs.existsSync(extDir)) continue;
+      for (const plugin of fs.readdirSync(extDir)) {
+        const mcpFile = path.join(extDir, plugin, '.mcp.json');
+        const mcp = readJsonSafe(mcpFile);
+        if (mcp) {
+          for (const [name, conf] of Object.entries(mcp)) {
+            mcpServers.push({ name, type: conf.type || '—', plugin, scope: 'global' });
+          }
+        }
+      }
+    }
+  } catch {}
+
+  // Project-level .mcp.json
+  if (cwd) {
+    const projectMcp = readJsonSafe(path.join(cwd, '.mcp.json'));
+    if (projectMcp) {
+      for (const [name, conf] of Object.entries(projectMcp)) {
+        mcpServers.push({ name, type: conf.type || '—', plugin: '.mcp.json', scope: 'project' });
+      }
+    }
+  }
+
+  // MCP auth needs
+  const mcpAuth = readJsonSafe(path.join(home, '.claude', 'mcp-needs-auth-cache.json'));
+  if (mcpAuth) {
+    for (const name of Object.keys(mcpAuth)) {
+      if (!mcpServers.find(s => s.name === name)) {
+        mcpServers.push({ name, type: 'http', plugin: 'claude.ai', scope: 'global' });
+      }
+    }
+  }
+
+  if (mcpServers.length) {
+    sections.push({
+      title: 'MCP Servers',
+      scope: 'mixed',
+      icon: 'plug',
+      servers: mcpServers,
+    });
+  }
+
+  // Blocked plugins
+  const blocklist = readJsonSafe(path.join(home, '.claude', 'plugins', 'blocklist.json'));
+  if (blocklist && Array.isArray(blocklist) && blocklist.length) {
+    sections.push({
+      title: 'Blocked Plugins',
+      scope: 'global',
+      icon: 'block',
+      items: blocklist.map(b => ({
+        label: typeof b === 'string' ? b : b.name || b.id || JSON.stringify(b),
+        value: typeof b === 'object' && b.reason ? b.reason : '',
+      })),
+    });
+  }
+
+  // CLAUDE.md (project)
+  if (cwd) {
+    const claudeMd = readTextSafe(path.join(cwd, 'CLAUDE.md'));
+    if (claudeMd) {
+      sections.push({ title: 'CLAUDE.md', scope: 'project', icon: 'doc', content: claudeMd });
+    }
+  }
+
+  // Memory (project)
+  if (cwd) {
+    const encoded = cwd.replace(/\//g, '-');
+    const memDir = path.join(home, '.claude', 'projects', encoded, 'memory');
+    const memoryMd = readTextSafe(path.join(home, '.claude', 'projects', encoded, 'MEMORY.md'));
+    const memories = [];
+    try {
+      for (const f of fs.readdirSync(memDir)) {
+        if (!f.endsWith('.md')) continue;
+        const content = readTextSafe(path.join(memDir, f));
+        if (content) {
+          // Parse frontmatter
+          const fmMatch = content.match(/^---\n([\s\S]*?)\n---\n?([\s\S]*)/);
+          if (fmMatch) {
+            const meta = {};
+            for (const line of fmMatch[1].split('\n')) {
+              const kv = line.match(/^(\w+):\s*(.+)/);
+              if (kv) meta[kv[1]] = kv[2];
+            }
+            memories.push({ file: f, name: meta.name || f, type: meta.type || '—', description: meta.description || '', body: fmMatch[2].trim() });
+          } else {
+            memories.push({ file: f, name: f, type: '—', body: content.trim() });
+          }
+        }
+      }
+    } catch {}
+    if (memories.length || memoryMd) {
+      sections.push({ title: 'Memory', scope: 'project', icon: 'brain', memories, index: memoryMd || null });
+    }
+  }
+
+  return sections;
+}
+
+function getCodexContext(cwd) {
+  const home = os.homedir();
+  const sections = [];
+  const config = readTomlSafe(path.join(home, '.codex', 'config.toml'));
+  if (config) {
+    const items = [];
+    if (config.personality) items.push({ label: 'Personality', value: config.personality });
+    if (config.model) items.push({ label: 'Model', value: config.model });
+    if (config.model_reasoning_effort) items.push({ label: 'Reasoning Effort', value: config.model_reasoning_effort });
+
+    // Trusted projects
+    const trusted = Object.entries(config).filter(([k]) => k.startsWith('projects.'));
+    if (trusted.length) {
+      items.push({ label: 'Trusted Projects', value: trusted.map(([k]) => path.basename(k.replace('projects.', '').replace(/"/g, ''))).join(', ') });
+    }
+    sections.push({ title: 'Settings', scope: 'global', icon: 'settings', items });
+  }
+
+  // AGENTS.md
+  if (cwd) {
+    const agentsMd = readTextSafe(path.join(cwd, 'AGENTS.md'));
+    if (agentsMd && agentsMd.trim()) {
+      sections.push({ title: 'AGENTS.md', scope: 'project', icon: 'doc', content: agentsMd });
+    }
+  }
+
+  return sections;
+}
+
+function getGeminiContext(cwd) {
+  const home = os.homedir();
+  const sections = [];
+  const settings = readJsonSafe(path.join(home, '.gemini', 'settings.json'));
+  if (settings) {
+    const items = [];
+    if (settings.security?.auth?.selectedType) items.push({ label: 'Auth', value: settings.security.auth.selectedType });
+    if (settings.general?.previewFeatures != null) items.push({ label: 'Preview Features', value: String(settings.general.previewFeatures) });
+    sections.push({ title: 'Settings', scope: 'global', icon: 'settings', items });
+  }
+
+  // GEMINI.md
+  const geminiMd = readTextSafe(path.join(home, '.gemini', 'GEMINI.md'));
+  if (geminiMd && geminiMd.trim()) {
+    sections.push({ title: 'GEMINI.md', scope: 'global', icon: 'doc', content: geminiMd });
+  }
+
+  if (cwd) {
+    const projectGemini = readTextSafe(path.join(cwd, 'GEMINI.md'));
+    if (projectGemini && projectGemini.trim()) {
+      sections.push({ title: 'GEMINI.md', scope: 'project', icon: 'doc', content: projectGemini });
+    }
+  }
+
+  return sections;
+}
+
+router.get('/:pid/context', (req, res) => {
+  try {
+    const { pid } = req.params;
+    const psOut = execSync(`ps -p ${pid} -o args= 2>/dev/null`, { encoding: 'utf8' }).trim();
+    if (!psOut) return res.status(404).json({ error: 'Process not found' });
+
+    const bin = path.basename(psOut.split(/\s+/)[0]);
+    const def = AGENT_DEFS.find(d => d.match(bin, psOut));
+    if (!def) return res.status(400).json({ error: 'Not a recognized agent' });
+
+    const cwdMap = getCwdMap([pid]);
+    const cwd = cwdMap[pid] || null;
+
+    let sections = [];
+    if (def.id === 'claude') sections = getClaudeContext(cwd);
+    else if (def.id === 'codex') sections = getCodexContext(cwd);
+    else if (def.id === 'gemini') sections = getGeminiContext(cwd);
+    // Other agents: minimal info
+    else {
+      if (cwd) {
+        // Check for generic instruction files
+        for (const name of ['AGENTS.md', '.agents.md', 'INSTRUCTIONS.md']) {
+          const content = readTextSafe(path.join(cwd, name));
+          if (content && content.trim()) {
+            sections.push({ title: name, scope: 'project', icon: 'doc', content });
+          }
+        }
+      }
+    }
+
+    res.json({ agentId: def.id, agentName: def.name, cwd, sections });
   } catch (e) {
     res.status(500).json({ error: e.message });
   }
