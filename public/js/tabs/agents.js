@@ -1,4 +1,9 @@
-import { api, toast, escHtml, escAttr } from '../utils.js';
+import { api, toast, closeModal, escHtml, escAttr } from '../utils.js';
+
+function tildefy(path) {
+  if (!path) return path;
+  return path.replace(/^\/Users\/[^/]+/, '~');
+}
 
 export const AGENT_META = {
   claude:   { label: 'C', color: 'claude',   accent: '#e08a6a' },
@@ -77,6 +82,10 @@ export async function loadAgents() {
       return;
     }
 
+    // Store multiplexer info keyed by PID for use in the drawer
+    window._agentMux = {};
+    for (const a of agents) window._agentMux[a.pid] = a.multiplexer || null;
+
     list.innerHTML = agents.map(a => {
       const meta = AGENT_META[a.agentId] || { label: '?', color: 'aider', accent: '#888' };
       const termBadge = a.terminalApp
@@ -93,11 +102,11 @@ export async function loadAgents() {
         <div class="agent-card-body">
           <div class="agent-row">
             <span class="agent-label">Project</span>
-            <span class="agent-value agent-value-project" title="${escAttr(a.cwd || '')}">${escHtml(a.project || a.cwd || '—')}</span>
+            <span class="agent-value agent-value-project" title="${escAttr(a.cwd || '')}">${escHtml(a.project || tildefy(a.cwd) || '—')}</span>
           </div>
           ${a.cwd ? `<div class="agent-row">
             <span class="agent-label">Path</span>
-            <span class="agent-value" title="${escAttr(a.cwd)}">${escHtml(a.cwd)}</span>
+            <span class="agent-value" title="${escAttr(a.cwd)}">${escHtml(tildefy(a.cwd))}</span>
           </div>` : ''}
           <div class="agent-row">
             <span class="agent-label">Runtime</span>
@@ -126,6 +135,30 @@ export async function loadAgents() {
   }
 }
 
+export function openLaunchAgentModal() {
+  document.getElementById('launch-agent-id').value = 'claude';
+  document.getElementById('launch-agent-cwd').value = '';
+  document.getElementById('launch-agent-session').value = '';
+  document.getElementById('launch-agent-modal').style.display = 'flex';
+  setTimeout(() => document.getElementById('launch-agent-cwd').focus(), 50);
+}
+
+export async function launchAgent(e) {
+  e.preventDefault();
+  const agentId     = document.getElementById('launch-agent-id').value;
+  const cwd         = document.getElementById('launch-agent-cwd').value.trim();
+  const sessionName = document.getElementById('launch-agent-session').value.trim();
+
+  try {
+    const { sessionName: name } = await api('POST', '/api/agents/launch', { agentId, cwd, sessionName });
+    closeModal('launch-agent-modal');
+    toast(`Launched in tmux session "${name}"`);
+    setTimeout(loadAgents, 3000);
+  } catch (err) {
+    toast(err.message, 'error');
+  }
+}
+
 export async function killAgent(pid, name) {
   if (!window.confirm(`Kill ${name} (PID ${pid})?`)) return;
   try {
@@ -150,9 +183,15 @@ export async function openAgentMessages(pid, agentId, agentName, cwd) {
   icon.textContent = meta.label;
   icon.className = `agent-icon agent-icon-${agentId}`;
   document.getElementById('drawer-agent-name').textContent = agentName;
-  document.getElementById('drawer-agent-cwd').textContent = cwd || '';
+  document.getElementById('drawer-agent-cwd').textContent = tildefy(cwd) || '';
   document.getElementById('drawer-msg-count').textContent = '';
   document.getElementById('drawer-messages').innerHTML = `<div class="drawer-loading">Loading conversation…</div>`;
+
+  // Show send area only if agent is running in tmux or screen
+  const mux = window._agentMux?.[pid] || null;
+  document.getElementById('drawer-send-area').style.display = mux ? 'flex' : 'none';
+  document.getElementById('drawer-no-mux').style.display = mux ? 'none' : 'flex';
+  document.getElementById('drawer-send-input').value = '';
 
   document.getElementById('messages-drawer').style.display = 'flex';
   await fetchAndRenderMessages(pid);
@@ -192,6 +231,26 @@ export function closeMessagesDrawer() {
 
 export function closeDrawerOnOverlay(e) {
   if (e.target === document.getElementById('messages-drawer')) closeMessagesDrawer();
+}
+
+export async function sendAgentMessage() {
+  const input = document.getElementById('drawer-send-input');
+  const message = input.value.trim();
+  if (!message || !drawerCurrentPid) return;
+
+  input.disabled = true;
+  try {
+    await api('POST', `/api/agents/${drawerCurrentPid}/send`, { message });
+    input.value = '';
+    toast('Message sent');
+    // Refresh messages after a short delay to let the agent respond
+    setTimeout(() => fetchAndRenderMessages(drawerCurrentPid), 1500);
+  } catch (err) {
+    toast(err.message, 'error');
+  } finally {
+    input.disabled = false;
+    input.focus();
+  }
 }
 
 function renderMessage(msg) {

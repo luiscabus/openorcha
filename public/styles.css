@@ -889,6 +889,40 @@ body {
 
 .msg-tool-pill svg { color: var(--text3); }
 
+.drawer-send-area {
+  display: flex;
+  gap: 8px;
+  padding: 12px 16px;
+  border-top: 1px solid var(--border);
+  flex-shrink: 0;
+}
+
+.drawer-send-input {
+  flex: 1;
+  padding: 7px 10px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--bg2);
+  color: var(--text);
+  font-size: 13px;
+  outline: none;
+}
+
+.drawer-send-input:focus {
+  border-color: var(--accent);
+}
+
+.drawer-no-mux {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 10px 16px;
+  border-top: 1px solid var(--border);
+  font-size: 12px;
+  color: var(--text3);
+  flex-shrink: 0;
+}
+
 .drawer-empty {
   text-align: center;
   padding: 60px 20px;

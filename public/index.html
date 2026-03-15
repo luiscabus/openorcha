@@ -107,6 +107,10 @@
               <input type="checkbox" id="agents-auto-refresh" onchange="toggleAgentAutoRefresh()" />
               Auto-refresh
             </label>
+            <button class="btn btn-primary btn-sm" onclick="openLaunchAgentModal()">
+              <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+              Launch Agent
+            </button>
             <button class="btn btn-ghost btn-sm" onclick="loadAgents()">
               <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="23 4 23 10 17 10"/><path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"/></svg>
               Refresh
@@ -382,6 +386,42 @@
     </div>
   </div>
 
+  <!-- Launch Agent Modal -->
+  <div id="launch-agent-modal" class="modal-overlay" style="display:none">
+    <div class="modal" style="width:460px">
+      <div class="modal-header">
+        <h2>Launch Agent in tmux</h2>
+        <button class="modal-close" onclick="closeModal('launch-agent-modal')">
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+        </button>
+      </div>
+      <form onsubmit="launchAgent(event)">
+        <div class="form-group">
+          <label>Agent</label>
+          <select id="launch-agent-id">
+            <option value="claude">Claude Code</option>
+            <option value="codex">Codex</option>
+            <option value="gemini">Gemini</option>
+            <option value="opencode">OpenCode</option>
+            <option value="aider">Aider</option>
+          </select>
+        </div>
+        <div class="form-group">
+          <label>Project Directory</label>
+          <input type="text" id="launch-agent-cwd" placeholder="~/projects/myapp" required />
+        </div>
+        <div class="form-group">
+          <label>tmux Session Name <span style="color:var(--text3);font-weight:400">(optional — auto-generated if blank)</span></label>
+          <input type="text" id="launch-agent-session" placeholder="claude-myapp" pattern="[\w.\-]+" title="Letters, numbers, dots, hyphens, underscores only" />
+        </div>
+        <div class="form-actions">
+          <button type="button" class="btn btn-ghost" onclick="closeModal('launch-agent-modal')">Cancel</button>
+          <button type="submit" class="btn btn-primary">Launch</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
   <!-- Agent Messages Drawer -->
   <div id="messages-drawer" class="drawer-overlay" style="display:none" onclick="closeDrawerOnOverlay(event)">
     <div class="drawer">
@@ -404,6 +444,14 @@
         </div>
       </div>
       <div id="drawer-messages" class="drawer-messages"></div>
+      <div id="drawer-send-area" class="drawer-send-area" style="display:none">
+        <input type="text" id="drawer-send-input" class="drawer-send-input" placeholder="Type a message and press Enter…" onkeydown="if(event.key==='Enter')sendAgentMessage()">
+        <button class="btn btn-primary btn-sm" onclick="sendAgentMessage()">Send</button>
+      </div>
+      <div id="drawer-no-mux" class="drawer-no-mux" style="display:none">
+        <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>
+        Sending requires the agent to be running inside <strong>tmux</strong> or <strong>screen</strong>
+      </div>
     </div>
   </div>
 

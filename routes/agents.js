@@ -1,10 +1,77 @@
 const express = require('express');
 const path = require('path');
+const os = require('os');
 const { execSync } = require('child_process');
 const { AGENT_DEFS, findClaudeSessionFile, parseClaudeSession, findCodexSessionFile, parseCodexSession, parseOpenCodeSession } = require('../lib/agentParsers');
 const { buildProcTable, findAncestorApp, getCwdMap } = require('../lib/processTree');
 
 const router = express.Router();
+
+// ─── Multiplexer helpers ──────────────────────────────────────────────────────
+
+function shellEscape(str) {
+  return "'" + String(str).replace(/'/g, "'\\''") + "'";
+}
+
+function buildTmuxPaneMap() {
+  try {
+    const out = execSync('tmux list-panes -a -F "#{pane_tty} #{session_name}:#{window_index}.#{pane_index}" 2>/dev/null', { encoding: 'utf8', timeout: 2000 });
+    const map = {};
+    for (const line of out.trim().split('\n')) {
+      const sp = line.indexOf(' ');
+      if (sp >= 0) map[line.slice(0, sp)] = line.slice(sp + 1).trim();
+    }
+    return map;
+  } catch { return {}; }
+}
+
+function buildScreenMap() {
+  try {
+    const out = execSync('screen -ls 2>/dev/null', { encoding: 'utf8', timeout: 2000 });
+    const map = {};
+    for (const line of out.split('\n')) {
+      const m = line.match(/^\s*(\d+)\.([\w.-]+)/);
+      if (m) map[m[1]] = `${m[1]}.${m[2]}`;
+    }
+    return map;
+  } catch { return {}; }
+}
+
+// Walk the process tree upward from agentPid looking for a tmux or screen ancestor.
+function detectMultiplexer(agentPid, agentTty, procs, tmuxMap, screenMap) {
+  let p = procs[procs[agentPid]?.ppid];
+  let depth = 0;
+  while (p && depth < 20) {
+    const comm = path.basename(p.comm || '');
+    if (comm === 'tmux' || comm.startsWith('tmux:')) {
+      if (!agentTty || agentTty === '??') return null;
+      // ps tty column gives "ttys006"; tmux uses "/dev/ttys006"
+      const ttyPath = agentTty.startsWith('/')   ? agentTty
+                    : agentTty.startsWith('tty') ? `/dev/${agentTty}`
+                    : `/dev/tty${agentTty}`;
+      const target = tmuxMap[ttyPath];
+      return target ? { type: 'tmux', target } : null;
+    }
+    if (comm === 'screen') {
+      const session = screenMap[p.pid];
+      return session ? { type: 'screen', session } : null;
+    }
+    p = procs[p.ppid];
+    depth++;
+  }
+  return null;
+}
+
+// Debug: show all processes that nearly-match agent names (without strict AGENT_DEF filtering)
+router.get('/debug', (req, res) => {
+  try {
+    const keywords = Object.values(AGENT_COMMANDS).join('|');
+    const out = execSync(`ps -eo pid,tty,args 2>/dev/null | grep -iE '${keywords}' | grep -v grep`, { encoding: 'utf8' });
+    res.json({ lines: out.trim().split('\n') });
+  } catch {
+    res.json({ lines: [] });
+  }
+});
 
 router.get('/', (req, res) => {
   try {
@@ -73,6 +140,14 @@ router.get('/', (req, res) => {
     }
 
     agents.sort((a, b) => a.agentId.localeCompare(b.agentId) || (a.cwd || '').localeCompare(b.cwd || ''));
+
+    // Attach multiplexer info (tmux/screen) for each agent
+    const tmuxMap = buildTmuxPaneMap();
+    const screenMap = buildScreenMap();
+    for (const a of agents) {
+      a.multiplexer = detectMultiplexer(a.pid, a.tty, procs, tmuxMap, screenMap);
+    }
+
     res.json({ agents });
   } catch (e) {
     res.status(500).json({ error: e.message });
@@ -97,7 +172,7 @@ router.get('/:pid/messages', (req, res) => {
     let sessionFile = null;
 
     if (def.id === 'claude') {
-      sessionFile = findClaudeSessionFile(cwd);
+      sessionFile = findClaudeSessionFile(cwd, pid);
       if (sessionFile) messages = parseClaudeSession(sessionFile);
     } else if (def.id === 'codex') {
       sessionFile = findCodexSessionFile(cwd, psOut);
@@ -118,6 +193,72 @@ router.get('/:pid/messages', (req, res) => {
       messages: messages.slice(-150),
       total: messages.length,
     });
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
+const AGENT_COMMANDS = {
+  claude:   'claude',
+  codex:    'codex',
+  gemini:   'gemini',
+  opencode: 'opencode',
+  aider:    'aider',
+};
+
+router.post('/launch', (req, res) => {
+  try {
+    let { agentId, cwd, sessionName } = req.body;
+    const cmd = AGENT_COMMANDS[agentId];
+    if (!cmd) return res.status(400).json({ error: `Unknown agent: ${agentId}` });
+    if (!cwd || !cwd.trim()) return res.status(400).json({ error: 'Working directory is required' });
+
+    cwd = cwd.trim().replace(/^~(?=\/|$)/, os.homedir());
+    // Auto-generate session name if not provided
+    if (!sessionName || !sessionName.trim()) {
+      sessionName = `${agentId}-${path.basename(cwd)}`;
+    }
+    sessionName = sessionName.trim().replace(/[^a-zA-Z0-9_.\-]/g, '-');
+
+    // Use a login shell so the user's PATH (~/.zshrc, nvm, homebrew, etc.) is sourced
+    const userShell = process.env.SHELL || '/bin/zsh';
+
+    // Create tmux session (or new window if session already exists)
+    try {
+      execSync(`tmux new-session -d -s ${shellEscape(sessionName)} -c ${shellEscape(cwd)} ${shellEscape(userShell)} -l`, { timeout: 5000 });
+    } catch {
+      // Session name taken — add a new window instead
+      execSync(`tmux new-window -t ${shellEscape(sessionName)} -c ${shellEscape(cwd)} ${shellEscape(userShell)} -l`, { timeout: 5000 });
+    }
+    // Small wait for the login shell to finish initializing before sending the command
+    execSync('sleep 0.5');
+    execSync(`tmux send-keys -t ${shellEscape(sessionName)} ${shellEscape(cmd)} Enter`, { timeout: 5000 });
+
+    res.json({ ok: true, sessionName });
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
+router.post('/:pid/send', (req, res) => {
+  try {
+    const { message } = req.body;
+    if (!message || !message.trim()) return res.status(400).json({ error: 'Message is required' });
+
+    const { pid } = req.params;
+    const procs = buildProcTable();
+    if (!procs[pid]) return res.status(404).json({ error: 'Process not found' });
+
+    const tty = procs[pid]?.tty;
+    const mux = detectMultiplexer(pid, tty, procs, buildTmuxPaneMap(), buildScreenMap());
+    if (!mux) return res.status(400).json({ error: 'Agent is not running inside tmux or screen — sending not supported' });
+
+    if (mux.type === 'tmux') {
+      execSync(`tmux send-keys -t ${shellEscape(mux.target)} ${shellEscape(message)} Enter`, { timeout: 3000 });
+    } else if (mux.type === 'screen') {
+      execSync(`screen -S ${shellEscape(mux.session)} -X stuff ${shellEscape(message + '\n')}`, { timeout: 3000 });
+    }
+    res.json({ ok: true });
   } catch (e) {
     res.status(500).json({ error: e.message });
   }

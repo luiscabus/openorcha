@@ -28,6 +28,9 @@ import {
   refreshDrawer,
   closeMessagesDrawer,
   closeDrawerOnOverlay,
+  sendAgentMessage,
+  openLaunchAgentModal,
+  launchAgent,
 } from './tabs/agents.js';
 
 // ─── Expose all functions referenced by HTML onclick handlers ─────────────────
@@ -81,6 +84,9 @@ window.openAgentMessages = openAgentMessages;
 window.refreshDrawer = refreshDrawer;
 window.closeMessagesDrawer = closeMessagesDrawer;
 window.closeDrawerOnOverlay = closeDrawerOnOverlay;
+window.sendAgentMessage = sendAgentMessage;
+window.openLaunchAgentModal = openLaunchAgentModal;
+window.launchAgent = launchAgent;
 
 // ─── Navigation ───────────────────────────────────────────────────────────────
 
