@@ -173,6 +173,16 @@ export async function killAgent(pid, name) {
 // ─── Agent Messages Drawer ────────────────────────────────────────────────────
 
 let drawerCurrentPid = null;
+let drawerView = 'messages'; // 'messages' | 'terminal'
+let drawerHasMux = false;
+let terminalRefreshTimer = null;
+
+function updateDrawerSendVisibility() {
+  const inTerminal = drawerView === 'terminal';
+  document.getElementById('drawer-send-area').style.display = drawerHasMux ? 'flex' : 'none';
+  document.getElementById('drawer-quickkeys').style.display = (drawerHasMux && inTerminal) ? 'flex' : 'none';
+  document.getElementById('drawer-no-mux').style.display = (!drawerHasMux && !inTerminal) ? 'flex' : 'none';
+}
 
 export async function openAgentMessages(pid, agentId, agentName, cwd) {
   drawerCurrentPid = pid;
@@ -189,12 +199,57 @@ export async function openAgentMessages(pid, agentId, agentName, cwd) {
 
   // Show send area only if agent is running in tmux or screen
   const mux = window._agentMux?.[pid] || null;
-  document.getElementById('drawer-send-area').style.display = mux ? 'flex' : 'none';
-  document.getElementById('drawer-no-mux').style.display = mux ? 'none' : 'flex';
+  drawerHasMux = !!mux;
   document.getElementById('drawer-send-input').value = '';
+  updateDrawerSendVisibility();
+
+  // Always start on messages view
+  switchDrawerView('messages');
 
   document.getElementById('messages-drawer').style.display = 'flex';
   await fetchAndRenderMessages(pid);
+}
+
+export function switchDrawerView(view) {
+  drawerView = view;
+  clearInterval(terminalRefreshTimer);
+  terminalRefreshTimer = null;
+
+  const msgs = document.getElementById('drawer-messages');
+  const term = document.getElementById('drawer-terminal');
+  const refreshBtn = document.getElementById('drawer-refresh-btn');
+
+  document.getElementById('drawer-tab-messages').classList.toggle('active', view === 'messages');
+  document.getElementById('drawer-tab-terminal').classList.toggle('active', view === 'terminal');
+  updateDrawerSendVisibility();
+
+  const sendInput = document.getElementById('drawer-send-input');
+  if (view === 'messages') {
+    msgs.style.display = 'flex';
+    term.style.display = 'none';
+    refreshBtn.onclick = () => refreshDrawer();
+    sendInput.placeholder = 'Type a message and press Enter…';
+  } else {
+    msgs.style.display = 'none';
+    term.style.display = 'block';
+    refreshBtn.onclick = () => fetchAndRenderTerminal(drawerCurrentPid);
+    sendInput.placeholder = 'Type a response and press Enter (e.g. y, 1, 2)…';
+    fetchAndRenderTerminal(drawerCurrentPid);
+    // Auto-refresh terminal every 2s to catch permission prompts
+    terminalRefreshTimer = setInterval(() => fetchAndRenderTerminal(drawerCurrentPid), 2000);
+  }
+}
+
+async function fetchAndRenderTerminal(pid) {
+  if (!pid) return;
+  const el = document.getElementById('drawer-terminal');
+  try {
+    const { content } = await api('GET', `/api/agents/${pid}/terminal`);
+    el.textContent = content;
+    el.scrollTop = el.scrollHeight;
+  } catch (err) {
+    el.textContent = err.message;
+  }
 }
 
 export async function fetchAndRenderMessages(pid) {
@@ -227,6 +282,8 @@ export async function refreshDrawer() {
 export function closeMessagesDrawer() {
   document.getElementById('messages-drawer').style.display = 'none';
   drawerCurrentPid = null;
+  clearInterval(terminalRefreshTimer);
+  terminalRefreshTimer = null;
 }
 
 export function closeDrawerOnOverlay(e) {
@@ -238,18 +295,31 @@ export async function sendAgentMessage() {
   const message = input.value.trim();
   if (!message || !drawerCurrentPid) return;
 
+  // In terminal view: send without appending Enter (raw keystrokes)
+  const noEnter = drawerView === 'terminal';
+
   input.disabled = true;
   try {
-    await api('POST', `/api/agents/${drawerCurrentPid}/send`, { message });
+    await api('POST', `/api/agents/${drawerCurrentPid}/send`, { message, noEnter });
     input.value = '';
-    toast('Message sent');
-    // Refresh messages after a short delay to let the agent respond
-    setTimeout(() => fetchAndRenderMessages(drawerCurrentPid), 1500);
+    if (!noEnter) {
+      setTimeout(() => fetchAndRenderMessages(drawerCurrentPid), 1500);
+    }
   } catch (err) {
     toast(err.message, 'error');
   } finally {
     input.disabled = false;
     input.focus();
+  }
+}
+
+// Send a single named key (Up, Down, Enter, Escape, y, n, 1 …)
+export async function sendKey(key) {
+  if (!drawerCurrentPid) return;
+  try {
+    await api('POST', `/api/agents/${drawerCurrentPid}/send`, { message: key, noEnter: true });
+  } catch (err) {
+    toast(err.message, 'error');
   }
 }
 

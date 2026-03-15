@@ -240,6 +240,32 @@ router.post('/launch', (req, res) => {
   }
 });
 
+router.get('/:pid/terminal', (req, res) => {
+  try {
+    const { pid } = req.params;
+    const procs = buildProcTable();
+    if (!procs[pid]) return res.status(404).json({ error: 'Process not found' });
+
+    const tty = procs[pid]?.tty;
+    const mux = detectMultiplexer(pid, tty, procs, buildTmuxPaneMap(), buildScreenMap());
+    if (!mux) return res.status(400).json({ error: 'Not in tmux or screen' });
+
+    let content = '';
+    if (mux.type === 'tmux') {
+      content = execSync(`tmux capture-pane -t ${shellEscape(mux.target)} -p -S -200 2>/dev/null`, { encoding: 'utf8', timeout: 3000 });
+    } else if (mux.type === 'screen') {
+      const tmpFile = `/tmp/screen-dump-${pid}`;
+      execSync(`screen -S ${shellEscape(mux.session)} -X hardcopy ${shellEscape(tmpFile)}`, { timeout: 3000 });
+      content = require('fs').readFileSync(tmpFile, 'utf8');
+      require('fs').unlinkSync(tmpFile);
+    }
+
+    res.json({ content, muxType: mux.type });
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
 router.post('/:pid/send', (req, res) => {
   try {
     const { message } = req.body;
@@ -253,10 +279,15 @@ router.post('/:pid/send', (req, res) => {
     const mux = detectMultiplexer(pid, tty, procs, buildTmuxPaneMap(), buildScreenMap());
     if (!mux) return res.status(400).json({ error: 'Agent is not running inside tmux or screen — sending not supported' });
 
+    const { noEnter } = req.body;
     if (mux.type === 'tmux') {
-      execSync(`tmux send-keys -t ${shellEscape(mux.target)} ${shellEscape(message)} Enter`, { timeout: 3000 });
+      const cmd = noEnter
+        ? `tmux send-keys -t ${shellEscape(mux.target)} ${shellEscape(message)}`
+        : `tmux send-keys -t ${shellEscape(mux.target)} ${shellEscape(message)} Enter`;
+      execSync(cmd, { timeout: 3000 });
     } else if (mux.type === 'screen') {
-      execSync(`screen -S ${shellEscape(mux.session)} -X stuff ${shellEscape(message + '\n')}`, { timeout: 3000 });
+      const payload = noEnter ? message : message + '\n';
+      execSync(`screen -S ${shellEscape(mux.session)} -X stuff ${shellEscape(payload)}`, { timeout: 3000 });
     }
     res.json({ ok: true });
   } catch (e) {

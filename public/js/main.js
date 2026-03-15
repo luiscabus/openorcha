@@ -31,6 +31,8 @@ import {
   sendAgentMessage,
   openLaunchAgentModal,
   launchAgent,
+  switchDrawerView,
+  sendKey,
 } from './tabs/agents.js';
 
 // ─── Expose all functions referenced by HTML onclick handlers ─────────────────
@@ -87,6 +89,8 @@ window.closeDrawerOnOverlay = closeDrawerOnOverlay;
 window.sendAgentMessage = sendAgentMessage;
 window.openLaunchAgentModal = openLaunchAgentModal;
 window.launchAgent = launchAgent;
+window.switchDrawerView = switchDrawerView;
+window.sendKey = sendKey;
 
 // ─── Navigation ───────────────────────────────────────────────────────────────
 
