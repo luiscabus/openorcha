@@ -106,8 +106,10 @@ export async function loadAgents() {
       const termBadge = a.terminalApp
         ? `<span class="app-badge app-badge-${a.terminalApp.toLowerCase()}">${escHtml(a.terminalApp)}</span>`
         : '';
+      const muxTarget = a.multiplexer?.target || a.multiplexer?.session || '';
+      const muxSessionName = muxTarget.split(':')[0] || a.multiplexer?.type || '';
       const muxBadge = a.multiplexer
-        ? `<span class="app-badge app-badge-mux" title="${escAttr(a.multiplexer.type + ': ' + (a.multiplexer.target || a.multiplexer.session || ''))}">${escHtml(a.multiplexer.type)}</span>`
+        ? `<span class="app-badge app-badge-mux" title="${escAttr(a.multiplexer.type + ': ' + muxTarget)}">${escHtml(muxSessionName)}</span>`
         : '';
 
       return `<div class="agent-card" style="cursor:pointer" onclick="window.openAgentMessages('${escAttr(a.pid)}','${escAttr(a.agentId)}','${escAttr(a.agentName)}','${escAttr(a.cwd||'')}')" title="Click to view conversation">
@@ -362,7 +364,7 @@ export function switchDrawerView(view) {
     fetchAndRenderTerminal(drawerCurrentPid);
     terminalRefreshTimer = setInterval(() => fetchAndRenderTerminal(drawerCurrentPid), 2000);
   } else if (view === 'context') {
-    ctx.style.display = 'block';
+    ctx.style.display = 'flex';
     if (metaBar) metaBar.style.display = 'none';
     clearInterval(promptPollTimer);
     clearInterval(messagesPollTimer);
@@ -468,12 +470,28 @@ async function fetchAndRenderContext(pid) {
     const data = await api('GET', `/api/agents/${pid}/context`);
     const { sections, agentId, cwd } = data;
 
+    let html = '';
+
+    // Tmux attach command at the top
+    const mux = window._agentMux?.[pid];
+    if (mux && mux.type === 'tmux') {
+      const cmd = `tmux attach -t ${mux.target}`;
+      html += `<div class="ctx-connect-bar">
+        <code class="ctx-connect-cmd" title="Click to copy" onclick="navigator.clipboard.writeText('${escAttr(cmd)}');this.classList.add('copied');setTimeout(()=>this.classList.remove('copied'),1200)">${escHtml(cmd)}</code>
+      </div>`;
+    } else if (mux && mux.type === 'screen') {
+      const cmd = `screen -r ${mux.session}`;
+      html += `<div class="ctx-connect-bar">
+        <code class="ctx-connect-cmd" title="Click to copy" onclick="navigator.clipboard.writeText('${escAttr(cmd)}');this.classList.add('copied');setTimeout(()=>this.classList.remove('copied'),1200)">${escHtml(cmd)}</code>
+      </div>`;
+    }
+
     if (!sections || !sections.length) {
-      container.innerHTML = `<div class="drawer-empty">No configuration or context data found for this agent.</div>`;
+      container.innerHTML = html + `<div class="drawer-empty">No configuration or context data found for this agent.</div>`;
       return;
     }
 
-    container.innerHTML = sections.map(s => renderContextSection(s)).join('');
+    container.innerHTML = html + sections.map(s => renderContextSection(s)).join('');
   } catch (err) {
     container.innerHTML = `<div class="drawer-empty" style="color:var(--danger)">${escHtml(err.message)}</div>`;
   }
@@ -483,21 +501,40 @@ function renderContextSection(section) {
   const scopeBadge = `<span class="ctx-scope ctx-scope-${section.scope}">${section.scope}</span>`;
   const icon = contextIcon(section.icon);
 
-  // MCP servers section
+  // Active MCP servers section
   if (section.servers) {
     const rows = section.servers.map(s => {
       const sBadge = `<span class="ctx-scope ctx-scope-${s.scope}">${s.scope}</span>`;
       return `<div class="ctx-server-row">
         <span class="ctx-server-name">${escHtml(s.name)}</span>
         <span class="ctx-server-type">${escHtml(s.type)}</span>
-        <span class="ctx-server-plugin">${escHtml(s.plugin)}</span>
+        <span class="ctx-server-source">${escHtml(s.source || '')}</span>
         ${sBadge}
       </div>`;
     }).join('');
     return `<div class="ctx-section">
-      <div class="ctx-section-header">${icon}<span class="ctx-section-title">${escHtml(section.title)}</span>${scopeBadge}</div>
+      <div class="ctx-section-header">${icon}<span class="ctx-section-title">${escHtml(section.title)}</span><span class="ctx-active-count">${section.servers.length}</span>${scopeBadge}</div>
       <div class="ctx-servers">${rows}</div>
     </div>`;
+  }
+
+  // Marketplace plugins section
+  if (section.plugins) {
+    const rows = section.plugins.map(p => {
+      const statusCls = p.active ? 'ctx-plugin-active' : '';
+      const statusLabel = p.active ? 'active' : p.hasMcp ? 'available' : 'skill';
+      const typeLabel = p.builtin ? 'builtin' : 'external';
+      return `<div class="ctx-plugin-row ${statusCls}">
+        <span class="ctx-plugin-name">${escHtml(p.name)}</span>
+        ${p.description ? `<span class="ctx-plugin-desc">${escHtml(p.description)}</span>` : ''}
+        <span class="ctx-plugin-badge ctx-plugin-badge-${statusLabel}">${statusLabel}</span>
+        <span class="ctx-plugin-type">${typeLabel}</span>
+      </div>`;
+    }).join('');
+    return `<details class="ctx-section">
+      <summary class="ctx-section-header" style="cursor:pointer">${icon}<span class="ctx-section-title">${escHtml(section.title)}</span><span class="ctx-active-count">${section.plugins.length}</span>${scopeBadge}</summary>
+      <div class="ctx-plugins">${rows}</div>
+    </details>`;
   }
 
   // Memory section

@@ -17,10 +17,22 @@
         <span>SSH Manager</span>
       </div>
       <ul class="nav-list">
-        <li><a href="#" class="nav-item active" data-tab="agents">
-          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 2a4 4 0 0 1 4 4v1h1a2 2 0 0 1 2 2v2a2 2 0 0 1-2 2h-1v1a4 4 0 0 1-8 0v-1H7a2 2 0 0 1-2-2V9a2 2 0 0 1 2-2h1V6a4 4 0 0 1 4-4z"/><circle cx="9" cy="10" r="1"/><circle cx="15" cy="10" r="1"/></svg>
-          AI Agents
-        </a></li>
+        <li class="nav-section">
+          <a href="#" class="nav-item active" data-tab="agents">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 2a4 4 0 0 1 4 4v1h1a2 2 0 0 1 2 2v2a2 2 0 0 1-2 2h-1v1a4 4 0 0 1-8 0v-1H7a2 2 0 0 1-2-2V9a2 2 0 0 1 2-2h1V6a4 4 0 0 1 4-4z"/><circle cx="9" cy="10" r="1"/><circle cx="15" cy="10" r="1"/></svg>
+            AI Agents
+          </a>
+          <ul class="nav-sublist">
+            <li><a href="#" class="nav-item nav-subitem" data-tab="todo">
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 11l3 3L22 4"/><path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"/></svg>
+              Todo
+            </a></li>
+            <li><a href="#" class="nav-item nav-subitem" data-tab="kanban">
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="4" width="5" height="16" rx="1"/><rect x="10" y="4" width="5" height="10" rx="1"/><rect x="17" y="4" width="4" height="13" rx="1"/></svg>
+              Kanban
+            </a></li>
+          </ul>
+        </li>
         <li><a href="#" class="nav-item" data-tab="hosts">
           <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><path d="M2 12h20M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"/></svg>
           SSH Hosts
@@ -122,6 +134,53 @@
         <div id="agents-list" class="agents-grid"></div>
       </div>
 
+      <!-- AI Agents Todo Tab -->
+      <div id="tab-todo" class="tab-content">
+        <div class="page-header">
+          <div>
+            <h1>AI Agents Todo</h1>
+            <p class="subtitle">A simple local todo list stored in your browser</p>
+          </div>
+        </div>
+
+        <div class="todo-shell">
+          <form class="todo-compose" onsubmit="addTodo(event)">
+            <input type="text" id="todo-input" class="todo-input" placeholder="Add a task for later..." maxlength="160" onpaste="handleTodoPaste(event)" />
+            <select id="todo-group-select" class="todo-group-select"></select>
+            <button type="submit" class="btn btn-primary">Add Todo</button>
+          </form>
+
+          <div class="todo-toolbar">
+            <div id="todo-count" class="todo-count"></div>
+            <div class="todo-actions">
+              <button class="btn btn-ghost btn-sm" data-filter="all" onclick="setTodoFilter('all')">All</button>
+              <button class="btn btn-ghost btn-sm" data-filter="open" onclick="setTodoFilter('open')">Open</button>
+              <button class="btn btn-ghost btn-sm" data-filter="done" onclick="setTodoFilter('done')">Done</button>
+              <button class="btn btn-ghost btn-sm" onclick="clearCompletedTodos()">Clear Completed</button>
+            </div>
+          </div>
+
+          <form class="todo-group-compose" onsubmit="addTodoGroup(event)">
+            <input type="text" id="todo-group-input" class="todo-group-input" placeholder="Create a group..." maxlength="60" />
+            <button type="submit" class="btn btn-ghost btn-sm">Add Group</button>
+          </form>
+
+          <div id="todo-list" class="todo-list"></div>
+        </div>
+      </div>
+
+      <!-- AI Agents Kanban Tab -->
+      <div id="tab-kanban" class="tab-content">
+        <div class="page-header">
+          <div>
+            <h1>AI Agents Kanban</h1>
+            <p class="subtitle">The same todos arranged by status</p>
+          </div>
+        </div>
+
+        <div id="kanban-board" class="kanban-board"></div>
+      </div>
+
       <!-- Sessions Tab -->
       <div id="tab-sessions" class="tab-content">
         <div class="page-header">
@@ -217,6 +276,32 @@
         </div>
       </div>
     </main>
+  </div>
+
+  <!-- Todo Bulk Paste Modal -->
+  <div id="todo-bulk-modal" class="modal-overlay" style="display:none">
+    <div class="modal">
+      <div class="modal-header">
+        <h2>Confirm Bulk Add</h2>
+        <button class="modal-close" onclick="closeModal('todo-bulk-modal')">
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+        </button>
+      </div>
+      <form onsubmit="confirmBulkAddTodos(event)">
+        <div class="todo-bulk-head">
+          <p class="text-muted">Select the tasks you want to create from the pasted text.</p>
+          <label class="todo-bulk-toggle">
+            <input type="checkbox" id="todo-bulk-select-all" checked onchange="toggleAllBulkTodos(event)" />
+            Select all
+          </label>
+        </div>
+        <div id="todo-bulk-list" class="todo-bulk-list"></div>
+        <div class="form-actions">
+          <button type="button" class="btn btn-ghost" onclick="closeModal('todo-bulk-modal')">Cancel</button>
+          <button type="submit" class="btn btn-primary">Add Selected</button>
+        </div>
+      </form>
+    </div>
   </div>
 
   <!-- Host Modal -->

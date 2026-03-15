@@ -334,8 +334,46 @@ function getClaudeContext(cwd) {
     });
   }
 
-  // MCP Servers (plugins)
-  const mcpServers = [];
+  // Active MCP Servers — actually configured and usable
+  const activeServers = [];
+
+  // 1. OAuth-connected servers (claude.ai integrations)
+  const mcpAuth = readJsonSafe(path.join(home, '.claude', 'mcp-needs-auth-cache.json'));
+  if (mcpAuth) {
+    for (const name of Object.keys(mcpAuth)) {
+      activeServers.push({ name, type: 'oauth', source: 'claude.ai', scope: 'global' });
+    }
+  }
+
+  // 2. Project-level .mcp.json (configured for this project)
+  if (cwd) {
+    const projectMcp = readJsonSafe(path.join(cwd, '.mcp.json'));
+    if (projectMcp) {
+      for (const [name, conf] of Object.entries(projectMcp)) {
+        activeServers.push({ name, type: conf.type || '—', source: '.mcp.json', scope: 'project' });
+      }
+    }
+  }
+
+  // 3. Global .mcp.json (user-configured globally)
+  const globalMcp = readJsonSafe(path.join(home, '.claude', '.mcp.json'));
+  if (globalMcp) {
+    for (const [name, conf] of Object.entries(globalMcp)) {
+      activeServers.push({ name, type: conf.type || '—', source: '~/.claude/.mcp.json', scope: 'global' });
+    }
+  }
+
+  if (activeServers.length) {
+    sections.push({
+      title: 'Active MCP Servers',
+      scope: activeServers.some(s => s.scope === 'project') ? 'mixed' : 'global',
+      icon: 'plug',
+      servers: activeServers,
+    });
+  }
+
+  // Available marketplace plugins (downloaded, not necessarily active)
+  const availablePlugins = [];
   const pluginsDir = path.join(home, '.claude', 'plugins', 'marketplaces');
   try {
     const marketplaces = fs.readdirSync(pluginsDir);
@@ -344,42 +382,42 @@ function getClaudeContext(cwd) {
       if (!fs.existsSync(extDir)) continue;
       for (const plugin of fs.readdirSync(extDir)) {
         const mcpFile = path.join(extDir, plugin, '.mcp.json');
+        const pluginMeta = readJsonSafe(path.join(extDir, plugin, '.claude-plugin', 'plugin.json'));
         const mcp = readJsonSafe(mcpFile);
-        if (mcp) {
-          for (const [name, conf] of Object.entries(mcp)) {
-            mcpServers.push({ name, type: conf.type || '—', plugin, scope: 'global' });
-          }
-        }
+        const isActive = activeServers.some(s => s.name === plugin || s.source === plugin);
+        availablePlugins.push({
+          name: pluginMeta?.name || plugin,
+          description: pluginMeta?.description || '',
+          hasMcp: !!mcp,
+          active: isActive,
+        });
       }
     }
   } catch {}
 
-  // Project-level .mcp.json
-  if (cwd) {
-    const projectMcp = readJsonSafe(path.join(cwd, '.mcp.json'));
-    if (projectMcp) {
-      for (const [name, conf] of Object.entries(projectMcp)) {
-        mcpServers.push({ name, type: conf.type || '—', plugin: '.mcp.json', scope: 'project' });
+  // Also check built-in plugins (non-external)
+  const builtinDir = path.join(pluginsDir, 'claude-plugins-official', 'plugins');
+  try {
+    for (const plugin of fs.readdirSync(builtinDir)) {
+      const pluginMeta = readJsonSafe(path.join(builtinDir, plugin, '.claude-plugin', 'plugin.json'));
+      if (pluginMeta) {
+        availablePlugins.push({
+          name: pluginMeta.name || plugin,
+          description: pluginMeta.description || '',
+          hasMcp: false,
+          active: false,
+          builtin: true,
+        });
       }
     }
-  }
+  } catch {}
 
-  // MCP auth needs
-  const mcpAuth = readJsonSafe(path.join(home, '.claude', 'mcp-needs-auth-cache.json'));
-  if (mcpAuth) {
-    for (const name of Object.keys(mcpAuth)) {
-      if (!mcpServers.find(s => s.name === name)) {
-        mcpServers.push({ name, type: 'http', plugin: 'claude.ai', scope: 'global' });
-      }
-    }
-  }
-
-  if (mcpServers.length) {
+  if (availablePlugins.length) {
     sections.push({
-      title: 'MCP Servers',
-      scope: 'mixed',
-      icon: 'plug',
-      servers: mcpServers,
+      title: 'Marketplace Plugins',
+      scope: 'global',
+      icon: 'block',
+      plugins: availablePlugins,
     });
   }
 

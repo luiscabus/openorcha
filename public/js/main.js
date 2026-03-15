@@ -36,6 +36,33 @@ import {
   clickPromptOption,
   endDrawerSession,
 } from './tabs/agents.js';
+import {
+  loadTodos,
+  loadKanban,
+  addTodo,
+  addTodoGroup,
+  handleTodoPaste,
+  setTodoStatus,
+  toggleTodo,
+  startTodoEdit,
+  cancelTodoEdit,
+  saveTodoEdit,
+  deleteTodo,
+  deleteTodoGroup,
+  clearCompletedTodos,
+  confirmBulkAddTodos,
+  toggleAllBulkTodos,
+  syncBulkTodoSelection,
+  startTodoDrag,
+  endTodoDrag,
+  handleTodoGroupDragOver,
+  handleTodoGroupDragLeave,
+  handleTodoGroupDrop,
+  handleKanbanStatusDragOver,
+  handleKanbanStatusDragLeave,
+  handleKanbanStatusDrop,
+  setTodoFilter,
+} from './tabs/todo.js';
 
 // ─── Expose all functions referenced by HTML onclick handlers ─────────────────
 
@@ -96,6 +123,31 @@ window.sendKey = sendKey;
 window.clickPromptOption = clickPromptOption;
 window.endDrawerSession = endDrawerSession;
 
+// Todo
+window.addTodo = addTodo;
+window.addTodoGroup = addTodoGroup;
+window.handleTodoPaste = handleTodoPaste;
+window.setTodoStatus = setTodoStatus;
+window.toggleTodo = toggleTodo;
+window.startTodoEdit = startTodoEdit;
+window.cancelTodoEdit = cancelTodoEdit;
+window.saveTodoEdit = saveTodoEdit;
+window.deleteTodo = deleteTodo;
+window.deleteTodoGroup = deleteTodoGroup;
+window.clearCompletedTodos = clearCompletedTodos;
+window.confirmBulkAddTodos = confirmBulkAddTodos;
+window.toggleAllBulkTodos = toggleAllBulkTodos;
+window.syncBulkTodoSelection = syncBulkTodoSelection;
+window.startTodoDrag = startTodoDrag;
+window.endTodoDrag = endTodoDrag;
+window.handleTodoGroupDragOver = handleTodoGroupDragOver;
+window.handleTodoGroupDragLeave = handleTodoGroupDragLeave;
+window.handleTodoGroupDrop = handleTodoGroupDrop;
+window.handleKanbanStatusDragOver = handleKanbanStatusDragOver;
+window.handleKanbanStatusDragLeave = handleKanbanStatusDragLeave;
+window.handleKanbanStatusDrop = handleKanbanStatusDrop;
+window.setTodoFilter = setTodoFilter;
+
 // ─── Navigation ───────────────────────────────────────────────────────────────
 
 function loadTab(tab) {
@@ -110,6 +162,16 @@ function loadTab(tab) {
   else if (tab === 'raw-config') loadRawConfig();
   else if (tab === 'sessions') loadSessions();
   else if (tab === 'agents') loadAgents();
+  else if (tab === 'todo') loadTodos();
+  else if (tab === 'kanban') loadKanban();
+}
+
+function syncNavState(activeLink) {
+  document.querySelectorAll('.nav-item').forEach(link => link.classList.remove('active'));
+  document.querySelectorAll('.nav-section').forEach(section => section.classList.remove('active'));
+  activeLink.classList.add('active');
+  const section = activeLink.closest('.nav-section');
+  if (section) section.classList.add('active');
 }
 
 function initNav() {
@@ -117,9 +179,8 @@ function initNav() {
     link.addEventListener('click', e => {
       e.preventDefault();
       const tab = link.dataset.tab;
-      document.querySelectorAll('.nav-item').forEach(l => l.classList.remove('active'));
       document.querySelectorAll('.tab-content').forEach(t => t.classList.remove('active'));
-      link.classList.add('active');
+      syncNavState(link);
       document.getElementById(`tab-${tab}`).classList.add('active');
       loadTab(tab);
     });
@@ -135,4 +196,5 @@ function initNav() {
 
 // ─── Init ─────────────────────────────────────────────────────────────────────
 initNav();
+syncNavState(document.querySelector('.nav-item.active'));
 loadAgents();
