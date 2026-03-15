@@ -179,6 +179,20 @@ export async function launchAgent(e) {
   }
 }
 
+export async function endDrawerSession() {
+  if (!drawerCurrentPid) return;
+  const name = document.getElementById('drawer-agent-name').textContent;
+  if (!window.confirm(`Kill ${name} (PID ${drawerCurrentPid})?`)) return;
+  try {
+    await api('DELETE', `/api/agents/${drawerCurrentPid}`);
+    toast(`${name} ended`);
+    closeMessagesDrawer();
+    setTimeout(loadAgents, 1500);
+  } catch (err) {
+    toast(err.message, 'error');
+  }
+}
+
 export async function killAgent(pid, name) {
   if (!window.confirm(`Kill ${name} (PID ${pid})?`)) return;
   try {
@@ -197,6 +211,7 @@ let drawerView = 'messages'; // 'messages' | 'terminal'
 let drawerHasMux = false;
 let terminalRefreshTimer = null;
 let promptPollTimer = null;
+let messagesPollTimer = null;
 
 function updateDrawerSendVisibility() {
   const inTerminal = drawerView === 'terminal';
@@ -227,11 +242,14 @@ export async function openAgentMessages(pid, agentId, agentName, cwd) {
   // Always start on messages view
   switchDrawerView('messages');
 
-  // Poll for permission prompts in messages view when tmux is available
+  // Poll messages + prompts when in messages view with a multiplexer
   clearInterval(promptPollTimer);
+  clearInterval(messagesPollTimer);
   promptPollTimer = null;
+  messagesPollTimer = null;
   if (drawerHasMux) {
-    promptPollTimer = setInterval(() => checkForPrompt(drawerCurrentPid), 2500);
+    promptPollTimer  = setInterval(() => checkForPrompt(drawerCurrentPid), 2500);
+    messagesPollTimer = setInterval(() => fetchAndRenderMessages(drawerCurrentPid), 5000);
   }
 
   document.getElementById('messages-drawer').style.display = 'flex';
@@ -303,20 +321,24 @@ export function switchDrawerView(view) {
     term.style.display = 'none';
     refreshBtn.onclick = () => refreshDrawer();
     sendInput.placeholder = 'Type a message and press Enter…';
-    // Restart prompt polling
+    // Restart prompt + messages polling
     clearInterval(promptPollTimer);
+    clearInterval(messagesPollTimer);
     if (drawerHasMux && drawerCurrentPid) {
       checkForPrompt(drawerCurrentPid);
-      promptPollTimer = setInterval(() => checkForPrompt(drawerCurrentPid), 2500);
+      promptPollTimer   = setInterval(() => checkForPrompt(drawerCurrentPid), 2500);
+      messagesPollTimer = setInterval(() => fetchAndRenderMessages(drawerCurrentPid), 5000);
     }
   } else {
     msgs.style.display = 'none';
     term.style.display = 'block';
     refreshBtn.onclick = () => fetchAndRenderTerminal(drawerCurrentPid);
     sendInput.placeholder = 'Type a response and press Enter (e.g. y, 1, 2)…';
-    // Stop prompt polling — terminal view shows it live anyway
+    // Stop message/prompt polling — terminal view shows everything live
     clearInterval(promptPollTimer);
+    clearInterval(messagesPollTimer);
     promptPollTimer = null;
+    messagesPollTimer = null;
     document.getElementById('drawer-prompt').style.display = 'none';
     fetchAndRenderTerminal(drawerCurrentPid);
     // Auto-refresh terminal every 2s to catch permission prompts
@@ -327,10 +349,12 @@ export function switchDrawerView(view) {
 async function fetchAndRenderTerminal(pid) {
   if (!pid) return;
   const el = document.getElementById('drawer-terminal');
+  // Only auto-scroll if already at (or near) the bottom
+  const atBottom = el.scrollHeight - el.scrollTop - el.clientHeight < 40;
   try {
     const { content } = await api('GET', `/api/agents/${pid}/terminal`);
     el.textContent = content;
-    el.scrollTop = el.scrollHeight;
+    if (atBottom) el.scrollTop = el.scrollHeight;
   } catch (err) {
     el.textContent = err.message;
   }
@@ -338,6 +362,7 @@ async function fetchAndRenderTerminal(pid) {
 
 export async function fetchAndRenderMessages(pid) {
   const container = document.getElementById('drawer-messages');
+  const atBottom = container.scrollHeight - container.scrollTop - container.clientHeight < 60;
   try {
     const data = await api('GET', `/api/agents/${pid}/messages`);
     const { messages, total, note, sessionMeta } = data;
@@ -355,7 +380,7 @@ export async function fetchAndRenderMessages(pid) {
     }
 
     container.innerHTML = messages.map(m => renderMessage(m)).join('');
-    container.scrollTop = container.scrollHeight;
+    if (atBottom) container.scrollTop = container.scrollHeight;
   } catch (err) {
     container.innerHTML = `<div class="drawer-empty" style="color:var(--danger)">${escHtml(err.message)}</div>`;
   }
@@ -406,9 +431,11 @@ export function closeMessagesDrawer() {
   document.getElementById('messages-drawer').style.display = 'none';
   drawerCurrentPid = null;
   clearInterval(terminalRefreshTimer);
-  terminalRefreshTimer = null;
   clearInterval(promptPollTimer);
+  clearInterval(messagesPollTimer);
+  terminalRefreshTimer = null;
   promptPollTimer = null;
+  messagesPollTimer = null;
   document.getElementById('drawer-prompt').style.display = 'none';
 }
 

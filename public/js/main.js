@@ -34,6 +34,7 @@ import {
   switchDrawerView,
   sendKey,
   clickPromptOption,
+  endDrawerSession,
 } from './tabs/agents.js';
 
 // ─── Expose all functions referenced by HTML onclick handlers ─────────────────
@@ -93,6 +94,7 @@ window.launchAgent = launchAgent;
 window.switchDrawerView = switchDrawerView;
 window.sendKey = sendKey;
 window.clickPromptOption = clickPromptOption;
+window.endDrawerSession = endDrawerSession;
 
 // ─── Navigation ───────────────────────────────────────────────────────────────
 
