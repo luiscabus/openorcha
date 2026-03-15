@@ -139,18 +139,20 @@ export function openLaunchAgentModal() {
   document.getElementById('launch-agent-id').value = 'claude';
   document.getElementById('launch-agent-cwd').value = '';
   document.getElementById('launch-agent-session').value = '';
+  document.getElementById('launch-skip-permissions').checked = false;
   document.getElementById('launch-agent-modal').style.display = 'flex';
   setTimeout(() => document.getElementById('launch-agent-cwd').focus(), 50);
 }
 
 export async function launchAgent(e) {
   e.preventDefault();
-  const agentId     = document.getElementById('launch-agent-id').value;
-  const cwd         = document.getElementById('launch-agent-cwd').value.trim();
-  const sessionName = document.getElementById('launch-agent-session').value.trim();
+  const agentId         = document.getElementById('launch-agent-id').value;
+  const cwd             = document.getElementById('launch-agent-cwd').value.trim();
+  const sessionName     = document.getElementById('launch-agent-session').value.trim();
+  const skipPermissions = document.getElementById('launch-skip-permissions').checked;
 
   try {
-    const { sessionName: name } = await api('POST', '/api/agents/launch', { agentId, cwd, sessionName });
+    const { sessionName: name } = await api('POST', '/api/agents/launch', { agentId, cwd, sessionName, skipPermissions });
     closeModal('launch-agent-modal');
     toast(`Launched in tmux session "${name}"`);
     setTimeout(loadAgents, 3000);
@@ -256,10 +258,12 @@ export async function fetchAndRenderMessages(pid) {
   const container = document.getElementById('drawer-messages');
   try {
     const data = await api('GET', `/api/agents/${pid}/messages`);
-    const { messages, total, note } = data;
+    const { messages, total, note, sessionMeta } = data;
 
     document.getElementById('drawer-msg-count').textContent =
       total > messages.length ? `last ${messages.length} of ${total}` : `${messages.length} messages`;
+
+    renderSessionMeta(sessionMeta);
 
     if (!messages.length) {
       container.innerHTML = `<div class="drawer-empty">
@@ -273,6 +277,43 @@ export async function fetchAndRenderMessages(pid) {
   } catch (err) {
     container.innerHTML = `<div class="drawer-empty" style="color:var(--danger)">${escHtml(err.message)}</div>`;
   }
+}
+
+function renderSessionMeta(meta) {
+  const bar = document.getElementById('drawer-session-meta');
+  if (!bar) return;
+  if (!meta || (!meta.model && !meta.totalInputTokens && !meta.pid)) {
+    bar.style.display = 'none';
+    return;
+  }
+  bar.style.display = 'flex';
+
+  const pills = [];
+  if (meta.model) {
+    const short = meta.model.replace('claude-', '').replace(/-\d{8}$/, '');
+    pills.push(`<span class="meta-pill meta-pill-model">${escHtml(short)}</span>`);
+  }
+  if (meta.totalInputTokens || meta.totalOutputTokens) {
+    const inK = (meta.totalInputTokens / 1000).toFixed(1);
+    const outK = (meta.totalOutputTokens / 1000).toFixed(1);
+    pills.push(`<span class="meta-pill" title="Input / Output tokens">${inK}k in &middot; ${outK}k out</span>`);
+  }
+  if (meta.totalCacheRead) {
+    pills.push(`<span class="meta-pill" title="Cache read tokens">${(meta.totalCacheRead / 1000).toFixed(1)}k cached</span>`);
+  }
+  if (meta.costUSD != null && meta.costUSD > 0) {
+    pills.push(`<span class="meta-pill meta-pill-cost" title="Estimated cost">$${meta.costUSD < 0.01 ? meta.costUSD.toFixed(4) : meta.costUSD.toFixed(2)}</span>`);
+  }
+  if (meta.etime) {
+    pills.push(`<span class="meta-pill" title="Runtime">${escHtml(formatEtime(meta.etime))}</span>`);
+  }
+  if (meta.cpu != null) {
+    pills.push(`<span class="meta-pill" title="CPU / MEM">CPU ${meta.cpu}% &middot; MEM ${meta.mem}%</span>`);
+  }
+  if (meta.pid) {
+    pills.push(`<span class="meta-pill" title="Process ID">PID ${escHtml(meta.pid)}</span>`);
+  }
+  bar.innerHTML = pills.join('');
 }
 
 export async function refreshDrawer() {
@@ -327,21 +368,95 @@ function renderMessage(msg) {
   const isUser = msg.role === 'user';
   const timeStr = msg.timestamp ? new Date(msg.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : '';
 
-  const toolsHtml = (msg.tools || []).map(t => {
-    const icon = toolIcon(t.name);
-    return `<span class="msg-tool-pill">${icon}${escHtml(t.name)}</span>`;
-  }).join('');
-
+  const toolsHtml = (msg.tools || []).map(t => renderTool(t)).join('');
   const bodyText = simpleMarkdown(msg.text || '');
+
+  // Usage badge for assistant messages
+  let usageHtml = '';
+  if (msg.usage) {
+    const parts = [];
+    if (msg.usage.inputTokens) parts.push(`${msg.usage.inputTokens.toLocaleString()} in`);
+    if (msg.usage.outputTokens) parts.push(`${msg.usage.outputTokens.toLocaleString()} out`);
+    if (parts.length) {
+      usageHtml = `<span class="msg-usage">${parts.join(' · ')}</span>`;
+    }
+  }
+  let modelHtml = '';
+  if (msg.model) {
+    const short = msg.model.replace('claude-', '').replace(/-\d{8}$/, '');
+    modelHtml = `<span class="msg-model">${escHtml(short)}</span>`;
+  }
 
   return `<div class="msg-entry ${isUser ? 'user' : 'assistant'}">
     <div class="msg-role-row">
       <span class="msg-role-label ${isUser ? 'msg-role-user' : 'msg-role-assistant'}">${isUser ? 'You' : 'Agent'}</span>
+      ${modelHtml}
       ${timeStr ? `<span class="msg-timestamp">${timeStr}</span>` : ''}
+      ${usageHtml}
     </div>
     ${bodyText ? `<div class="msg-body">${bodyText}</div>` : ''}
-    ${toolsHtml ? `<div class="msg-tools">${toolsHtml}</div>` : ''}
+    ${toolsHtml ? `<div class="msg-tools-list">${toolsHtml}</div>` : ''}
   </div>`;
+}
+
+function renderTool(t) {
+  const icon = toolIcon(t.name);
+  const detail = toolDetailText(t);
+  const hasResult = t.result != null && t.result !== '';
+  const hasError = t.resultError != null && t.resultError !== '';
+
+  let resultHtml = '';
+  if (hasResult || hasError) {
+    const resultContent = truncateResult(t.result || '');
+    const errorContent = hasError ? truncateResult(t.resultError) : '';
+    resultHtml = `<details class="tool-result-details">
+      <summary class="tool-result-summary">${hasError ? 'Output + Error' : 'Output'} (${countLines(t.result || '')} lines)</summary>
+      <pre class="tool-result-content">${escHtml(resultContent)}</pre>
+      ${errorContent ? `<pre class="tool-result-error">${escHtml(errorContent)}</pre>` : ''}
+    </details>`;
+  }
+
+  return `<div class="msg-tool-block">
+    <div class="msg-tool-header">
+      <span class="msg-tool-pill">${icon}${escHtml(t.name)}</span>
+      ${detail ? `<span class="msg-tool-detail" title="${escAttr(detail)}">${escHtml(detail)}</span>` : ''}
+    </div>
+    ${resultHtml}
+  </div>`;
+}
+
+function toolDetailText(t) {
+  if (!t.input) return '';
+  const inp = t.input;
+  switch (t.name) {
+    case 'Read':     return inp.file_path ? tildefy(inp.file_path) : '';
+    case 'Write':    return inp.file_path ? tildefy(inp.file_path) : '';
+    case 'Edit':     return inp.file_path ? tildefy(inp.file_path) : '';
+    case 'Bash':     return inp.command || inp.description || '';
+    case 'Glob':     return inp.pattern || '';
+    case 'Grep':     return inp.pattern ? `/${inp.pattern}/` + (inp.glob ? ` in ${inp.glob}` : '') : '';
+    case 'Agent':    return inp.description || inp.prompt?.slice(0, 60) || '';
+    default:
+      // Generic: show first string value
+      for (const v of Object.values(inp)) {
+        if (typeof v === 'string' && v.length > 0) return v.length > 80 ? v.slice(0, 77) + '…' : v;
+      }
+      return '';
+  }
+}
+
+function truncateResult(text, maxLines = 30) {
+  if (!text) return '';
+  if (typeof text !== 'string') text = JSON.stringify(text, null, 2);
+  const lines = text.split('\n');
+  if (lines.length <= maxLines) return text;
+  return lines.slice(0, maxLines).join('\n') + `\n… (${lines.length - maxLines} more lines)`;
+}
+
+function countLines(text) {
+  if (!text) return 0;
+  if (typeof text !== 'string') text = JSON.stringify(text, null, 2);
+  return text.split('\n').length;
 }
 
 function toolIcon(name) {

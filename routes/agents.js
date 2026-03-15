@@ -168,30 +168,49 @@ router.get('/:pid/messages', (req, res) => {
     const cwd = cwdMap[pid];
     if (!cwd) return res.json({ messages: [], cwd: null, note: 'Could not determine working directory' });
 
-    let messages = null;
+    let parsed = null;
     let sessionFile = null;
 
     if (def.id === 'claude') {
       sessionFile = findClaudeSessionFile(cwd, pid);
-      if (sessionFile) messages = parseClaudeSession(sessionFile);
+      if (sessionFile) parsed = parseClaudeSession(sessionFile);
     } else if (def.id === 'codex') {
       sessionFile = findCodexSessionFile(cwd, psOut);
-      if (sessionFile) messages = parseCodexSession(sessionFile);
+      if (sessionFile) {
+        const msgs = parseCodexSession(sessionFile);
+        parsed = { messages: msgs, sessionMeta: {} };
+      }
     } else if (def.id === 'opencode') {
-      messages = parseOpenCodeSession(cwd);
+      const msgs = parseOpenCodeSession(cwd);
+      parsed = msgs !== null ? { messages: msgs, sessionMeta: {} } : null;
     }
 
-    if (messages === null) {
+    if (parsed === null) {
       return res.json({ messages: [], cwd, note: 'No session data found' });
     }
+
+    // Get process info for session metadata
+    let cpu = null, mem = null, etime = null;
+    try {
+      const info = execSync(`ps -p ${pid} -o pcpu=,pmem=,etime= 2>/dev/null`, { encoding: 'utf8' }).trim();
+      const m = info.match(/^\s*([\d.]+)\s+([\d.]+)\s+(\S+)/);
+      if (m) { cpu = parseFloat(m[1]); mem = parseFloat(m[2]); etime = m[3]; }
+    } catch {}
 
     res.json({
       agentId: def.id,
       agentName: def.name,
       cwd,
       sessionFile: sessionFile ? path.basename(sessionFile) : null,
-      messages: messages.slice(-150),
-      total: messages.length,
+      messages: parsed.messages.slice(-150),
+      total: parsed.messages.length,
+      sessionMeta: {
+        ...parsed.sessionMeta,
+        pid,
+        cpu,
+        mem,
+        etime,
+      },
     });
   } catch (e) {
     res.status(500).json({ error: e.message });
@@ -206,10 +225,14 @@ const AGENT_COMMANDS = {
   aider:    'aider',
 };
 
+const AGENT_SKIP_PERMISSIONS_FLAG = {
+  claude: '--dangerously-skip-permissions',
+};
+
 router.post('/launch', (req, res) => {
   try {
-    let { agentId, cwd, sessionName } = req.body;
-    const cmd = AGENT_COMMANDS[agentId];
+    let { agentId, cwd, sessionName, skipPermissions } = req.body;
+    let cmd = AGENT_COMMANDS[agentId];
     if (!cmd) return res.status(400).json({ error: `Unknown agent: ${agentId}` });
     if (!cwd || !cwd.trim()) return res.status(400).json({ error: 'Working directory is required' });
 
@@ -219,6 +242,10 @@ router.post('/launch', (req, res) => {
       sessionName = `${agentId}-${path.basename(cwd)}`;
     }
     sessionName = sessionName.trim().replace(/[^a-zA-Z0-9_.\-]/g, '-');
+
+    if (skipPermissions && AGENT_SKIP_PERMISSIONS_FLAG[agentId]) {
+      cmd = `${cmd} ${AGENT_SKIP_PERMISSIONS_FLAG[agentId]}`;
+    }
 
     // Use a login shell so the user's PATH (~/.zshrc, nvm, homebrew, etc.) is sourced
     const userShell = process.env.SHELL || '/bin/zsh';

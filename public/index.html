@@ -414,6 +414,12 @@
           <label>tmux Session Name <span style="color:var(--text3);font-weight:400">(optional — auto-generated if blank)</span></label>
           <input type="text" id="launch-agent-session" placeholder="claude-myapp" pattern="[\w.\-]+" title="Letters, numbers, dots, hyphens, underscores only" />
         </div>
+        <div class="form-group">
+          <label class="checkbox-label">
+            <input type="checkbox" id="launch-skip-permissions" />
+            Skip permission prompts <span style="color:var(--text3);font-weight:400">(--dangerously-skip-permissions)</span>
+          </label>
+        </div>
         <div class="form-actions">
           <button type="button" class="btn btn-ghost" onclick="closeModal('launch-agent-modal')">Cancel</button>
           <button type="submit" class="btn btn-primary">Launch</button>
@@ -447,6 +453,7 @@
           </button>
         </div>
       </div>
+      <div id="drawer-session-meta" class="drawer-session-meta" style="display:none"></div>
       <div id="drawer-messages" class="drawer-messages"></div>
       <div id="drawer-terminal" class="drawer-terminal" style="display:none"></div>
       <div id="drawer-quickkeys" class="drawer-quickkeys" style="display:none">
