@@ -61,6 +61,148 @@ function contextWindowSize(model) {
   return 200000;
 }
 
+// ─── Session History Dropdown ──────────────────────────────────────────────────
+
+let historyOpen = false;
+
+export async function toggleAgentHistory() {
+  const dropdown = document.getElementById('agent-history-dropdown');
+  if (historyOpen) {
+    dropdown.style.display = 'none';
+    historyOpen = false;
+    return;
+  }
+
+  historyOpen = true;
+  dropdown.style.display = 'block';
+  dropdown.innerHTML = '<div class="history-loading">Loading history…</div>';
+
+  try {
+    const { sessions } = await api('GET', '/api/agents/history?limit=30');
+    if (!sessions.length) {
+      dropdown.innerHTML = '<div class="history-empty">No previous sessions found</div>';
+      return;
+    }
+
+    // Group by project
+    const byProject = {};
+    for (const s of sessions) {
+      const key = s.project || 'unknown';
+      if (!byProject[key]) byProject[key] = { cwd: s.cwd, sessions: [] };
+      byProject[key].sessions.push(s);
+    }
+
+    // Cross-reference with running agents
+    const running = window._runningAgents || [];
+
+    let html = '<div class="history-header">Recent Sessions</div><div class="history-scroll">';
+    let projIdx = 0;
+
+    for (const [project, group] of Object.entries(byProject)) {
+      const latestAgo = formatTimeAgo(new Date(group.sessions[0].updatedAt));
+      const count = group.sessions.length;
+      const pid = `hist-proj-${projIdx++}`;
+      // Check if any session in this project is currently running
+      const projRunning = running.find(a => a.cwd === group.cwd);
+      const projBadge = projRunning
+        ? `<span class="history-badge history-badge-active">${projRunning.multiplexer ? 'interactive' : 'running'}</span>`
+        : '';
+
+      html += `<div class="history-project">
+        <div class="history-project-name" title="${escAttr(group.cwd)}" onclick="this.parentElement.classList.toggle('open')">
+          <svg class="history-chevron" width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"><polyline points="9 18 15 12 9 6"/></svg>
+          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/></svg>
+          <span class="history-project-label">${escHtml(project)}</span>
+          ${projBadge}
+          <span class="history-project-count">${count}</span>
+          <span class="history-project-ago">${escHtml(latestAgo)}</span>
+        </div>
+        <div class="history-project-items" id="${pid}">`;
+
+      for (const s of group.sessions) {
+        const meta = AGENT_META[s.agentId] || { label: '?', color: 'aider', accent: '#888' };
+        const date = new Date(s.updatedAt);
+        const ago = formatTimeAgo(date);
+        const model = s.model ? s.model.replace('claude-', '').replace(/-\d{8}$/, '') : '';
+        const preview = s.firstMessage.length > 80 ? s.firstMessage.slice(0, 80) + '…' : s.firstMessage;
+
+        // Check if this specific session is currently running
+        const match = running.find(a => a.agentId === s.agentId && a.cwd === s.cwd);
+        let badge = '';
+        if (match) {
+          badge = match.multiplexer
+            ? '<span class="history-badge history-badge-interactive">interactive</span>'
+            : '<span class="history-badge history-badge-running">running</span>';
+        }
+
+        const onclick = match
+          ? `window.historyOpenAgent('${escAttr(match.pid)}','${escAttr(match.agentId)}','${escAttr(match.agentName)}','${escAttr(match.cwd || '')}')`
+          : `window.launchFromHistory('${escAttr(s.agentId)}','${escAttr(s.cwd)}','${escAttr(s.id)}')`;
+
+        html += `<div class="history-item${match ? ' history-item-active' : ''}" onclick="${onclick}">
+          <div class="history-item-top">
+            <span class="history-agent-icon agent-icon-${s.agentId}">${meta.label}</span>
+            <span class="history-item-preview">${escHtml(preview)}</span>
+            ${badge}
+          </div>
+          <div class="history-item-meta">
+            ${model ? `<span class="history-item-model">${escHtml(model)}</span>` : ''}
+            <span class="history-item-size">${s.sizeMB} MB</span>
+            <span class="history-item-date">${escHtml(ago)}</span>
+          </div>
+        </div>`;
+      }
+
+      html += '</div></div>';
+    }
+
+    html += '</div>';
+    dropdown.innerHTML = html;
+  } catch (err) {
+    dropdown.innerHTML = `<div class="history-empty">Error loading history</div>`;
+  }
+}
+
+export function historyOpenAgent(pid, agentId, agentName, cwd) {
+  historyOpen = false;
+  document.getElementById('agent-history-dropdown').style.display = 'none';
+  openAgentMessages(pid, agentId, agentName, cwd);
+}
+
+export function launchFromHistory(agentId, cwd, sessionId) {
+  historyOpen = false;
+  document.getElementById('agent-history-dropdown').style.display = 'none';
+
+  // Pre-fill the launch modal with session data
+  document.getElementById('launch-agent-id').value = agentId;
+  document.getElementById('launch-agent-cwd').value = tildefy(cwd);
+  document.getElementById('launch-agent-session').value = '';
+  document.getElementById('launch-skip-permissions').checked = false;
+  launchSelectedSessionId = sessionId;
+  document.getElementById('launch-agent-modal').style.display = 'flex';
+
+  // Trigger session list fetch, then auto-select the right session
+  setTimeout(async () => {
+    await fetchLaunchSessions();
+    const list = document.getElementById('launch-sessions-list');
+    const target = list.querySelector(`[data-session-id="${sessionId}"]`);
+    if (target) {
+      selectLaunchSession(target, sessionId);
+    }
+  }, 100);
+}
+
+// Close history dropdown on outside click
+document.addEventListener('click', (e) => {
+  if (!historyOpen) return;
+  const dropdown = document.getElementById('agent-history-dropdown');
+  const btn = document.getElementById('history-btn');
+  if (!dropdown.contains(e.target) && !btn.contains(e.target)) {
+    dropdown.style.display = 'none';
+    historyOpen = false;
+  }
+});
+
 export async function loadAgents() {
   const list = document.getElementById('agents-list');
   const summary = document.getElementById('agents-summary');
@@ -94,8 +236,9 @@ export async function loadAgents() {
       return;
     }
 
-    // Store multiplexer info keyed by PID for use in the drawer
+    // Store agents data for use in drawer and history
     window._agentMux = {};
+    window._runningAgents = agents;
     for (const a of agents) window._agentMux[a.pid] = a.multiplexer || null;
 
     const interactive = agents.filter(a => a.multiplexer);

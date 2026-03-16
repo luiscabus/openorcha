@@ -32,6 +32,9 @@ import {
   openLaunchAgentModal,
   launchAgent,
   selectLaunchSession,
+  toggleAgentHistory,
+  historyOpenAgent,
+  launchFromHistory,
   switchDrawerView,
   sendKey,
   clickPromptOption,
@@ -120,6 +123,9 @@ window.sendAgentMessage = sendAgentMessage;
 window.openLaunchAgentModal = openLaunchAgentModal;
 window.launchAgent = launchAgent;
 window.selectLaunchSession = selectLaunchSession;
+window.toggleAgentHistory = toggleAgentHistory;
+window.historyOpenAgent = historyOpenAgent;
+window.launchFromHistory = launchFromHistory;
 window.switchDrawerView = switchDrawerView;
 window.sendKey = sendKey;
 window.clickPromptOption = clickPromptOption;

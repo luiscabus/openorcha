@@ -3,7 +3,7 @@ const path = require('path');
 const os = require('os');
 const fs = require('fs');
 const { execSync } = require('child_process');
-const { AGENT_DEFS, findClaudeSessionFile, parseClaudeSession, findCodexSessionFile, parseCodexSession, parseOpenCodeSession, listClaudeSessions, listCodexSessions } = require('../lib/agentParsers');
+const { AGENT_DEFS, findClaudeSessionFile, parseClaudeSession, findCodexSessionFile, parseCodexSession, parseOpenCodeSession, listClaudeSessions, listCodexSessions, listAllRecentSessions } = require('../lib/agentParsers');
 const { buildProcTable, findAncestorApp, getCwdMap } = require('../lib/processTree');
 
 const router = express.Router();
@@ -236,6 +236,16 @@ const AGENT_RESUME_FLAG = {
   claude: (sessionId) => `--resume ${sessionId}`,
   codex:  (sessionId) => `resume ${sessionId}`,
 };
+
+router.get('/history', (req, res) => {
+  try {
+    const limit = parseInt(req.query.limit) || 30;
+    const sessions = listAllRecentSessions(Math.min(limit, 100));
+    res.json({ sessions });
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
+});
 
 router.get('/sessions', (req, res) => {
   try {
