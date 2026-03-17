@@ -14,6 +14,10 @@ export const AGENT_META = {
   continue: { label: 'C', color: 'continue', accent: '#fc8181' },
 };
 
+const AGENT_INITIATIVES_KEY = 'ssh-manager.ai-agents.initiatives';
+
+let draggedAgentKey = null;
+
 export let agentsAutoRefreshTimer = null;
 
 export function toggleAgentAutoRefresh() {
@@ -59,6 +63,106 @@ function contextWindowSize(model) {
   if (m.includes('gpt-4')) return 128000;
   if (m.includes('o3') || m.includes('o4')) return 200000;
   return 200000;
+}
+
+function readInitiativesState() {
+  try {
+    const parsed = JSON.parse(window.localStorage.getItem(AGENT_INITIATIVES_KEY) || 'null');
+    if (parsed && Array.isArray(parsed.initiatives) && parsed.assignments && typeof parsed.assignments === 'object') {
+      return parsed;
+    }
+  } catch {}
+  return { initiatives: [], assignments: {} };
+}
+
+function persistInitiativesState(state) {
+  window.localStorage.setItem(AGENT_INITIATIVES_KEY, JSON.stringify(state));
+}
+
+function agentInitiativeKey(agent) {
+  const muxTarget = agent.multiplexer?.target || agent.multiplexer?.session || '';
+  return [agent.agentId, agent.cwd || '', muxTarget || agent.tty || agent.pid].join('::');
+}
+
+function loadInitiativesState() {
+  const state = readInitiativesState();
+  window._agentInitiatives = state;
+  return state;
+}
+
+function renderAgentLane(agent, initiativeName = '') {
+  const meta = AGENT_META[agent.agentId] || { label: '?', color: 'aider', accent: '#888' };
+  const termBadge = agent.terminalApp
+    ? `<span class="app-badge app-badge-${agent.terminalApp.toLowerCase()}">${escHtml(agent.terminalApp)}</span>`
+    : '';
+  const muxTarget = agent.multiplexer?.target || agent.multiplexer?.session || '';
+  const muxSessionName = muxTarget.split(':')[0] || agent.multiplexer?.type || '';
+  const muxBadge = agent.multiplexer
+    ? `<span class="app-badge app-badge-mux" title="${escAttr(agent.multiplexer.type + ': ' + muxTarget)}">${escHtml(muxSessionName)}</span>`
+    : '';
+  const laneBadge = initiativeName
+    ? `<span class="agent-lane-badge">${escHtml(initiativeName)}</span>`
+    : '';
+  const key = agentInitiativeKey(agent);
+
+  return `<div class="agent-card agent-card-draggable" draggable="true" ondragstart="window.startAgentInitiativeDrag(event, '${escAttr(key)}')" ondragend="window.endAgentInitiativeDrag()" style="cursor:pointer" onclick="window.openAgentMessages('${escAttr(agent.pid)}','${escAttr(agent.agentId)}','${escAttr(agent.agentName)}','${escAttr(agent.cwd || '')}')" title="Click to view conversation">
+    <div class="agent-card-header">
+      <div class="agent-icon agent-icon-${agent.agentId}">${meta.label}</div>
+      <div class="agent-name">${escHtml(agent.agentName)}</div>
+      ${laneBadge}
+      ${termBadge}
+      ${muxBadge}
+      <span class="agent-pid">PID ${escHtml(agent.pid)}</span>
+    </div>
+    <div class="agent-card-body">
+      <div class="agent-row">
+        <span class="agent-label">Project</span>
+        <span class="agent-value agent-value-project" title="${escAttr(agent.cwd || '')}">${escHtml(agent.project || tildefy(agent.cwd) || '—')}</span>
+      </div>
+      ${agent.cwd ? `<div class="agent-row">
+        <span class="agent-label">Path</span>
+        <span class="agent-value" title="${escAttr(agent.cwd)}">${escHtml(tildefy(agent.cwd))}</span>
+      </div>` : ''}
+      <div class="agent-row">
+        <span class="agent-label">Runtime</span>
+        <span class="agent-value" style="color:var(--text)">${escHtml(formatEtime(agent.etime))}</span>
+      </div>
+      ${agent.tty ? `<div class="agent-row">
+        <span class="agent-label">TTY</span>
+        <span class="agent-value">${escHtml(agent.tty)}</span>
+      </div>` : ''}
+    </div>
+    <div class="agent-card-footer">
+      <div class="agent-metrics">
+        <span>CPU <span class="agent-metric-val">${agent.cpu}%</span></span>
+        <span>MEM <span class="agent-metric-val">${agent.mem}%</span></span>
+      </div>
+      <div style="display:flex;gap:6px" onclick="event.stopPropagation()">
+        ${agent.tty && agent.terminalApp ? `<button class="btn btn-ghost btn-sm" onclick="window.focusSession('${escAttr(agent.tty)}','${escAttr(agent.terminalApp || '')}')">Focus</button>` : ''}
+        <button class="btn btn-danger btn-sm" onclick="window.killAgent('${escAttr(agent.pid)}','${escAttr(agent.agentName)}')">Kill</button>
+      </div>
+    </div>
+  </div>`;
+}
+
+function renderInitiativeLane(initiative, agents) {
+  const initiativeId = initiative?.id || '';
+  const initiativeName = initiative?.name || 'Unassigned';
+  return `<section class="initiative-lane" data-initiative-id="${escAttr(initiativeId)}" ondragover="window.handleAgentInitiativeDragOver(event, '${escAttr(initiativeId)}')" ondragleave="window.handleAgentInitiativeDragLeave(event)" ondrop="window.handleAgentInitiativeDrop(event, '${escAttr(initiativeId)}')">
+    <div class="initiative-lane-header">
+      <div>
+        <div class="initiative-lane-title">${escHtml(initiativeName)}</div>
+        <div class="initiative-lane-meta">${agents.length} agent${agents.length === 1 ? '' : 's'}</div>
+      </div>
+      ${initiativeId ? `<button class="btn btn-ghost btn-sm btn-icon initiative-delete-btn" onclick="window.deleteAgentInitiative('${escAttr(initiativeId)}')" title="Delete initiative">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 6h18"/><path d="M8 6V4h8v2"/><path d="M19 6l-1 14H6L5 6"/><path d="M10 11v6"/><path d="M14 11v6"/></svg>
+      </button>` : ''}
+    </div>
+    <div class="initiative-lane-dropnote">Drop an agent here to place it in this lane.</div>
+    <div class="initiative-lane-body">
+      ${agents.length ? agents.map(agent => renderAgentLane(agent, initiativeId ? initiativeName : '')).join('') : '<div class="initiative-empty">No agents in this initiative.</div>'}
+    </div>
+  </section>`;
 }
 
 // ─── Session History Dropdown ──────────────────────────────────────────────────
@@ -192,6 +296,73 @@ export function launchFromHistory(agentId, cwd, sessionId) {
   }, 100);
 }
 
+export function addAgentInitiative(event) {
+  event.preventDefault();
+  const input = document.getElementById('agent-initiative-input');
+  const name = input.value.trim();
+  if (!name) return;
+
+  const state = loadInitiativesState();
+  state.initiatives.push({ id: `initiative-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`, name });
+  persistInitiativesState(state);
+  input.value = '';
+  loadAgents();
+}
+
+export function deleteAgentInitiative(initiativeId) {
+  const state = loadInitiativesState();
+  const initiative = state.initiatives.find(item => item.id === initiativeId);
+  if (!initiative) return;
+  if (!window.confirm(`Delete initiative "${initiative.name}"? Assigned agents will move to Unassigned.`)) return;
+
+  state.initiatives = state.initiatives.filter(item => item.id !== initiativeId);
+  Object.keys(state.assignments).forEach(key => {
+    if (state.assignments[key] === initiativeId) delete state.assignments[key];
+  });
+  persistInitiativesState(state);
+  loadAgents();
+}
+
+export function startAgentInitiativeDrag(event, agentKey) {
+  draggedAgentKey = agentKey;
+  event.dataTransfer.effectAllowed = 'move';
+  event.dataTransfer.setData('text/plain', agentKey);
+}
+
+export function endAgentInitiativeDrag() {
+  draggedAgentKey = null;
+  document.querySelectorAll('.initiative-lane').forEach(lane => lane.classList.remove('is-drop-target'));
+}
+
+export function handleAgentInitiativeDragOver(event, initiativeId) {
+  if (!draggedAgentKey) return;
+  event.preventDefault();
+  event.dataTransfer.dropEffect = 'move';
+  document.querySelectorAll('.initiative-lane').forEach(lane => {
+    lane.classList.toggle('is-drop-target', lane.dataset.initiativeId === initiativeId);
+  });
+}
+
+export function handleAgentInitiativeDragLeave(event) {
+  const lane = event.currentTarget;
+  if (!lane.contains(event.relatedTarget)) {
+    lane.classList.remove('is-drop-target');
+  }
+}
+
+export function handleAgentInitiativeDrop(event, initiativeId) {
+  event.preventDefault();
+  const agentKey = draggedAgentKey || event.dataTransfer.getData('text/plain');
+  if (!agentKey) return;
+
+  const state = loadInitiativesState();
+  if (initiativeId) state.assignments[agentKey] = initiativeId;
+  else delete state.assignments[agentKey];
+  persistInitiativesState(state);
+  endAgentInitiativeDrag();
+  loadAgents();
+}
+
 // Close history dropdown on outside click
 document.addEventListener('click', (e) => {
   if (!historyOpen) return;
@@ -206,6 +377,7 @@ document.addEventListener('click', (e) => {
 export async function loadAgents() {
   const list = document.getElementById('agents-list');
   const summary = document.getElementById('agents-summary');
+  const initiativeState = loadInitiativesState();
 
   try {
     const { agents } = await api('GET', '/api/agents');
@@ -227,83 +399,33 @@ export async function loadAgents() {
       }).join('');
     }
 
-    if (!agents.length) {
-      list.innerHTML = `<div class="empty-state" style="grid-column:1/-1">
-        <svg width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M12 2a4 4 0 0 1 4 4v1h1a2 2 0 0 1 2 2v2a2 2 0 0 1-2 2h-1v1a4 4 0 0 1-8 0v-1H7a2 2 0 0 1-2-2V9a2 2 0 0 1 2-2h1V6a4 4 0 0 1 4-4z"/></svg>
-        <p>No AI agent sessions running</p>
-        <small>Start Claude Code, Codex, Gemini, OpenCode, or Aider in a terminal</small>
-      </div>`;
-      return;
-    }
-
     // Store agents data for use in drawer and history
     window._agentMux = {};
     window._runningAgents = agents;
     for (const a of agents) window._agentMux[a.pid] = a.multiplexer || null;
 
-    const interactive = agents.filter(a => a.multiplexer);
-    const background = agents.filter(a => !a.multiplexer);
+    const lanes = [
+      {
+        id: '',
+        name: 'Unassigned',
+        agents: agents.filter(agent => !initiativeState.assignments[agentInitiativeKey(agent)]),
+      },
+      ...initiativeState.initiatives.map(initiative => ({
+        ...initiative,
+        agents: agents.filter(agent => initiativeState.assignments[agentInitiativeKey(agent)] === initiative.id),
+      })),
+    ];
 
-    const renderCard = a => {
-      const meta = AGENT_META[a.agentId] || { label: '?', color: 'aider', accent: '#888' };
-      const termBadge = a.terminalApp
-        ? `<span class="app-badge app-badge-${a.terminalApp.toLowerCase()}">${escHtml(a.terminalApp)}</span>`
-        : '';
-      const muxTarget = a.multiplexer?.target || a.multiplexer?.session || '';
-      const muxSessionName = muxTarget.split(':')[0] || a.multiplexer?.type || '';
-      const muxBadge = a.multiplexer
-        ? `<span class="app-badge app-badge-mux" title="${escAttr(a.multiplexer.type + ': ' + muxTarget)}">${escHtml(muxSessionName)}</span>`
-        : '';
-
-      return `<div class="agent-card" style="cursor:pointer" onclick="window.openAgentMessages('${escAttr(a.pid)}','${escAttr(a.agentId)}','${escAttr(a.agentName)}','${escAttr(a.cwd||'')}')" title="Click to view conversation">
-        <div class="agent-card-header">
-          <div class="agent-icon agent-icon-${a.agentId}">${meta.label}</div>
-          <div class="agent-name">${escHtml(a.agentName)}</div>
-          ${termBadge}
-          ${muxBadge}
-          <span class="agent-pid">PID ${escHtml(a.pid)}</span>
-        </div>
-        <div class="agent-card-body">
-          <div class="agent-row">
-            <span class="agent-label">Project</span>
-            <span class="agent-value agent-value-project" title="${escAttr(a.cwd || '')}">${escHtml(a.project || tildefy(a.cwd) || '—')}</span>
-          </div>
-          ${a.cwd ? `<div class="agent-row">
-            <span class="agent-label">Path</span>
-            <span class="agent-value" title="${escAttr(a.cwd)}">${escHtml(tildefy(a.cwd))}</span>
-          </div>` : ''}
-          <div class="agent-row">
-            <span class="agent-label">Runtime</span>
-            <span class="agent-value" style="color:var(--text)">${escHtml(formatEtime(a.etime))}</span>
-          </div>
-          ${a.tty ? `<div class="agent-row">
-            <span class="agent-label">TTY</span>
-            <span class="agent-value">${escHtml(a.tty)}</span>
-          </div>` : ''}
-        </div>
-        <div class="agent-card-footer">
-          <div class="agent-metrics">
-            <span>CPU <span class="agent-metric-val">${a.cpu}%</span></span>
-            <span>MEM <span class="agent-metric-val">${a.mem}%</span></span>
-          </div>
-          <div style="display:flex;gap:6px" onclick="event.stopPropagation()">
-            ${a.tty && a.terminalApp ? `<button class="btn btn-ghost btn-sm" onclick="window.focusSession('${escAttr(a.tty)}','${escAttr(a.terminalApp || '')}')">Focus</button>` : ''}
-            <button class="btn btn-danger btn-sm" onclick="window.killAgent('${escAttr(a.pid)}','${escAttr(a.agentName)}')">Kill</button>
-          </div>
-        </div>
+    if (!agents.length && !initiativeState.initiatives.length) {
+      list.innerHTML = `<div class="empty-state" style="grid-column:1/-1">
+        <svg width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M12 2a4 4 0 0 1 4 4v1h1a2 2 0 0 1 2 2v2a2 2 0 0 1-2 2h-1v1a4 4 0 0 1-8 0v-1H7a2 2 0 0 1-2-2V9a2 2 0 0 1 2-2h1V6a4 4 0 0 1 4-4z"/></svg>
+        <p>No AI agent sessions running</p>
+        <small>Start Claude Code, Codex, Gemini, OpenCode, or Aider in a terminal, or create an initiative now.</small>
       </div>`;
-    };
+      return;
+    }
 
-    let html = '';
-    if (interactive.length) {
-      html += `<div class="agents-group-label">Interactive <span class="agents-group-count">${interactive.length}</span></div>`;
-      html += `<div class="agents-grid-inner">${interactive.map(renderCard).join('')}</div>`;
-    }
-    if (background.length) {
-      html += `<div class="agents-group-label">Background <span class="agents-group-count">${background.length}</span></div>`;
-      html += `<div class="agents-grid-inner">${background.map(renderCard).join('')}</div>`;
-    }
-    list.innerHTML = html;
+    list.innerHTML = lanes.map(lane => renderInitiativeLane(lane.id ? { id: lane.id, name: lane.name } : null, lane.agents)).join('');
 
   } catch (err) {
     list.innerHTML = `<div class="empty-state"><p style="color:var(--danger)">${escHtml(err.message)}</p></div>`;

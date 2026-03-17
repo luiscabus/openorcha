@@ -40,6 +40,13 @@ import {
   toggleAgentHistory,
   historyOpenAgent,
   launchFromHistory,
+  addAgentInitiative,
+  deleteAgentInitiative,
+  startAgentInitiativeDrag,
+  endAgentInitiativeDrag,
+  handleAgentInitiativeDragOver,
+  handleAgentInitiativeDragLeave,
+  handleAgentInitiativeDrop,
   switchDrawerView,
   sendKey,
   clickPromptOption,
@@ -136,6 +143,13 @@ window.deletePreset = deletePreset;
 window.toggleAgentHistory = toggleAgentHistory;
 window.historyOpenAgent = historyOpenAgent;
 window.launchFromHistory = launchFromHistory;
+window.addAgentInitiative = addAgentInitiative;
+window.deleteAgentInitiative = deleteAgentInitiative;
+window.startAgentInitiativeDrag = startAgentInitiativeDrag;
+window.endAgentInitiativeDrag = endAgentInitiativeDrag;
+window.handleAgentInitiativeDragOver = handleAgentInitiativeDragOver;
+window.handleAgentInitiativeDragLeave = handleAgentInitiativeDragLeave;
+window.handleAgentInitiativeDrop = handleAgentInitiativeDrop;
 window.switchDrawerView = switchDrawerView;
 window.sendKey = sendKey;
 window.clickPromptOption = clickPromptOption;

@@ -138,6 +138,10 @@
         </div>
 
         <div id="agents-summary" class="agents-summary"></div>
+        <form class="agents-initiative-compose" onsubmit="addAgentInitiative(event)">
+          <input type="text" id="agent-initiative-input" class="agents-initiative-input" placeholder="Create an initiative lane..." maxlength="80" />
+          <button type="submit" class="btn btn-ghost btn-sm">Add Initiative</button>
+        </form>
         <div id="agents-list" class="agents-grid"></div>
       </div>
 
