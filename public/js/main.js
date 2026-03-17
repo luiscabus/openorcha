@@ -21,6 +21,7 @@ import {
 } from './tabs/sessions.js';
 import {
   loadAgents,
+  toggleAgentNonInteractive,
   killAgent,
   toggleAgentAutoRefresh,
   clearAgentAutoRefresh,
@@ -125,6 +126,7 @@ window.attachTmux = attachTmux;
 
 // Agents
 window.loadAgents = loadAgents;
+window.toggleAgentNonInteractive = toggleAgentNonInteractive;
 window.killAgent = killAgent;
 window.toggleAgentAutoRefresh = toggleAgentAutoRefresh;
 window.openAgentMessages = openAgentMessages;

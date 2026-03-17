@@ -17,6 +17,7 @@ export const AGENT_META = {
 const AGENT_INITIATIVES_KEY = 'ssh-manager.ai-agents.initiatives';
 
 let draggedAgentKey = null;
+let showNonInteractiveAgents = false;
 
 export let agentsAutoRefreshTimer = null;
 
@@ -31,6 +32,20 @@ export function clearAgentAutoRefresh() {
   agentsAutoRefreshTimer = null;
   const cb = document.getElementById('agents-auto-refresh');
   if (cb) cb.checked = false;
+}
+
+function updateNonInteractiveToggle(hiddenCount = 0) {
+  const button = document.getElementById('agents-non-interactive-btn');
+  if (!button) return;
+  button.classList.toggle('btn-active', showNonInteractiveAgents);
+  button.textContent = showNonInteractiveAgents
+    ? 'Hide Non-Interactive'
+    : `Non-Interactive${hiddenCount ? ` (${hiddenCount})` : ''}`;
+}
+
+export function toggleAgentNonInteractive() {
+  showNonInteractiveAgents = !showNonInteractiveAgents;
+  loadAgents();
 }
 
 function formatEtime(etime) {
@@ -112,7 +127,6 @@ function renderAgentLane(agent, initiativeName = '') {
       ${laneBadge}
       ${termBadge}
       ${muxBadge}
-      <span class="agent-pid">PID ${escHtml(agent.pid)}</span>
     </div>
     <div class="agent-card-body">
       <div class="agent-row">
@@ -123,21 +137,10 @@ function renderAgentLane(agent, initiativeName = '') {
         <span class="agent-label">Path</span>
         <span class="agent-value" title="${escAttr(agent.cwd)}">${escHtml(tildefy(agent.cwd))}</span>
       </div>` : ''}
-      <div class="agent-row">
-        <span class="agent-label">Runtime</span>
-        <span class="agent-value" style="color:var(--text)">${escHtml(formatEtime(agent.etime))}</span>
-      </div>
-      ${agent.tty ? `<div class="agent-row">
-        <span class="agent-label">TTY</span>
-        <span class="agent-value">${escHtml(agent.tty)}</span>
-      </div>` : ''}
     </div>
     <div class="agent-card-footer">
-      <div class="agent-metrics">
-        <span>CPU <span class="agent-metric-val">${agent.cpu}%</span></span>
-        <span>MEM <span class="agent-metric-val">${agent.mem}%</span></span>
-      </div>
       <div style="display:flex;gap:6px" onclick="event.stopPropagation()">
+        <span class="agent-pid">PID ${escHtml(agent.pid)}</span>
         ${agent.tty && agent.terminalApp ? `<button class="btn btn-ghost btn-sm" onclick="window.focusSession('${escAttr(agent.tty)}','${escAttr(agent.terminalApp || '')}')">Focus</button>` : ''}
         <button class="btn btn-danger btn-sm" onclick="window.killAgent('${escAttr(agent.pid)}','${escAttr(agent.agentName)}')">Kill</button>
       </div>
@@ -381,10 +384,13 @@ export async function loadAgents() {
 
   try {
     const { agents } = await api('GET', '/api/agents');
+    const hiddenNonInteractiveCount = agents.filter(agent => !agent.multiplexer).length;
+    updateNonInteractiveToggle(hiddenNonInteractiveCount);
+    const visibleAgents = showNonInteractiveAgents ? agents : agents.filter(agent => agent.multiplexer);
 
     // Summary pills
     const counts = {};
-    for (const a of agents) counts[a.agentId] = (counts[a.agentId] || 0) + 1;
+    for (const a of visibleAgents) counts[a.agentId] = (counts[a.agentId] || 0) + 1;
 
     if (!Object.keys(counts).length) {
       summary.innerHTML = '';
@@ -408,19 +414,19 @@ export async function loadAgents() {
       {
         id: '',
         name: 'Unassigned',
-        agents: agents.filter(agent => !initiativeState.assignments[agentInitiativeKey(agent)]),
+        agents: visibleAgents.filter(agent => !initiativeState.assignments[agentInitiativeKey(agent)]),
       },
       ...initiativeState.initiatives.map(initiative => ({
         ...initiative,
-        agents: agents.filter(agent => initiativeState.assignments[agentInitiativeKey(agent)] === initiative.id),
+        agents: visibleAgents.filter(agent => initiativeState.assignments[agentInitiativeKey(agent)] === initiative.id),
       })),
     ];
 
-    if (!agents.length && !initiativeState.initiatives.length) {
+    if (!visibleAgents.length && !initiativeState.initiatives.length) {
       list.innerHTML = `<div class="empty-state" style="grid-column:1/-1">
         <svg width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M12 2a4 4 0 0 1 4 4v1h1a2 2 0 0 1 2 2v2a2 2 0 0 1-2 2h-1v1a4 4 0 0 1-8 0v-1H7a2 2 0 0 1-2-2V9a2 2 0 0 1 2-2h1V6a4 4 0 0 1 4-4z"/></svg>
-        <p>No AI agent sessions running</p>
-        <small>Start Claude Code, Codex, Gemini, OpenCode, or Aider in a terminal, or create an initiative now.</small>
+        <p>${agents.length ? 'Only non-interactive sessions are running' : 'No AI agent sessions running'}</p>
+        <small>${agents.length ? 'Use the Non-Interactive toggle to show sessions that were not started in tmux/screen.' : 'Start Claude Code, Codex, Gemini, OpenCode, or Aider in a terminal, or create an initiative now.'}</small>
       </div>`;
       return;
     }
