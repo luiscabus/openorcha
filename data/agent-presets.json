@@ -1,0 +1,20 @@
+[
+  {
+    "id": "reviewer",
+    "name": "Code Reviewer",
+    "agent": "claude",
+    "icon": "R",
+    "color": "#818cf8",
+    "description": "Reviews code for bugs, security issues, and improvements",
+    "flags": "--permission-mode plan --append-system-prompt \"You are a senior code reviewer. Focus on finding bugs, security vulnerabilities, performance issues, and suggesting improvements. Do not make changes directly — only analyze and report.\""
+  },
+  {
+    "id": "planner",
+    "name": "Planner",
+    "agent": "claude",
+    "icon": "P",
+    "color": "#f59e0b",
+    "description": "Plans implementation strategy without writing code",
+    "flags": "--permission-mode plan --model opus --append-system-prompt \"You are a software architect. Analyze the codebase and create detailed implementation plans. Identify files to change, dependencies, and risks. Do not write code.\""
+  }
+]

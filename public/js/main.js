@@ -32,6 +32,10 @@ import {
   openLaunchAgentModal,
   launchAgent,
   selectLaunchSession,
+  selectPreset,
+  openPresetsModal,
+  savePreset,
+  deletePreset,
   toggleAgentHistory,
   historyOpenAgent,
   launchFromHistory,
@@ -123,6 +127,10 @@ window.sendAgentMessage = sendAgentMessage;
 window.openLaunchAgentModal = openLaunchAgentModal;
 window.launchAgent = launchAgent;
 window.selectLaunchSession = selectLaunchSession;
+window.selectPreset = selectPreset;
+window.openPresetsModal = openPresetsModal;
+window.savePreset = savePreset;
+window.deletePreset = deletePreset;
 window.toggleAgentHistory = toggleAgentHistory;
 window.historyOpenAgent = historyOpenAgent;
 window.launchFromHistory = launchFromHistory;

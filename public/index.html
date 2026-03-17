@@ -489,6 +489,10 @@
       </div>
       <form onsubmit="launchAgent(event)">
         <div class="form-group">
+          <label>Preset <span style="color:var(--text3);font-weight:400">(optional)</span></label>
+          <div id="launch-presets" class="preset-picker"></div>
+        </div>
+        <div class="form-group">
           <label>Agent</label>
           <select id="launch-agent-id">
             <option value="claude">Claude Code</option>
@@ -523,6 +527,58 @@
           <button type="submit" class="btn btn-primary">Launch</button>
         </div>
       </form>
+    </div>
+  </div>
+
+  <!-- Manage Presets Modal -->
+  <div id="presets-modal" class="modal-overlay" style="display:none">
+    <div class="modal" style="width:520px">
+      <div class="modal-header">
+        <h2>Manage Agent Presets</h2>
+        <button class="modal-close" onclick="closeModal('presets-modal')">
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+        </button>
+      </div>
+      <div id="presets-list" class="presets-manage-list"></div>
+      <details class="preset-form-details">
+        <summary class="btn btn-ghost btn-sm" style="margin:10px 0">+ Add Preset</summary>
+        <form onsubmit="savePreset(event)">
+          <div class="preset-form-grid">
+            <div class="form-group">
+              <label>Name</label>
+              <input type="text" id="preset-name" placeholder="Code Reviewer" required />
+            </div>
+            <div class="form-group">
+              <label>Agent</label>
+              <select id="preset-agent">
+                <option value="claude">Claude Code</option>
+                <option value="codex">Codex</option>
+                <option value="gemini">Gemini</option>
+                <option value="aider">Aider</option>
+              </select>
+            </div>
+            <div class="form-group">
+              <label>Icon <span style="color:var(--text3);font-weight:400">(1 char)</span></label>
+              <input type="text" id="preset-icon" maxlength="2" placeholder="R" style="width:50px" />
+            </div>
+            <div class="form-group">
+              <label>Color</label>
+              <input type="color" id="preset-color" value="#818cf8" style="width:50px;height:32px" />
+            </div>
+          </div>
+          <div class="form-group">
+            <label>Description</label>
+            <input type="text" id="preset-description" placeholder="Reviews code for bugs and improvements" />
+          </div>
+          <div class="form-group">
+            <label>CLI Flags</label>
+            <textarea id="preset-flags" rows="3" placeholder="--append-system-prompt &quot;You are a code reviewer...&quot; --permission-mode plan"></textarea>
+          </div>
+          <div class="form-actions">
+            <button type="submit" class="btn btn-primary btn-sm">Save Preset</button>
+          </div>
+        </form>
+      </details>
     </div>
   </div>
 

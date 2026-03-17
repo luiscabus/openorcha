@@ -311,14 +311,16 @@ export async function loadAgents() {
 }
 
 let launchSelectedSessionId = null;
+let launchSelectedPresetId = null;
 let launchSessionsDebounce = null;
 
-export function openLaunchAgentModal() {
+export async function openLaunchAgentModal() {
   document.getElementById('launch-agent-id').value = 'claude';
   document.getElementById('launch-agent-cwd').value = '';
   document.getElementById('launch-agent-session').value = '';
   document.getElementById('launch-skip-permissions').checked = false;
   launchSelectedSessionId = null;
+  launchSelectedPresetId = null;
   document.getElementById('launch-sessions-group').style.display = 'none';
   document.getElementById('launch-agent-modal').style.display = 'flex';
   setTimeout(() => document.getElementById('launch-agent-cwd').focus(), 50);
@@ -329,6 +331,114 @@ export function openLaunchAgentModal() {
   const handler = () => { clearTimeout(launchSessionsDebounce); launchSessionsDebounce = setTimeout(fetchLaunchSessions, 400); };
   cwdInput.oninput = handler;
   agentSelect.onchange = handler;
+
+  // Load presets
+  renderPresetPicker();
+}
+
+// ─── Presets ──────────────────────────────────────────────────────────────────
+
+async function renderPresetPicker() {
+  const container = document.getElementById('launch-presets');
+  try {
+    const { presets } = await api('GET', '/api/agents/presets');
+    let html = `<div class="preset-chip preset-chip-none${!launchSelectedPresetId ? ' preset-chip-selected' : ''}" onclick="window.selectPreset(null)">None</div>`;
+    for (const p of presets) {
+      const selected = launchSelectedPresetId === p.id ? ' preset-chip-selected' : '';
+      html += `<div class="preset-chip${selected}" data-preset="${escAttr(p.id)}" onclick="window.selectPreset('${escAttr(p.id)}')" title="${escAttr(p.description || p.flags || '')}">
+        <span class="preset-chip-icon" style="background:${escAttr(p.color)}20;color:${escAttr(p.color)}">${escHtml(p.icon)}</span>
+        ${escHtml(p.name)}
+      </div>`;
+    }
+    html += `<div class="preset-chip preset-chip-manage" onclick="window.openPresetsModal()">
+      <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>
+    </div>`;
+    container.innerHTML = html;
+  } catch {
+    container.innerHTML = '';
+  }
+}
+
+export function selectPreset(presetId) {
+  launchSelectedPresetId = presetId;
+  const container = document.getElementById('launch-presets');
+  for (const chip of container.querySelectorAll('.preset-chip')) {
+    const isNone = chip.classList.contains('preset-chip-none');
+    const chipId = chip.dataset.preset || null;
+    chip.classList.toggle('preset-chip-selected', presetId ? chipId === presetId : isNone);
+  }
+  // Auto-select the preset's agent
+  if (presetId) {
+    const chip = container.querySelector(`[data-preset="${presetId}"]`);
+    // Find agent from presets data (stored in chip title won't work, fetch from API cache)
+    // For now, presets always map to an agent — we'll set it when data is available
+  }
+}
+
+export async function openPresetsModal() {
+  document.getElementById('presets-modal').style.display = 'flex';
+  await renderPresetsManageList();
+}
+
+async function renderPresetsManageList() {
+  const container = document.getElementById('presets-list');
+  try {
+    const { presets } = await api('GET', '/api/agents/presets');
+    if (!presets.length) {
+      container.innerHTML = '<div style="padding:12px;color:var(--text3);font-size:13px">No presets yet. Add one below.</div>';
+      return;
+    }
+    let html = '';
+    for (const p of presets) {
+      html += `<div class="preset-manage-row">
+        <span class="preset-chip-icon" style="background:${escAttr(p.color)}20;color:${escAttr(p.color)}">${escHtml(p.icon)}</span>
+        <div class="preset-manage-info">
+          <div class="preset-manage-name">${escHtml(p.name)} <span style="color:var(--text3);font-weight:400;font-size:11px">${escHtml(p.agent)}</span></div>
+          <div class="preset-manage-desc">${escHtml(p.description)}</div>
+          <div class="preset-manage-flags">${escHtml(p.flags || '(no flags)')}</div>
+        </div>
+        <button class="btn btn-danger btn-sm" onclick="window.deletePreset('${escAttr(p.id)}')">Delete</button>
+      </div>`;
+    }
+    container.innerHTML = html;
+  } catch {
+    container.innerHTML = '<div style="padding:12px;color:var(--danger)">Error loading presets</div>';
+  }
+}
+
+export async function savePreset(e) {
+  e.preventDefault();
+  const name = document.getElementById('preset-name').value.trim();
+  const agent = document.getElementById('preset-agent').value;
+  const icon = document.getElementById('preset-icon').value.trim() || name[0];
+  const color = document.getElementById('preset-color').value;
+  const description = document.getElementById('preset-description').value.trim();
+  const flags = document.getElementById('preset-flags').value.trim();
+
+  try {
+    await api('POST', '/api/agents/presets', { name, agent, icon, color, description, flags });
+    // Reset form
+    document.getElementById('preset-name').value = '';
+    document.getElementById('preset-icon').value = '';
+    document.getElementById('preset-description').value = '';
+    document.getElementById('preset-flags').value = '';
+    document.querySelector('.preset-form-details').removeAttribute('open');
+    await renderPresetsManageList();
+    toast(`Preset "${name}" created`);
+  } catch (err) {
+    toast(err.message, 'error');
+  }
+}
+
+export async function deletePreset(id) {
+  if (!window.confirm('Delete this preset?')) return;
+  try {
+    await api('DELETE', `/api/agents/presets/${id}`);
+    await renderPresetsManageList();
+    toast('Preset deleted');
+  } catch (err) {
+    toast(err.message, 'error');
+  }
 }
 
 async function fetchLaunchSessions() {
@@ -407,9 +517,10 @@ export async function launchAgent(e) {
   const sessionName     = document.getElementById('launch-agent-session').value.trim();
   const skipPermissions = document.getElementById('launch-skip-permissions').checked;
   const resumeSessionId = launchSelectedSessionId || null;
+  const presetId = launchSelectedPresetId || null;
 
   try {
-    const { sessionName: name } = await api('POST', '/api/agents/launch', { agentId, cwd, sessionName, skipPermissions, resumeSessionId });
+    const { sessionName: name } = await api('POST', '/api/agents/launch', { agentId, cwd, sessionName, skipPermissions, resumeSessionId, presetId });
     closeModal('launch-agent-modal');
     toast(`${resumeSessionId ? 'Resumed' : 'Launched'} in tmux session "${name}"`);
     setTimeout(loadAgents, 3000);

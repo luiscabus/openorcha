@@ -263,9 +263,85 @@ router.get('/sessions', (req, res) => {
   }
 });
 
+// ─── Agent Presets ────────────────────────────────────────────────────────────
+
+const PRESETS_FILE = path.join(__dirname, '..', 'data', 'agent-presets.json');
+
+function loadPresets() {
+  return readJsonSafe(PRESETS_FILE) || [];
+}
+
+function savePresets(presets) {
+  fs.writeFileSync(PRESETS_FILE, JSON.stringify(presets, null, 2));
+}
+
+router.get('/presets', (req, res) => {
+  res.json({ presets: loadPresets() });
+});
+
+router.post('/presets', (req, res) => {
+  try {
+    const { name, agent, icon, color, description, flags } = req.body;
+    if (!name || !agent) return res.status(400).json({ error: 'name and agent are required' });
+    const presets = loadPresets();
+    const id = name.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '');
+    if (presets.find(p => p.id === id)) return res.status(400).json({ error: `Preset "${id}" already exists` });
+    const preset = { id, name, agent, icon: icon || name[0].toUpperCase(), color: color || '#818cf8', description: description || '', flags: flags || '' };
+    presets.push(preset);
+    savePresets(presets);
+    res.json({ preset });
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
+router.put('/presets/:id', (req, res) => {
+  try {
+    const presets = loadPresets();
+    const idx = presets.findIndex(p => p.id === req.params.id);
+    if (idx === -1) return res.status(404).json({ error: 'Preset not found' });
+    const { name, agent, icon, color, description, flags } = req.body;
+    if (name) presets[idx].name = name;
+    if (agent) presets[idx].agent = agent;
+    if (icon !== undefined) presets[idx].icon = icon;
+    if (color !== undefined) presets[idx].color = color;
+    if (description !== undefined) presets[idx].description = description;
+    if (flags !== undefined) presets[idx].flags = flags;
+    savePresets(presets);
+    res.json({ preset: presets[idx] });
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
+router.delete('/presets/:id', (req, res) => {
+  try {
+    const presets = loadPresets();
+    const idx = presets.findIndex(p => p.id === req.params.id);
+    if (idx === -1) return res.status(404).json({ error: 'Preset not found' });
+    presets.splice(idx, 1);
+    savePresets(presets);
+    res.json({ ok: true });
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
 router.post('/launch', (req, res) => {
   try {
-    let { agentId, cwd, sessionName, skipPermissions, resumeSessionId } = req.body;
+    let { agentId, cwd, sessionName, skipPermissions, resumeSessionId, presetId } = req.body;
+
+    // If launching from a preset, resolve the agent and extra flags
+    let presetFlags = '';
+    if (presetId) {
+      const preset = loadPresets().find(p => p.id === presetId);
+      if (preset) {
+        agentId = agentId || preset.agent;
+        presetFlags = preset.flags || '';
+        if (!sessionName) sessionName = `${preset.id}-${path.basename(cwd || '')}`;
+      }
+    }
+
     let cmd = AGENT_COMMANDS[agentId];
     if (!cmd) return res.status(400).json({ error: `Unknown agent: ${agentId}` });
     if (!cwd || !cwd.trim()) return res.status(400).json({ error: 'Working directory is required' });
@@ -286,6 +362,11 @@ router.post('/launch', (req, res) => {
     // Append resume flag if resuming a previous session
     if (resumeSessionId && AGENT_RESUME_FLAG[agentId]) {
       cmd = `${cmd} ${AGENT_RESUME_FLAG[agentId](resumeSessionId)}`;
+    }
+
+    // Append preset flags
+    if (presetFlags) {
+      cmd = `${cmd} ${presetFlags}`;
     }
 
     // Use a login shell so the user's PATH (~/.zshrc, nvm, homebrew, etc.) is sourced
