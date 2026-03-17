@@ -564,6 +564,25 @@ let terminalRefreshTimer = null;
 let promptPollTimer = null;
 let messagesPollTimer = null;
 
+export function handleSendKeydown(e) {
+  const textarea = e.target;
+  const enterToSend = document.getElementById('drawer-enter-to-send').checked;
+
+  if (e.key === 'Enter') {
+    if (enterToSend && !e.shiftKey) {
+      e.preventDefault();
+      sendAgentMessage();
+    }
+    // Shift+Enter always inserts newline (default textarea behavior)
+  }
+
+  // Auto-resize textarea
+  requestAnimationFrame(() => {
+    textarea.style.height = 'auto';
+    textarea.style.height = Math.min(textarea.scrollHeight, 150) + 'px';
+  });
+}
+
 function updateDrawerSendVisibility() {
   const inTerminal = drawerView === 'terminal';
   const inContext = drawerView === 'context';
@@ -594,7 +613,12 @@ export async function openAgentMessages(pid, agentId, agentName, cwd) {
   // Show send area only if agent is running in tmux or screen
   const mux = window._agentMux?.[pid] || null;
   drawerHasMux = !!mux;
-  document.getElementById('drawer-send-input').value = drawerDrafts[pid] || '';
+  const sendInput = document.getElementById('drawer-send-input');
+  sendInput.value = drawerDrafts[pid] || '';
+  sendInput.style.height = 'auto';
+  // Restore enter-to-send preference
+  const enterCb = document.getElementById('drawer-enter-to-send');
+  if (enterCb) enterCb.checked = localStorage.getItem('enterToSend') !== 'false';
   updateDrawerSendVisibility();
 
   // Always start on messages view
@@ -966,6 +990,7 @@ export async function sendAgentMessage() {
   try {
     await api('POST', `/api/agents/${drawerCurrentPid}/send`, { message, noEnter });
     input.value = '';
+    input.style.height = 'auto';
     delete drawerDrafts[drawerCurrentPid];
     if (!noEnter) {
       setTimeout(() => fetchAndRenderMessages(drawerCurrentPid), 1500);

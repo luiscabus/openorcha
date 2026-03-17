@@ -29,6 +29,7 @@ import {
   closeMessagesDrawer,
   closeDrawerOnOverlay,
   sendAgentMessage,
+  handleSendKeydown,
   openLaunchAgentModal,
   launchAgent,
   selectLaunchSession,
@@ -124,6 +125,7 @@ window.refreshDrawer = refreshDrawer;
 window.closeMessagesDrawer = closeMessagesDrawer;
 window.closeDrawerOnOverlay = closeDrawerOnOverlay;
 window.sendAgentMessage = sendAgentMessage;
+window.handleSendKeydown = handleSendKeydown;
 window.openLaunchAgentModal = openLaunchAgentModal;
 window.launchAgent = launchAgent;
 window.selectLaunchSession = selectLaunchSession;

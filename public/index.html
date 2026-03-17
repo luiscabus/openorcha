@@ -628,8 +628,14 @@
         <button class="btn btn-ghost btn-sm qk" onclick="sendKey('3')">3</button>
       </div>
       <div id="drawer-send-area" class="drawer-send-area" style="display:none">
-        <input type="text" id="drawer-send-input" class="drawer-send-input" placeholder="Type a message and press Enter…" onkeydown="if(event.key==='Enter')sendAgentMessage()">
-        <button class="btn btn-primary btn-sm" onclick="sendAgentMessage()">Send</button>
+        <div class="drawer-send-row">
+          <textarea id="drawer-send-input" class="drawer-send-input" placeholder="Type a message…" rows="1" onkeydown="handleSendKeydown(event)"></textarea>
+          <button class="btn btn-primary btn-sm" onclick="sendAgentMessage()">Send</button>
+        </div>
+        <label class="drawer-send-option">
+          <input type="checkbox" id="drawer-enter-to-send" checked onchange="localStorage.setItem('enterToSend',this.checked)" />
+          Enter to send
+        </label>
       </div>
       <div id="drawer-no-mux" class="drawer-no-mux" style="display:none">
         <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>

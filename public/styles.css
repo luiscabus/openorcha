@@ -2127,10 +2127,17 @@ body {
 
 .drawer-send-area {
   display: flex;
-  gap: 8px;
-  padding: 12px 16px;
+  flex-direction: column;
+  gap: 4px;
+  padding: 10px 16px;
   border-top: 1px solid var(--border);
   flex-shrink: 0;
+}
+
+.drawer-send-row {
+  display: flex;
+  gap: 8px;
+  align-items: flex-end;
 }
 
 .drawer-send-input {
@@ -2141,12 +2148,28 @@ body {
   background: var(--bg2);
   color: var(--text);
   font-size: 13px;
+  font-family: inherit;
   outline: none;
+  resize: none;
+  min-height: 34px;
+  max-height: 150px;
+  line-height: 1.4;
 }
 
 .drawer-send-input:focus {
   border-color: var(--accent);
 }
+
+.drawer-send-option {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  font-size: 11px;
+  color: var(--text3);
+  cursor: pointer;
+  user-select: none;
+}
+.drawer-send-option input { margin: 0; }
 
 .drawer-no-mux {
   display: flex;
