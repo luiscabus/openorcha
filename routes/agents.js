@@ -271,6 +271,8 @@ router.post('/launch', (req, res) => {
     if (!cwd || !cwd.trim()) return res.status(400).json({ error: 'Working directory is required' });
 
     cwd = cwd.trim().replace(/^~(?=\/|$)/, os.homedir());
+    if (!fs.existsSync(cwd)) return res.status(400).json({ error: `Directory does not exist: ${cwd}` });
+
     // Auto-generate session name if not provided
     if (!sessionName || !sessionName.trim()) {
       sessionName = `${agentId}-${path.basename(cwd)}`;

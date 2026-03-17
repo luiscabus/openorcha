@@ -446,6 +446,7 @@ export async function killAgent(pid, name) {
 // ─── Agent Messages Drawer ────────────────────────────────────────────────────
 
 let drawerCurrentPid = null;
+const drawerDrafts = {}; // pid → draft message text
 let drawerView = 'messages'; // 'messages' | 'terminal' | 'context'
 let drawerHasMux = false;
 let terminalRefreshTimer = null;
@@ -461,6 +462,12 @@ function updateDrawerSendVisibility() {
 }
 
 export async function openAgentMessages(pid, agentId, agentName, cwd) {
+  // Save draft from previous agent before switching
+  if (drawerCurrentPid && drawerCurrentPid !== pid) {
+    const prev = document.getElementById('drawer-send-input').value;
+    if (prev.trim()) drawerDrafts[drawerCurrentPid] = prev;
+    else delete drawerDrafts[drawerCurrentPid];
+  }
   drawerCurrentPid = pid;
   const meta = AGENT_META[agentId] || { label: '?', color: 'aider' };
 
@@ -476,7 +483,7 @@ export async function openAgentMessages(pid, agentId, agentName, cwd) {
   // Show send area only if agent is running in tmux or screen
   const mux = window._agentMux?.[pid] || null;
   drawerHasMux = !!mux;
-  document.getElementById('drawer-send-input').value = '';
+  document.getElementById('drawer-send-input').value = drawerDrafts[pid] || '';
   updateDrawerSendVisibility();
 
   // Always start on messages view
@@ -815,6 +822,12 @@ function contextIcon(name) {
 }
 
 export function closeMessagesDrawer() {
+  // Save draft before closing
+  if (drawerCurrentPid) {
+    const draft = document.getElementById('drawer-send-input').value;
+    if (draft.trim()) drawerDrafts[drawerCurrentPid] = draft;
+    else delete drawerDrafts[drawerCurrentPid];
+  }
   document.getElementById('messages-drawer').style.display = 'none';
   drawerCurrentPid = null;
   clearInterval(terminalRefreshTimer);
@@ -842,6 +855,7 @@ export async function sendAgentMessage() {
   try {
     await api('POST', `/api/agents/${drawerCurrentPid}/send`, { message, noEnter });
     input.value = '';
+    delete drawerDrafts[drawerCurrentPid];
     if (!noEnter) {
       setTimeout(() => fetchAndRenderMessages(drawerCurrentPid), 1500);
     }
