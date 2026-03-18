@@ -450,6 +450,34 @@ body {
 .preset-form-details summary::-webkit-details-marker { display: none; }
 .preset-form-grid { display: grid; grid-template-columns: 1fr 1fr 60px 60px; gap: 8px; }
 
+.presets-page {
+  display: grid;
+  grid-template-columns: minmax(0, 1.2fr) minmax(320px, 420px);
+  gap: 18px;
+  align-items: start;
+}
+
+.presets-page .presets-manage-list {
+  max-height: none;
+  background: var(--bg2);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  overflow: hidden;
+}
+
+.presets-page-form {
+  background: var(--bg2);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 18px;
+}
+
+.presets-page-form h3 {
+  font-size: 15px;
+  font-weight: 700;
+  margin-bottom: 14px;
+}
+
 /* Session resume picker */
 .sessions-list { max-height: 220px; overflow-y: auto; display: flex; flex-direction: column; gap: 4px; }
 .sessions-loading { color: var(--text3); font-size: 12px; padding: 8px 0; }
@@ -2396,5 +2424,9 @@ body {
 
   .initiative-lane .agent-card {
     width: 100%;
+  }
+
+  .presets-page {
+    grid-template-columns: 1fr;
   }
 }

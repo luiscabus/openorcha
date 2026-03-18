@@ -591,8 +591,13 @@ export async function openPresetsModal() {
   await renderPresetsManageList();
 }
 
-async function renderPresetsManageList() {
-  const container = document.getElementById('presets-list');
+export async function loadAgentPresets() {
+  await renderPresetsManageList('presets-page-list');
+}
+
+async function renderPresetsManageList(targetId = 'presets-list') {
+  const container = document.getElementById(targetId);
+  if (!container) return;
   try {
     const { presets } = await api('GET', '/api/agents/presets');
     if (!presets.length) {
@@ -617,24 +622,30 @@ async function renderPresetsManageList() {
   }
 }
 
-export async function savePreset(e) {
+function getPresetFieldId(prefix, name) {
+  return prefix === 'page' ? `preset-page-${name}` : `preset-${name}`;
+}
+
+export async function savePreset(e, prefix = 'modal') {
   e.preventDefault();
-  const name = document.getElementById('preset-name').value.trim();
-  const agent = document.getElementById('preset-agent').value;
-  const icon = document.getElementById('preset-icon').value.trim() || name[0];
-  const color = document.getElementById('preset-color').value;
-  const description = document.getElementById('preset-description').value.trim();
-  const flags = document.getElementById('preset-flags').value.trim();
+  const name = document.getElementById(getPresetFieldId(prefix, 'name')).value.trim();
+  const agent = document.getElementById(getPresetFieldId(prefix, 'agent')).value;
+  const icon = document.getElementById(getPresetFieldId(prefix, 'icon')).value.trim() || name[0];
+  const color = document.getElementById(getPresetFieldId(prefix, 'color')).value;
+  const description = document.getElementById(getPresetFieldId(prefix, 'description')).value.trim();
+  const flags = document.getElementById(getPresetFieldId(prefix, 'flags')).value.trim();
 
   try {
     await api('POST', '/api/agents/presets', { name, agent, icon, color, description, flags });
-    // Reset form
-    document.getElementById('preset-name').value = '';
-    document.getElementById('preset-icon').value = '';
-    document.getElementById('preset-description').value = '';
-    document.getElementById('preset-flags').value = '';
-    document.querySelector('.preset-form-details').removeAttribute('open');
+    document.getElementById(getPresetFieldId(prefix, 'name')).value = '';
+    document.getElementById(getPresetFieldId(prefix, 'icon')).value = '';
+    document.getElementById(getPresetFieldId(prefix, 'description')).value = '';
+    document.getElementById(getPresetFieldId(prefix, 'flags')).value = '';
+    if (prefix === 'modal') {
+      document.querySelector('.preset-form-details').removeAttribute('open');
+    }
     await renderPresetsManageList();
+    await renderPresetsManageList('presets-page-list');
     toast(`Preset "${name}" created`);
   } catch (err) {
     toast(err.message, 'error');
@@ -646,6 +657,7 @@ export async function deletePreset(id) {
   try {
     await api('DELETE', `/api/agents/presets/${id}`);
     await renderPresetsManageList();
+    await renderPresetsManageList('presets-page-list');
     toast('Preset deleted');
   } catch (err) {
     toast(err.message, 'error');

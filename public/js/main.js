@@ -36,6 +36,7 @@ import {
   selectLaunchSession,
   selectPreset,
   openPresetsModal,
+  loadAgentPresets,
   savePreset,
   deletePreset,
   toggleAgentHistory,
@@ -143,6 +144,7 @@ window.launchAgent = launchAgent;
 window.selectLaunchSession = selectLaunchSession;
 window.selectPreset = selectPreset;
 window.openPresetsModal = openPresetsModal;
+window.loadAgentPresets = loadAgentPresets;
 window.savePreset = savePreset;
 window.deletePreset = deletePreset;
 window.toggleAgentHistory = toggleAgentHistory;
@@ -202,6 +204,7 @@ function loadTab(tab) {
   else if (tab === 'raw-config') loadRawConfig();
   else if (tab === 'sessions') loadSessions();
   else if (tab === 'agents') loadAgents();
+  else if (tab === 'agent-presets') loadAgentPresets();
   else if (tab === 'todo') loadTodos();
   else if (tab === 'kanban') loadKanban();
 }

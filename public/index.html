@@ -23,6 +23,10 @@
             AI Agents
           </a>
           <ul class="nav-sublist">
+            <li><a href="#" class="nav-item nav-subitem" data-tab="agent-presets">
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 3l2.6 5.26L20 9l-4 3.9.94 5.48L12 15.8l-4.94 2.58L8 12.9 4 9l5.4-.74L12 3z"/></svg>
+              Presets
+            </a></li>
             <li><a href="#" class="nav-item nav-subitem" data-tab="todo">
               <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 11l3 3L22 4"/><path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"/></svg>
               Todo
@@ -146,6 +150,60 @@
           <button type="submit" class="btn btn-ghost btn-sm">Add Initiative</button>
         </form>
         <div id="agents-list" class="agents-grid"></div>
+      </div>
+
+      <!-- Agent Presets Tab -->
+      <div id="tab-agent-presets" class="tab-content">
+        <div class="page-header">
+          <div>
+            <h1>Agent Presets</h1>
+            <p class="subtitle">Reusable launch presets for Claude, Codex, Gemini, OpenCode, and Aider</p>
+          </div>
+        </div>
+
+        <div class="presets-page">
+          <div id="presets-page-list" class="presets-manage-list"></div>
+          <div class="presets-page-form">
+            <h3>Add Preset</h3>
+            <form onsubmit="savePreset(event, 'page')">
+              <div class="preset-form-grid">
+                <div class="form-group">
+                  <label>Name</label>
+                  <input type="text" id="preset-page-name" placeholder="Code Reviewer" required />
+                </div>
+                <div class="form-group">
+                  <label>Agent</label>
+                  <select id="preset-page-agent">
+                    <option value="claude">Claude Code</option>
+                    <option value="codex">Codex</option>
+                    <option value="gemini">Gemini</option>
+                    <option value="opencode">OpenCode</option>
+                    <option value="aider">Aider</option>
+                  </select>
+                </div>
+                <div class="form-group">
+                  <label>Icon</label>
+                  <input type="text" id="preset-page-icon" maxlength="2" placeholder="R" style="width:50px" />
+                </div>
+                <div class="form-group">
+                  <label>Color</label>
+                  <input type="color" id="preset-page-color" value="#818cf8" style="width:50px;height:32px" />
+                </div>
+              </div>
+              <div class="form-group" style="margin-top:10px">
+                <label>Description</label>
+                <input type="text" id="preset-page-description" placeholder="Reviews code for bugs and improvements" />
+              </div>
+              <div class="form-group" style="margin-top:10px">
+                <label>Flags</label>
+                <textarea id="preset-page-flags" rows="3" placeholder="--append-system-prompt &quot;You are a code reviewer...&quot; --permission-mode plan"></textarea>
+              </div>
+              <div class="form-actions">
+                <button type="submit" class="btn btn-primary">Save Preset</button>
+              </div>
+            </form>
+          </div>
+        </div>
       </div>
 
       <!-- AI Agents Todo Tab -->
