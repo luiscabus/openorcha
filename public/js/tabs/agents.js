@@ -85,10 +85,14 @@ function readInitiativesState() {
   try {
     const parsed = JSON.parse(window.localStorage.getItem(AGENT_INITIATIVES_KEY) || 'null');
     if (parsed && Array.isArray(parsed.initiatives) && parsed.assignments && typeof parsed.assignments === 'object') {
-      return parsed;
+      return {
+        initiatives: parsed.initiatives,
+        assignments: parsed.assignments,
+        collapsed: parsed.collapsed && typeof parsed.collapsed === 'object' ? parsed.collapsed : {},
+      };
     }
   } catch {}
-  return { initiatives: [], assignments: {} };
+  return { initiatives: [], assignments: {}, collapsed: {} };
 }
 
 function persistInitiativesState(state) {
@@ -104,6 +108,16 @@ function loadInitiativesState() {
   const state = readInitiativesState();
   window._agentInitiatives = state;
   return state;
+}
+
+function initiativeCollapseKey(initiativeId) {
+  return initiativeId || '__unassigned__';
+}
+
+function isInitiativeCollapsed(state, initiativeId, agentsCount) {
+  const key = initiativeCollapseKey(initiativeId);
+  if (Object.prototype.hasOwnProperty.call(state.collapsed, key)) return !!state.collapsed[key];
+  return !initiativeId && agentsCount === 0;
 }
 
 function renderAgentLane(agent, initiativeName = '') {
@@ -149,7 +163,7 @@ function renderAgentLane(agent, initiativeName = '') {
   </div>`;
 }
 
-function renderInitiativeLane(initiative, agents) {
+function renderInitiativeLane(initiative, agents, collapsed = false) {
   const initiativeId = initiative?.id || '';
   const initiativeName = initiative?.name || 'Unassigned';
   const reorderHandle = initiativeId
@@ -157,9 +171,12 @@ function renderInitiativeLane(initiative, agents) {
         <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="9" cy="6" r="1"/><circle cx="15" cy="6" r="1"/><circle cx="9" cy="12" r="1"/><circle cx="15" cy="12" r="1"/><circle cx="9" cy="18" r="1"/><circle cx="15" cy="18" r="1"/></svg>
       </button>`
     : '';
-  return `<section class="initiative-lane" data-initiative-id="${escAttr(initiativeId)}" ondragover="window.handleAgentInitiativeDragOver(event, '${escAttr(initiativeId)}')" ondragleave="window.handleAgentInitiativeDragLeave(event)" ondrop="window.handleAgentInitiativeDrop(event, '${escAttr(initiativeId)}')">
+  return `<section class="initiative-lane${collapsed ? ' is-collapsed' : ''}" data-initiative-id="${escAttr(initiativeId)}" ondragover="window.handleAgentInitiativeDragOver(event, '${escAttr(initiativeId)}')" ondragleave="window.handleAgentInitiativeDragLeave(event)" ondrop="window.handleAgentInitiativeDrop(event, '${escAttr(initiativeId)}')">
     <div class="initiative-lane-header">
-      <div>
+      <button class="initiative-lane-toggle" onclick="window.toggleInitiativeCollapse('${escAttr(initiativeId)}');event.stopPropagation()" title="${collapsed ? 'Expand lane' : 'Collapse lane'}">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="9 18 15 12 9 6"/></svg>
+      </button>
+      <div class="initiative-lane-heading">
         <div class="initiative-lane-title">${escHtml(initiativeName)}</div>
         <div class="initiative-lane-meta">${agents.length} agent${agents.length === 1 ? '' : 's'}</div>
       </div>
@@ -331,6 +348,22 @@ export function deleteAgentInitiative(initiativeId) {
   Object.keys(state.assignments).forEach(key => {
     if (state.assignments[key] === initiativeId) delete state.assignments[key];
   });
+  delete state.collapsed[initiativeCollapseKey(initiativeId)];
+  persistInitiativesState(state);
+  loadAgents();
+}
+
+export function toggleInitiativeCollapse(initiativeId) {
+  const state = loadInitiativesState();
+  const key = initiativeCollapseKey(initiativeId);
+  const agents = (window._runningAgents || []).filter(agent => {
+    if (!window._visibleAgents) return true;
+    return window._visibleAgents.some(item => item.pid === agent.pid);
+  });
+  const agentsCount = initiativeId
+    ? agents.filter(agent => state.assignments[agentInitiativeKey(agent)] === initiativeId).length
+    : agents.filter(agent => !state.assignments[agentInitiativeKey(agent)]).length;
+  state.collapsed[key] = !isInitiativeCollapsed(state, initiativeId, agentsCount);
   persistInitiativesState(state);
   loadAgents();
 }
@@ -453,6 +486,7 @@ export async function loadAgents() {
     // Store agents data for use in drawer and history
     window._agentMux = {};
     window._runningAgents = agents;
+    window._visibleAgents = visibleAgents;
     for (const a of agents) window._agentMux[a.pid] = a.multiplexer || null;
 
     const lanes = [
@@ -476,7 +510,11 @@ export async function loadAgents() {
       return;
     }
 
-    list.innerHTML = lanes.map(lane => renderInitiativeLane(lane.id ? { id: lane.id, name: lane.name } : null, lane.agents)).join('');
+    list.innerHTML = lanes.map(lane => renderInitiativeLane(
+      lane.id ? { id: lane.id, name: lane.name } : null,
+      lane.agents,
+      isInitiativeCollapsed(initiativeState, lane.id, lane.agents.length),
+    )).join('');
 
   } catch (err) {
     list.innerHTML = `<div class="empty-state"><p style="color:var(--danger)">${escHtml(err.message)}</p></div>`;

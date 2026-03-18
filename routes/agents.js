@@ -816,6 +816,8 @@ router.post('/:pid/send', (req, res) => {
         // Pasting text is more reliable for CLIs like Codex than send-keys text + Enter.
         execSync(`tmux set-buffer -- ${shellEscape(message)}`, { timeout: 3000 });
         execSync(`tmux paste-buffer -t ${shellEscape(mux.target)} -d`, { timeout: 3000 });
+        // Small delay so the pasted text is fully processed before Enter
+        execSync('sleep 0.15');
         execSync(`tmux send-keys -t ${shellEscape(mux.target)} Enter`, { timeout: 3000 });
       }
     } else if (mux.type === 'screen') {

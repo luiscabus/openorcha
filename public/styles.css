@@ -763,6 +763,39 @@ body {
   margin-bottom: 6px;
 }
 
+.initiative-lane-toggle {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 26px;
+  height: 26px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--bg3);
+  color: var(--text3);
+  cursor: pointer;
+  flex-shrink: 0;
+  transition: transform 0.15s, border-color 0.15s, color 0.15s;
+}
+
+.initiative-lane-toggle:hover {
+  border-color: var(--accent);
+  color: var(--text);
+}
+
+.initiative-lane-toggle svg {
+  transform: rotate(90deg);
+}
+
+.initiative-lane.is-collapsed .initiative-lane-toggle svg {
+  transform: rotate(0deg);
+}
+
+.initiative-lane-heading {
+  flex: 1;
+  min-width: 0;
+}
+
 .initiative-lane-actions {
   display: flex;
   align-items: center;
@@ -791,6 +824,11 @@ body {
   grid-template-columns: repeat(auto-fill, minmax(360px, 360px));
   gap: 12px;
   align-items: start;
+}
+
+.initiative-lane.is-collapsed .initiative-lane-dropnote,
+.initiative-lane.is-collapsed .initiative-lane-body {
+  display: none;
 }
 
 .initiative-delete-btn {

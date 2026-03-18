@@ -43,6 +43,7 @@ import {
   launchFromHistory,
   addAgentInitiative,
   deleteAgentInitiative,
+  toggleInitiativeCollapse,
   startAgentInitiativeDrag,
   endAgentInitiativeDrag,
   startInitiativeOrderDrag,
@@ -149,6 +150,7 @@ window.historyOpenAgent = historyOpenAgent;
 window.launchFromHistory = launchFromHistory;
 window.addAgentInitiative = addAgentInitiative;
 window.deleteAgentInitiative = deleteAgentInitiative;
+window.toggleInitiativeCollapse = toggleInitiativeCollapse;
 window.startAgentInitiativeDrag = startAgentInitiativeDrag;
 window.endAgentInitiativeDrag = endAgentInitiativeDrag;
 window.startInitiativeOrderDrag = startInitiativeOrderDrag;
