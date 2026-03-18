@@ -749,12 +749,24 @@ body {
   box-shadow: inset 0 0 0 1px rgba(79, 142, 247, 0.18);
 }
 
+.initiative-lane.is-order-target {
+  border-color: var(--success);
+  background: rgba(62, 207, 142, 0.07);
+  box-shadow: inset 0 0 0 1px rgba(62, 207, 142, 0.18);
+}
+
 .initiative-lane-header {
   display: flex;
   align-items: flex-start;
   justify-content: space-between;
   gap: 10px;
   margin-bottom: 6px;
+}
+
+.initiative-lane-actions {
+  display: flex;
+  align-items: center;
+  gap: 6px;
 }
 
 .initiative-lane-title {
@@ -783,6 +795,15 @@ body {
 
 .initiative-delete-btn {
   color: var(--danger);
+}
+
+.initiative-order-handle {
+  cursor: grab;
+  color: var(--text3);
+}
+
+.initiative-order-handle:active {
+  cursor: grabbing;
 }
 
 .initiative-empty {

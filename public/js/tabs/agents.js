@@ -17,6 +17,7 @@ export const AGENT_META = {
 const AGENT_INITIATIVES_KEY = 'ssh-manager.ai-agents.initiatives';
 
 let draggedAgentKey = null;
+let draggedInitiativeId = null;
 let showNonInteractiveAgents = false;
 
 export let agentsAutoRefreshTimer = null;
@@ -151,15 +152,23 @@ function renderAgentLane(agent, initiativeName = '') {
 function renderInitiativeLane(initiative, agents) {
   const initiativeId = initiative?.id || '';
   const initiativeName = initiative?.name || 'Unassigned';
+  const reorderHandle = initiativeId
+    ? `<button class="btn btn-ghost btn-sm btn-icon initiative-order-handle" draggable="true" ondragstart="window.startInitiativeOrderDrag(event, '${escAttr(initiativeId)}')" ondragend="window.endInitiativeOrderDrag()" onclick="event.stopPropagation()" title="Drag to reorder initiative">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="9" cy="6" r="1"/><circle cx="15" cy="6" r="1"/><circle cx="9" cy="12" r="1"/><circle cx="15" cy="12" r="1"/><circle cx="9" cy="18" r="1"/><circle cx="15" cy="18" r="1"/></svg>
+      </button>`
+    : '';
   return `<section class="initiative-lane" data-initiative-id="${escAttr(initiativeId)}" ondragover="window.handleAgentInitiativeDragOver(event, '${escAttr(initiativeId)}')" ondragleave="window.handleAgentInitiativeDragLeave(event)" ondrop="window.handleAgentInitiativeDrop(event, '${escAttr(initiativeId)}')">
     <div class="initiative-lane-header">
       <div>
         <div class="initiative-lane-title">${escHtml(initiativeName)}</div>
         <div class="initiative-lane-meta">${agents.length} agent${agents.length === 1 ? '' : 's'}</div>
       </div>
+      <div class="initiative-lane-actions">
+      ${reorderHandle}
       ${initiativeId ? `<button class="btn btn-ghost btn-sm btn-icon initiative-delete-btn" onclick="window.deleteAgentInitiative('${escAttr(initiativeId)}')" title="Delete initiative">
         <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 6h18"/><path d="M8 6V4h8v2"/><path d="M19 6l-1 14H6L5 6"/><path d="M10 11v6"/><path d="M14 11v6"/></svg>
       </button>` : ''}
+      </div>
     </div>
     <div class="initiative-lane-dropnote">Drop an agent here to place it in this lane.</div>
     <div class="initiative-lane-body">
@@ -334,15 +343,34 @@ export function startAgentInitiativeDrag(event, agentKey) {
 
 export function endAgentInitiativeDrag() {
   draggedAgentKey = null;
-  document.querySelectorAll('.initiative-lane').forEach(lane => lane.classList.remove('is-drop-target'));
+  document.querySelectorAll('.initiative-lane').forEach(lane => lane.classList.remove('is-drop-target', 'is-order-target'));
+}
+
+export function startInitiativeOrderDrag(event, initiativeId) {
+  draggedInitiativeId = initiativeId;
+  event.dataTransfer.effectAllowed = 'move';
+  event.dataTransfer.setData('text/plain', initiativeId);
+}
+
+export function endInitiativeOrderDrag() {
+  draggedInitiativeId = null;
+  document.querySelectorAll('.initiative-lane').forEach(lane => lane.classList.remove('is-drop-target', 'is-order-target'));
 }
 
 export function handleAgentInitiativeDragOver(event, initiativeId) {
-  if (!draggedAgentKey) return;
+  if (!draggedAgentKey && !draggedInitiativeId) return;
   event.preventDefault();
   event.dataTransfer.dropEffect = 'move';
+  if (draggedInitiativeId) {
+    document.querySelectorAll('.initiative-lane').forEach(lane => {
+      lane.classList.toggle('is-order-target', !!initiativeId && lane.dataset.initiativeId === initiativeId && initiativeId !== draggedInitiativeId);
+      lane.classList.remove('is-drop-target');
+    });
+    return;
+  }
   document.querySelectorAll('.initiative-lane').forEach(lane => {
     lane.classList.toggle('is-drop-target', lane.dataset.initiativeId === initiativeId);
+    lane.classList.remove('is-order-target');
   });
 }
 
@@ -355,6 +383,23 @@ export function handleAgentInitiativeDragLeave(event) {
 
 export function handleAgentInitiativeDrop(event, initiativeId) {
   event.preventDefault();
+  if (draggedInitiativeId) {
+    if (!initiativeId || initiativeId === draggedInitiativeId) {
+      endInitiativeOrderDrag();
+      return;
+    }
+    const state = loadInitiativesState();
+    const fromIndex = state.initiatives.findIndex(item => item.id === draggedInitiativeId);
+    const toIndex = state.initiatives.findIndex(item => item.id === initiativeId);
+    if (fromIndex !== -1 && toIndex !== -1) {
+      const [moved] = state.initiatives.splice(fromIndex, 1);
+      state.initiatives.splice(toIndex, 0, moved);
+      persistInitiativesState(state);
+    }
+    endInitiativeOrderDrag();
+    loadAgents();
+    return;
+  }
   const agentKey = draggedAgentKey || event.dataTransfer.getData('text/plain');
   if (!agentKey) return;
 
@@ -685,12 +730,26 @@ export async function killAgent(pid, name) {
 // ─── Agent Messages Drawer ────────────────────────────────────────────────────
 
 let drawerCurrentPid = null;
-const drawerDrafts = {}; // pid → draft message text
+const drawerDrafts = {};
+let drawerDraftKey = null;
 let drawerView = 'messages'; // 'messages' | 'terminal' | 'context'
 let drawerHasMux = false;
 let terminalRefreshTimer = null;
 let promptPollTimer = null;
 let messagesPollTimer = null;
+
+function getDrawerDraftKey(pid, agentId, cwd) {
+  return `${agentId || ''}::${cwd || ''}::${pid || ''}`;
+}
+
+function bindDrawerDraftTracking(key) {
+  const input = document.getElementById('drawer-send-input');
+  input.oninput = () => {
+    const value = input.value;
+    if (value.trim()) drawerDrafts[key] = value;
+    else delete drawerDrafts[key];
+  };
+}
 
 export function handleSendKeydown(e) {
   const textarea = e.target;
@@ -720,13 +779,8 @@ function updateDrawerSendVisibility() {
 }
 
 export async function openAgentMessages(pid, agentId, agentName, cwd) {
-  // Save draft from previous agent before switching
-  if (drawerCurrentPid && drawerCurrentPid !== pid) {
-    const prev = document.getElementById('drawer-send-input').value;
-    if (prev.trim()) drawerDrafts[drawerCurrentPid] = prev;
-    else delete drawerDrafts[drawerCurrentPid];
-  }
   drawerCurrentPid = pid;
+  drawerDraftKey = getDrawerDraftKey(pid, agentId, cwd);
   const meta = AGENT_META[agentId] || { label: '?', color: 'aider' };
 
   // Set up header
@@ -742,8 +796,9 @@ export async function openAgentMessages(pid, agentId, agentName, cwd) {
   const mux = window._agentMux?.[pid] || null;
   drawerHasMux = !!mux;
   const sendInput = document.getElementById('drawer-send-input');
-  sendInput.value = drawerDrafts[pid] || '';
+  sendInput.value = drawerDrafts[drawerDraftKey] || '';
   sendInput.style.height = 'auto';
+  bindDrawerDraftTracking(drawerDraftKey);
   // Restore enter-to-send preference
   const enterCb = document.getElementById('drawer-enter-to-send');
   if (enterCb) enterCb.checked = localStorage.getItem('enterToSend') !== 'false';
@@ -763,6 +818,12 @@ export async function openAgentMessages(pid, agentId, agentName, cwd) {
   }
 
   document.getElementById('messages-drawer').style.display = 'flex';
+  if (drawerHasMux) {
+    setTimeout(() => {
+      const input = document.getElementById('drawer-send-input');
+      if (input && drawerView === 'messages') input.focus();
+    }, 0);
+  }
   await fetchAndRenderMessages(pid);
 }
 
@@ -845,6 +906,9 @@ export function switchDrawerView(view) {
       checkForPrompt(drawerCurrentPid);
       promptPollTimer   = setInterval(() => checkForPrompt(drawerCurrentPid), 2500);
       messagesPollTimer = setInterval(() => fetchAndRenderMessages(drawerCurrentPid), 5000);
+    }
+    if (drawerHasMux) {
+      setTimeout(() => sendInput.focus(), 0);
     }
   } else if (view === 'terminal') {
     term.style.display = 'block';
@@ -1085,14 +1149,11 @@ function contextIcon(name) {
 }
 
 export function closeMessagesDrawer() {
-  // Save draft before closing
-  if (drawerCurrentPid) {
-    const draft = document.getElementById('drawer-send-input').value;
-    if (draft.trim()) drawerDrafts[drawerCurrentPid] = draft;
-    else delete drawerDrafts[drawerCurrentPid];
-  }
+  const input = document.getElementById('drawer-send-input');
+  input.oninput = null;
   document.getElementById('messages-drawer').style.display = 'none';
   drawerCurrentPid = null;
+  drawerDraftKey = null;
   clearInterval(terminalRefreshTimer);
   clearInterval(promptPollTimer);
   clearInterval(messagesPollTimer);
@@ -1109,19 +1170,23 @@ export function closeDrawerOnOverlay(e) {
 export async function sendAgentMessage() {
   const input = document.getElementById('drawer-send-input');
   const message = input.value.trim();
-  if (!message || !drawerCurrentPid) return;
+  const draftKey = drawerDraftKey;
+  const pid = drawerCurrentPid;
+  if (!message || !pid) return;
 
   // In terminal view: send without appending Enter (raw keystrokes)
   const noEnter = drawerView === 'terminal';
 
   input.disabled = true;
   try {
-    await api('POST', `/api/agents/${drawerCurrentPid}/send`, { message, noEnter });
+    await api('POST', `/api/agents/${pid}/send`, { message, noEnter });
     input.value = '';
     input.style.height = 'auto';
-    delete drawerDrafts[drawerCurrentPid];
+    if (draftKey) delete drawerDrafts[draftKey];
     if (!noEnter) {
-      setTimeout(() => fetchAndRenderMessages(drawerCurrentPid), 1500);
+      setTimeout(() => {
+        if (drawerCurrentPid === pid) fetchAndRenderMessages(pid);
+      }, 1500);
     }
   } catch (err) {
     toast(err.message, 'error');

@@ -810,10 +810,14 @@ router.post('/:pid/send', (req, res) => {
 
     const { noEnter } = req.body;
     if (mux.type === 'tmux') {
-      const cmd = noEnter
-        ? `tmux send-keys -t ${shellEscape(mux.target)} ${shellEscape(message)}`
-        : `tmux send-keys -t ${shellEscape(mux.target)} ${shellEscape(message)} Enter`;
-      execSync(cmd, { timeout: 3000 });
+      if (noEnter) {
+        execSync(`tmux send-keys -t ${shellEscape(mux.target)} ${shellEscape(message)}`, { timeout: 3000 });
+      } else {
+        // Pasting text is more reliable for CLIs like Codex than send-keys text + Enter.
+        execSync(`tmux set-buffer -- ${shellEscape(message)}`, { timeout: 3000 });
+        execSync(`tmux paste-buffer -t ${shellEscape(mux.target)} -d`, { timeout: 3000 });
+        execSync(`tmux send-keys -t ${shellEscape(mux.target)} Enter`, { timeout: 3000 });
+      }
     } else if (mux.type === 'screen') {
       const payload = noEnter ? message : message + '\n';
       execSync(`screen -S ${shellEscape(mux.session)} -X stuff ${shellEscape(payload)}`, { timeout: 3000 });

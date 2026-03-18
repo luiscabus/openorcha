@@ -45,6 +45,8 @@ import {
   deleteAgentInitiative,
   startAgentInitiativeDrag,
   endAgentInitiativeDrag,
+  startInitiativeOrderDrag,
+  endInitiativeOrderDrag,
   handleAgentInitiativeDragOver,
   handleAgentInitiativeDragLeave,
   handleAgentInitiativeDrop,
@@ -149,6 +151,8 @@ window.addAgentInitiative = addAgentInitiative;
 window.deleteAgentInitiative = deleteAgentInitiative;
 window.startAgentInitiativeDrag = startAgentInitiativeDrag;
 window.endAgentInitiativeDrag = endAgentInitiativeDrag;
+window.startInitiativeOrderDrag = startInitiativeOrderDrag;
+window.endInitiativeOrderDrag = endInitiativeOrderDrag;
 window.handleAgentInitiativeDragOver = handleAgentInitiativeDragOver;
 window.handleAgentInitiativeDragLeave = handleAgentInitiativeDragLeave;
 window.handleAgentInitiativeDrop = handleAgentInitiativeDrop;
