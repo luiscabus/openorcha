@@ -173,7 +173,7 @@ router.get('/:pid/messages', (req, res) => {
     let sessionFile = null;
 
     if (def.id === 'claude') {
-      sessionFile = findClaudeSessionFile(cwd, pid);
+      sessionFile = findClaudeSessionFile(cwd, pid, psOut);
       if (sessionFile) parsed = parseClaudeSession(sessionFile);
     } else if (def.id === 'codex') {
       sessionFile = findCodexSessionFile(cwd, psOut);
