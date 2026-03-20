@@ -5,6 +5,7 @@ const app = express();
 const PORT = 3456;
 
 app.use(express.json());
+app.use(express.text());
 app.use(express.static(path.join(__dirname, 'public')));
 
 app.use('/api/config',       require('./routes/config'));

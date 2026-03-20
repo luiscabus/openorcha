@@ -63,6 +63,27 @@ function detectMultiplexer(agentPid, agentTty, procs, tmuxMap, screenMap) {
   return null;
 }
 
+// ─── Agent status inference ──────────────────────────────────────────────────
+
+// Infer whether an agent is idle, thinking, or waiting for a permission prompt.
+// Uses CPU usage and terminal output heuristics.
+function inferAgentStatus(agent, procs, tmuxMap, screenMap) {
+  // Check for permission prompt first (highest priority)
+  if (agent.multiplexer?.type === 'tmux') {
+    try {
+      const text = execSync(`tmux capture-pane -t ${shellEscape(agent.multiplexer.target)} -p -S -30 2>/dev/null`, { encoding: 'utf8', timeout: 2000 });
+      if (parsePermissionPrompt(text)) return 'waiting_input';
+      // Check if the agent's input prompt is visible (last non-empty line is ❯ or >)
+      const lines = text.split('\n').filter(l => l.trim());
+      const lastLine = lines[lines.length - 1]?.trim() || '';
+      if (/^[❯>]\s*$/.test(lastLine)) return 'idle';
+    } catch {}
+  }
+  // CPU-based heuristic: if agent is using significant CPU, it's thinking
+  if (agent.cpu > 2) return 'thinking';
+  return 'idle';
+}
+
 // Debug: show all processes that nearly-match agent names (without strict AGENT_DEF filtering)
 router.get('/debug', (req, res) => {
   try {
@@ -147,6 +168,7 @@ router.get('/', (req, res) => {
     const screenMap = buildScreenMap();
     for (const a of agents) {
       a.multiplexer = detectMultiplexer(a.pid, a.tty, procs, tmuxMap, screenMap);
+      a.status = inferAgentStatus(a, procs, tmuxMap, screenMap);
     }
 
     res.json({ agents });
@@ -839,7 +861,15 @@ router.get('/:pid/terminal', (req, res) => {
 
 router.post('/:pid/send', (req, res) => {
   try {
-    const { message } = req.body;
+    // Support both JSON { message: "..." } and plain text body
+    const contentType = req.headers['content-type'] || '';
+    let message, noEnter;
+    if (contentType.includes('text/plain')) {
+      message = typeof req.body === 'string' ? req.body : String(req.body);
+      noEnter = false;
+    } else {
+      ({ message, noEnter } = req.body);
+    }
     if (!message || !message.trim()) return res.status(400).json({ error: 'Message is required' });
 
     const { pid } = req.params;
@@ -849,8 +879,6 @@ router.post('/:pid/send', (req, res) => {
     const tty = procs[pid]?.tty;
     const mux = detectMultiplexer(pid, tty, procs, buildTmuxPaneMap(), buildScreenMap());
     if (!mux) return res.status(400).json({ error: 'Agent is not running inside tmux or screen — sending not supported' });
-
-    const { noEnter } = req.body;
     if (mux.type === 'tmux') {
       if (noEnter) {
         execSync(`tmux send-keys -t ${shellEscape(mux.target)} ${shellEscape(message)}`, { timeout: 3000 });
@@ -870,6 +898,83 @@ router.post('/:pid/send', (req, res) => {
   } catch (e) {
     res.status(500).json({ error: e.message });
   }
+});
+
+// ─── Wait for agent to become idle ───────────────────────────────────────────
+// Long-polls until the agent finishes its current task.
+// Query params:
+//   timeout  — max wait in ms (default 30000, max 120000)
+//   interval — poll interval in ms (default 2000)
+// Returns the last few messages once idle, or { timedOut: true } on timeout.
+
+router.get('/:pid/wait', async (req, res) => {
+  const { pid } = req.params;
+  const timeout = Math.min(parseInt(req.query.timeout) || 30000, 120000);
+  const interval = Math.max(parseInt(req.query.interval) || 2000, 500);
+  const start = Date.now();
+
+  const checkIdle = () => {
+    try {
+      // Verify process still exists
+      const psOut = execSync(`ps -p ${pid} -o pcpu= 2>/dev/null`, { encoding: 'utf8' }).trim();
+      if (!psOut) return { done: true, reason: 'process_exited' };
+
+      const cpu = parseFloat(psOut);
+      const procs = buildProcTable();
+      const proc = procs[pid];
+      if (!proc) return { done: true, reason: 'process_exited' };
+
+      const tty = proc.tty;
+      const mux = detectMultiplexer(pid, tty, procs, buildTmuxPaneMap(), buildScreenMap());
+
+      // Check terminal for idle prompt or permission prompt
+      if (mux?.type === 'tmux') {
+        const text = execSync(`tmux capture-pane -t ${shellEscape(mux.target)} -p -S -30 2>/dev/null`, { encoding: 'utf8', timeout: 2000 });
+        if (parsePermissionPrompt(text)) return { done: true, reason: 'waiting_input' };
+        const lines = text.split('\n').filter(l => l.trim());
+        const lastLine = lines[lines.length - 1]?.trim() || '';
+        if (/^[❯>]\s*$/.test(lastLine) && cpu < 2) return { done: true, reason: 'idle' };
+      }
+
+      // CPU-based fallback
+      if (cpu < 2) return { done: true, reason: 'idle' };
+
+      return { done: false };
+    } catch {
+      return { done: true, reason: 'error' };
+    }
+  };
+
+  // Poll loop
+  while (Date.now() - start < timeout) {
+    const result = checkIdle();
+    if (result.done) {
+      // Fetch latest messages to return
+      try {
+        const psOut = execSync(`ps -p ${pid} -o args= 2>/dev/null`, { encoding: 'utf8' }).trim();
+        const bin = path.basename(psOut.split(/\s+/)[0]);
+        const def = AGENT_DEFS.find(d => d.match(bin, psOut));
+        const cwdMap = getCwdMap([pid]);
+        const cwd = cwdMap[pid];
+        let lastMessages = [];
+
+        if (def?.id === 'claude' && cwd) {
+          const sessionFile = findClaudeSessionFile(cwd, pid, psOut);
+          if (sessionFile) {
+            const parsed = parseClaudeSession(sessionFile);
+            lastMessages = parsed.messages.slice(-5);
+          }
+        }
+
+        return res.json({ status: result.reason, messages: lastMessages, elapsed: Date.now() - start });
+      } catch {
+        return res.json({ status: result.reason, messages: [], elapsed: Date.now() - start });
+      }
+    }
+    await new Promise(resolve => setTimeout(resolve, interval));
+  }
+
+  res.json({ status: 'timeout', messages: [], elapsed: Date.now() - start });
 });
 
 router.delete('/:pid', (req, res) => {

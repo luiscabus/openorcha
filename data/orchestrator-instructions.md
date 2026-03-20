@@ -14,7 +14,8 @@ All endpoints are under `http://localhost:3456/api/agents`.
 ```
 GET /api/agents
 ```
-Returns `{ agents: [{ pid, agentId, agentName, cwd, project, cpu, mem, etime, tty, multiplexer }] }`
+Returns `{ agents: [{ pid, agentId, agentName, cwd, project, cpu, mem, etime, tty, multiplexer, status }] }`
+- `status`: `"idle"` | `"thinking"` | `"waiting_input"` — inferred from CPU usage and terminal state
 
 ### View Agent History (past sessions across all projects)
 ```
@@ -57,6 +58,23 @@ Content-Type: application/json
 
 { "message": "your message here" }
 ```
+
+Also supports plain text body (avoids JSON escaping issues):
+```
+POST /api/agents/:pid/send
+Content-Type: text/plain
+
+your message here
+```
+
+### Wait for Agent to Finish (long-poll)
+```
+GET /api/agents/:pid/wait?timeout=30000&interval=2000
+```
+Long-polls until the agent becomes idle, hits a permission prompt, or exits.
+- `timeout` — max wait in ms (default 30000, max 120000)
+- `interval` — poll frequency in ms (default 2000, min 500)
+Returns `{ status: "idle"|"waiting_input"|"timeout"|"process_exited"|"error", messages: [...last 5 messages], elapsed: ms }`
 
 ### View Terminal Output (requires tmux)
 ```
@@ -104,19 +122,35 @@ curl -s -X POST http://localhost:3456/api/agents/launch \
 sleep 4 && curl -s http://localhost:3456/api/agents | jq '.agents[] | {pid, agentName, cwd, etime}'
 ```
 
-3. Send it a task:
+3. Send it a task (use printf to avoid JSON escaping issues):
 ```bash
-curl -s -X POST http://localhost:3456/api/agents/PID/send \
-  -H 'Content-Type: application/json' \
-  -d '{"message":"Implement the login form with email/password validation"}'
+printf '{"message":"Implement the login form with email/password validation"}' | \
+  curl -s -X POST http://localhost:3456/api/agents/PID/send -H 'Content-Type: application/json' -d @-
 ```
 
-4. Monitor progress by reading messages:
+   Or use plain text (no JSON escaping needed):
+```bash
+curl -s -X POST http://localhost:3456/api/agents/PID/send \
+  -H 'Content-Type: text/plain' \
+  -d 'Implement the login form with email/password validation'
+```
+
+4. Wait for the agent to finish (blocks until idle, up to timeout):
+```bash
+curl -s http://localhost:3456/api/agents/PID/wait?timeout=60000 | jq '{status, elapsed, lastMessage: .messages[-1].text[0:200]}'
+```
+
+5. Or monitor progress by reading messages:
 ```bash
 curl -s http://localhost:3456/api/agents/PID/messages | jq '.messages[-3:][] | {role, text: .text[0:200]}'
 ```
 
-5. Check if it's waiting for permission:
+6. Check agent status (idle/thinking/waiting_input):
+```bash
+curl -s http://localhost:3456/api/agents | jq '.agents[] | {pid, agentName, status}'
+```
+
+7. Check if it's waiting for permission:
 ```bash
 curl -s http://localhost:3456/api/agents/PID/prompt | jq '.'
 ```
