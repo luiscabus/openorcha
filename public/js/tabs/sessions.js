@@ -253,11 +253,15 @@ export async function loadTmuxSessions() {
   }
 
   if (newBtn) newBtn.style.display = '';
+  const staleBtn = document.getElementById('tmux-kill-stale-btn');
 
   if (!sessions.length) {
+    if (staleBtn) staleBtn.style.display = 'none';
     el.innerHTML = `<div class="multiplexer-empty">No tmux sessions — create one to get started</div>`;
     return;
   }
+
+  if (staleBtn) staleBtn.style.display = sessions.length > 1 ? '' : 'none';
 
   el.innerHTML = `<div class="table-wrap"><table class="data-table">
     <thead><tr><th>Name</th><th>Windows</th><th>Created</th><th>Status</th><th>Attach Command</th><th></th></tr></thead>
@@ -272,6 +276,7 @@ export async function loadTmuxSessions() {
           <span class="mono text-small" style="color:var(--accent);cursor:pointer" title="Click to copy" onclick="navigator.clipboard.writeText('${escAttr(attachCmd)}').then(()=>window.toast('Copied!'))">${escHtml(attachCmd)}</span>
         </td>
         <td style="display:flex;gap:6px;justify-content:flex-end">
+          <button class="btn btn-primary btn-sm" onclick="window.openTmuxTerminal('${escAttr(s.name)}')">Open</button>
           <button class="btn btn-ghost btn-sm" onclick="window.attachTmux('${escAttr(s.name)}')">Attach</button>
           <button class="btn btn-danger btn-sm" onclick="window.killTmux('${escAttr(s.name)}')">Kill</button>
         </td>
@@ -312,4 +317,15 @@ export async function killTmux(name) {
 
 export function attachTmux(name) {
   launchSSH(`tmux attach -t ${name}`);
+}
+
+export async function killStaleTmux() {
+  if (!window.confirm('Kill all tmux sessions that have no running agent?')) return;
+  try {
+    const { killed, kept } = await api('DELETE', '/api/sessions/tmux-stale');
+    toast(`Killed ${killed.length} stale session${killed.length !== 1 ? 's' : ''}, kept ${kept} active`);
+    loadTmuxSessions();
+  } catch (err) {
+    toast(err.message, 'error');
+  }
 }

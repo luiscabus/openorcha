@@ -539,9 +539,17 @@ export async function openLaunchAgentModal() {
   // Wire up session fetching on cwd/agent change
   const cwdInput = document.getElementById('launch-agent-cwd');
   const agentSelect = document.getElementById('launch-agent-id');
-  const handler = () => { clearTimeout(launchSessionsDebounce); launchSessionsDebounce = setTimeout(fetchLaunchSessions, 400); };
+  const updateLaunchUI = () => {
+    const isTerminal = agentSelect.value === 'terminal';
+    cwdInput.required = !isTerminal;
+    cwdInput.placeholder = isTerminal ? '~ (home directory)' : '~/projects/myapp';
+    document.getElementById('launch-skip-permissions').closest('.form-group').style.display = isTerminal ? 'none' : '';
+    document.getElementById('launch-sessions-group').style.display = isTerminal ? 'none' : document.getElementById('launch-sessions-group').style.display;
+  };
+  const handler = () => { updateLaunchUI(); clearTimeout(launchSessionsDebounce); launchSessionsDebounce = setTimeout(fetchLaunchSessions, 400); };
   cwdInput.oninput = handler;
   agentSelect.onchange = handler;
+  updateLaunchUI();
 
   // Load presets
   renderPresetPicker();
@@ -780,6 +788,7 @@ export async function killAgent(pid, name) {
 // ─── Agent Messages Drawer ────────────────────────────────────────────────────
 
 let drawerCurrentPid = null;
+let drawerTmuxSession = null; // set when opening a raw tmux terminal (no PID)
 const drawerDrafts = {};
 let drawerDraftKey = null;
 let drawerView = 'messages'; // 'messages' | 'terminal' | 'context'
@@ -830,6 +839,7 @@ function updateDrawerSendVisibility() {
 
 export async function openAgentMessages(pid, agentId, agentName, cwd) {
   drawerCurrentPid = pid;
+  drawerTmuxSession = null;
   drawerDraftKey = getDrawerDraftKey(pid, agentId, cwd);
   const meta = AGENT_META[agentId] || { label: '?', color: 'aider' };
 
@@ -875,6 +885,30 @@ export async function openAgentMessages(pid, agentId, agentName, cwd) {
     }, 0);
   }
   await fetchAndRenderMessages(pid);
+}
+
+export function openTmuxTerminal(sessionName) {
+  drawerCurrentPid = null;
+  drawerTmuxSession = sessionName;
+  drawerHasMux = true;
+
+  const icon = document.getElementById('drawer-agent-icon');
+  icon.textContent = '>';
+  icon.className = 'agent-icon agent-icon-terminal';
+  document.getElementById('drawer-agent-name').textContent = sessionName;
+  document.getElementById('drawer-agent-cwd').textContent = 'tmux session';
+  document.getElementById('drawer-msg-count').textContent = '';
+  document.getElementById('drawer-messages').innerHTML = '';
+
+  const sendInput = document.getElementById('drawer-send-input');
+  sendInput.value = '';
+  sendInput.style.height = 'auto';
+  updateDrawerSendVisibility();
+
+  // Go straight to terminal view
+  switchDrawerView('terminal');
+  document.getElementById('messages-drawer').style.display = 'flex';
+  setTimeout(() => sendInput.focus(), 0);
 }
 
 async function checkForPrompt(pid) {
@@ -986,12 +1020,15 @@ export function switchDrawerView(view) {
 }
 
 async function fetchAndRenderTerminal(pid) {
-  if (!pid) return;
+  if (!pid && !drawerTmuxSession) return;
   const el = document.getElementById('drawer-terminal');
   // Only auto-scroll if already at (or near) the bottom
   const atBottom = el.scrollHeight - el.scrollTop - el.clientHeight < 40;
   try {
-    const { content } = await api('GET', `/api/agents/${pid}/terminal`);
+    const url = drawerTmuxSession && !pid
+      ? `/api/agents/tmux-terminal/${encodeURIComponent(drawerTmuxSession)}`
+      : `/api/agents/${pid}/terminal`;
+    const { content } = await api('GET', url);
     el.textContent = content;
     if (atBottom) el.scrollTop = el.scrollHeight;
   } catch (err) {
@@ -1222,14 +1259,18 @@ export async function sendAgentMessage() {
   const message = input.value.trim();
   const draftKey = drawerDraftKey;
   const pid = drawerCurrentPid;
-  if (!message || !pid) return;
+  const tmuxSess = drawerTmuxSession;
+  if (!message || (!pid && !tmuxSess)) return;
 
   // In terminal view: send without appending Enter (raw keystrokes)
   const noEnter = drawerView === 'terminal';
 
   input.disabled = true;
   try {
-    await api('POST', `/api/agents/${pid}/send`, { message, noEnter });
+    const url = tmuxSess && !pid
+      ? `/api/agents/tmux-terminal/${encodeURIComponent(tmuxSess)}/send`
+      : `/api/agents/${pid}/send`;
+    await api('POST', url, { message, noEnter });
     input.value = '';
     input.style.height = 'auto';
     if (draftKey) delete drawerDrafts[draftKey];
@@ -1248,9 +1289,12 @@ export async function sendAgentMessage() {
 
 // Send a single named key (Up, Down, Enter, Escape, y, n, 1 …)
 export async function sendKey(key) {
-  if (!drawerCurrentPid) return;
+  if (!drawerCurrentPid && !drawerTmuxSession) return;
   try {
-    await api('POST', `/api/agents/${drawerCurrentPid}/send`, { message: key, noEnter: true });
+    const url = drawerTmuxSession && !drawerCurrentPid
+      ? `/api/agents/tmux-terminal/${encodeURIComponent(drawerTmuxSession)}/send`
+      : `/api/agents/${drawerCurrentPid}/send`;
+    await api('POST', url, { message: key, noEnter: true });
   } catch (err) {
     toast(err.message, 'error');
   }

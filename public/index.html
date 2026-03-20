@@ -325,7 +325,8 @@
           <div class="section-header">
             <h3>Tmux Sessions</h3>
             <span class="section-hint">Local tmux multiplexer sessions</span>
-            <button class="btn btn-ghost btn-sm" style="margin-left:auto" id="tmux-new-btn" onclick="openNewTmuxModal()" style="display:none">
+            <button class="btn btn-danger btn-sm" style="margin-left:auto" id="tmux-kill-stale-btn" onclick="killStaleTmux()" style="display:none">Kill Stale</button>
+            <button class="btn btn-ghost btn-sm" id="tmux-new-btn" onclick="openNewTmuxModal()" style="display:none">
               <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
               New Session
             </button>
@@ -565,6 +566,7 @@
             <option value="gemini">Gemini</option>
             <option value="opencode">OpenCode</option>
             <option value="aider">Aider</option>
+            <option value="terminal">Terminal (shell only)</option>
           </select>
         </div>
         <div class="form-group">

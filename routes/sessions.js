@@ -12,6 +12,10 @@ const {
   getTerminals,
 } = require('../lib/processTree');
 
+function shellEscape(str) {
+  return "'" + String(str).replace(/'/g, "'\\''") + "'";
+}
+
 const router = express.Router();
 
 router.get('/terminals', (req, res) => {
@@ -248,35 +252,104 @@ router.delete('/tmux/:name', (req, res) => {
   }
 });
 
+router.delete('/tmux-stale', (req, res) => {
+  try {
+    // Get all tmux sessions
+    let output = '';
+    try { output = execSync('tmux list-sessions 2>/dev/null || true', { encoding: 'utf8' }); } catch {}
+    const sessionNames = [];
+    for (const line of output.split('\n')) {
+      const m = line.match(/^([^:]+):/);
+      if (m) sessionNames.push(m[1]);
+    }
+
+    // Get PIDs of all running agents
+    const agentKeywords = ['claude', 'codex', 'gemini', 'opencode', 'aider', 'continue'];
+    let psOut = '';
+    try { psOut = execSync('ps -eo pid,args 2>/dev/null', { encoding: 'utf8' }); } catch {}
+
+    // Find tmux sessions that have an active agent process
+    const activeSessions = new Set();
+    // Map tmux panes to session names via tmux list-panes
+    for (const name of sessionNames) {
+      try {
+        const panes = execSync(`tmux list-panes -t ${shellEscape(name)} -F '#{pane_pid}' 2>/dev/null`, { encoding: 'utf8' }).trim();
+        for (const panePid of panes.split('\n')) {
+          // Check if this pane PID or any of its children is a known agent
+          try {
+            const children = execSync(`pgrep -P ${panePid.trim()} 2>/dev/null`, { encoding: 'utf8' }).trim();
+            const pidsToCheck = [panePid.trim(), ...children.split('\n')].filter(Boolean);
+            for (const p of pidsToCheck) {
+              try {
+                const args = execSync(`ps -p ${p} -o args= 2>/dev/null`, { encoding: 'utf8' }).trim().toLowerCase();
+                if (agentKeywords.some(k => args.includes(k))) {
+                  activeSessions.add(name);
+                }
+              } catch {}
+            }
+          } catch {}
+        }
+      } catch {}
+    }
+
+    // Kill sessions that have no active agent
+    const killed = [];
+    for (const name of sessionNames) {
+      if (activeSessions.has(name)) continue;
+      try {
+        execSync(`tmux kill-session -t ${shellEscape(name)} 2>/dev/null`);
+        killed.push(name);
+      } catch {}
+    }
+
+    res.json({ ok: true, killed, kept: sessionNames.length - killed.length });
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
 // Launch SSH command in a local terminal app via AppleScript
 router.post('/launch', (req, res) => {
   try {
     const { command, terminal } = req.body;
-    if (!command || !command.trim().startsWith('ssh')) {
-      return res.status(400).json({ error: 'Only SSH commands are allowed' });
+    const ALLOWED_PREFIXES = ['ssh', 'tmux', 'screen'];
+    if (!command || !ALLOWED_PREFIXES.some(p => command.trim().startsWith(p))) {
+      return res.status(400).json({ error: 'Only ssh, tmux, and screen commands are allowed' });
     }
     // Block shell metacharacters that could cause injection
     if (/[;&|`$(){}<>!\n\r]/.test(command)) {
       return res.status(400).json({ error: 'Command contains invalid characters' });
     }
-    const cmd = command.trim().replace(/"/g, '\\"');
+    const cmd = command.trim().replace(/\\/g, '\\\\').replace(/"/g, '\\"');
     let script;
 
     if (terminal === 'iterm') {
-      script = `tell application "iTerm2"\n  activate\n  create window with default profile command "${cmd}"\nend tell`;
+      script = [
+        'tell application "iTerm"',
+        '  activate',
+        '  set newWindow to (create window with default profile)',
+        '  tell current session of newWindow',
+        `    write text "${cmd}"`,
+        '  end tell',
+        'end tell',
+      ].join('\n');
     } else if (terminal === 'warp') {
-      // Warp has no AppleScript command support — open a new window, user pastes
-      script = `do shell script "open -na 'Warp'"`;
+      script = 'do shell script "open -na \'Warp\'"';
     } else {
-      script = `tell application "Terminal"\n  do script "${cmd}"\n  activate\nend tell`;
+      script = [
+        'tell application "Terminal"',
+        `  do script "${cmd}"`,
+        '  activate',
+        'end tell',
+      ].join('\n');
     }
 
-    const tmpFile = path.join(os.tmpdir(), `ssh-launch-${Date.now()}.scpt`);
+    const tmpFile = path.join(os.tmpdir(), `launch-${Date.now()}.applescript`);
     fs.writeFileSync(tmpFile, script);
     try {
-      execSync(`osascript "${tmpFile}"`);
+      execSync(`osascript ${shellEscape(tmpFile)}`, { timeout: 10000 });
     } finally {
-      fs.unlinkSync(tmpFile);
+      try { fs.unlinkSync(tmpFile); } catch {}
     }
 
     res.json({

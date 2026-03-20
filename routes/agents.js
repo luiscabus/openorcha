@@ -342,9 +342,10 @@ router.post('/launch', (req, res) => {
       }
     }
 
-    let cmd = AGENT_COMMANDS[agentId];
-    if (!cmd) return res.status(400).json({ error: `Unknown agent: ${agentId}` });
-    if (!cwd || !cwd.trim()) return res.status(400).json({ error: 'Working directory is required' });
+    const isTerminal = agentId === 'terminal';
+    let cmd = isTerminal ? null : AGENT_COMMANDS[agentId];
+    if (!isTerminal && !cmd) return res.status(400).json({ error: `Unknown agent: ${agentId}` });
+    if (!cwd || !cwd.trim()) cwd = os.homedir();
 
     cwd = cwd.trim().replace(/^~(?=\/|$)/, os.homedir());
     if (!fs.existsSync(cwd)) return res.status(400).json({ error: `Directory does not exist: ${cwd}` });
@@ -355,18 +356,20 @@ router.post('/launch', (req, res) => {
     }
     sessionName = sessionName.trim().replace(/[^a-zA-Z0-9_.\-]/g, '-');
 
-    if (skipPermissions && AGENT_SKIP_PERMISSIONS_FLAG[agentId]) {
-      cmd = `${cmd} ${AGENT_SKIP_PERMISSIONS_FLAG[agentId]}`;
-    }
+    if (!isTerminal) {
+      if (skipPermissions && AGENT_SKIP_PERMISSIONS_FLAG[agentId]) {
+        cmd = `${cmd} ${AGENT_SKIP_PERMISSIONS_FLAG[agentId]}`;
+      }
 
-    // Append resume flag if resuming a previous session
-    if (resumeSessionId && AGENT_RESUME_FLAG[agentId]) {
-      cmd = `${cmd} ${AGENT_RESUME_FLAG[agentId](resumeSessionId)}`;
-    }
+      // Append resume flag if resuming a previous session
+      if (resumeSessionId && AGENT_RESUME_FLAG[agentId]) {
+        cmd = `${cmd} ${AGENT_RESUME_FLAG[agentId](resumeSessionId)}`;
+      }
 
-    // Append preset flags
-    if (presetFlags) {
-      cmd = `${cmd} ${presetFlags}`;
+      // Append preset flags
+      if (presetFlags) {
+        cmd = `${cmd} ${presetFlags}`;
+      }
     }
 
     // Use a login shell so the user's PATH (~/.zshrc, nvm, homebrew, etc.) is sourced
@@ -379,11 +382,45 @@ router.post('/launch', (req, res) => {
       // Session name taken — add a new window instead
       execSync(`tmux new-window -t ${shellEscape(sessionName)} -c ${shellEscape(cwd)} ${shellEscape(userShell)} -l`, { timeout: 5000 });
     }
-    // Small wait for the login shell to finish initializing before sending the command
-    execSync('sleep 0.5');
-    execSync(`tmux send-keys -t ${shellEscape(sessionName)} ${shellEscape(cmd)} Enter`, { timeout: 5000 });
+    // For terminal-only sessions, just leave the shell open; otherwise send the agent command
+    if (!isTerminal) {
+      execSync('sleep 0.5');
+      execSync(`tmux send-keys -t ${shellEscape(sessionName)} ${shellEscape(cmd)} Enter`, { timeout: 5000 });
+    }
 
     res.json({ ok: true, sessionName });
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
+// ─── Tmux session terminal (no PID needed) ──────────────────────────────────
+
+router.get('/tmux-terminal/:session', (req, res) => {
+  try {
+    const session = req.params.session;
+    const content = execSync(`tmux capture-pane -t ${shellEscape(session)} -p -S -200 2>/dev/null`, { encoding: 'utf8', timeout: 3000 });
+    res.json({ content });
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
+router.post('/tmux-terminal/:session/send', (req, res) => {
+  try {
+    const session = req.params.session;
+    const { message, noEnter } = req.body;
+    if (!message) return res.status(400).json({ error: 'Message is required' });
+
+    if (noEnter) {
+      execSync(`tmux send-keys -t ${shellEscape(session)} ${shellEscape(message)}`, { timeout: 3000 });
+    } else {
+      execSync(`tmux set-buffer -- ${shellEscape(message)}`, { timeout: 3000 });
+      execSync(`tmux paste-buffer -t ${shellEscape(session)} -d`, { timeout: 3000 });
+      execSync('sleep 0.15');
+      execSync(`tmux send-keys -t ${shellEscape(session)} Enter`, { timeout: 3000 });
+    }
+    res.json({ ok: true });
   } catch (e) {
     res.status(500).json({ error: e.message });
   }
@@ -834,7 +871,19 @@ router.delete('/:pid', (req, res) => {
   try {
     const pid = parseInt(req.params.pid, 10);
     if (!pid || pid <= 1) return res.status(400).json({ error: 'Invalid PID' });
+
+    // Find the tmux session this process runs in, so we can kill it too
+    const procs = buildProcTable();
+    const tty = procs[pid]?.tty;
+    const mux = tty ? detectMultiplexer(pid, tty, procs, buildTmuxPaneMap(), buildScreenMap()) : null;
+
     execSync(`kill ${pid}`);
+
+    // Kill the tmux session if the agent was running in one
+    if (mux?.type === 'tmux' && mux.session) {
+      try { execSync(`tmux kill-session -t ${shellEscape(mux.session)} 2>/dev/null`); } catch {}
+    }
+
     res.json({ ok: true });
   } catch (e) {
     res.status(500).json({ error: e.message });

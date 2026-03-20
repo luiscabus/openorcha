@@ -18,6 +18,7 @@ import {
   createTmuxSession,
   killTmux,
   attachTmux,
+  killStaleTmux,
 } from './tabs/sessions.js';
 import {
   loadAgents,
@@ -56,6 +57,7 @@ import {
   sendKey,
   clickPromptOption,
   endDrawerSession,
+  openTmuxTerminal,
 } from './tabs/agents.js';
 import {
   loadTodos,
@@ -127,6 +129,8 @@ window.openNewTmuxModal = openNewTmuxModal;
 window.createTmuxSession = createTmuxSession;
 window.killTmux = killTmux;
 window.attachTmux = attachTmux;
+window.killStaleTmux = killStaleTmux;
+window.openTmuxTerminal = openTmuxTerminal;
 
 // Agents
 window.loadAgents = loadAgents;
