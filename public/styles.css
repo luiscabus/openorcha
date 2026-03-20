@@ -1616,6 +1616,25 @@ body {
   border-color: rgba(79,142,247,0.2);
 }
 
+.typing-dots {
+  display: flex;
+  gap: 4px;
+  padding: 8px 0;
+}
+.typing-dots span {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--text3);
+  animation: typing-bounce 1.2s infinite ease-in-out;
+}
+.typing-dots span:nth-child(2) { animation-delay: 0.15s; }
+.typing-dots span:nth-child(3) { animation-delay: 0.3s; }
+@keyframes typing-bounce {
+  0%, 60%, 100% { opacity: 0.3; transform: translateY(0); }
+  30% { opacity: 1; transform: translateY(-4px); }
+}
+
 .msg-body code {
   font-family: 'SF Mono', 'Fira Code', monospace;
   font-size: 12px;

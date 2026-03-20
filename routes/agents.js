@@ -198,6 +198,10 @@ router.get('/:pid/messages', (req, res) => {
       if (m) { cpu = parseFloat(m[1]); mem = parseFloat(m[2]); etime = m[3]; }
     } catch {}
 
+    // If the last message is from the user, the agent is working on a response
+    const lastMsg = parsed.messages[parsed.messages.length - 1];
+    const isWorking = lastMsg?.role === 'user';
+
     res.json({
       agentId: def.id,
       agentName: def.name,
@@ -205,6 +209,7 @@ router.get('/:pid/messages', (req, res) => {
       sessionFile: sessionFile ? path.basename(sessionFile) : null,
       messages: parsed.messages.slice(-150),
       total: parsed.messages.length,
+      isWorking,
       sessionMeta: {
         ...parsed.sessionMeta,
         pid,

@@ -1041,7 +1041,7 @@ export async function fetchAndRenderMessages(pid) {
   const atBottom = container.scrollHeight - container.scrollTop - container.clientHeight < 60;
   try {
     const data = await api('GET', `/api/agents/${pid}/messages`);
-    const { messages, total, note, sessionMeta } = data;
+    const { messages, total, note, sessionMeta, isWorking } = data;
 
     document.getElementById('drawer-msg-count').textContent =
       total > messages.length ? `last ${messages.length} of ${total}` : `${messages.length} messages`;
@@ -1055,7 +1055,16 @@ export async function fetchAndRenderMessages(pid) {
       return;
     }
 
-    container.innerHTML = messages.map(m => renderMessage(m)).join('');
+    let html = messages.map(m => renderMessage(m)).join('');
+    if (isWorking) {
+      html += `<div class="msg-entry assistant">
+        <div class="msg-role-row">
+          <span class="msg-role-label msg-role-assistant">Agent</span>
+        </div>
+        <div class="typing-dots"><span></span><span></span><span></span></div>
+      </div>`;
+    }
+    container.innerHTML = html;
     if (atBottom) container.scrollTop = container.scrollHeight;
   } catch (err) {
     container.innerHTML = `<div class="drawer-empty" style="color:var(--danger)">${escHtml(err.message)}</div>`;
