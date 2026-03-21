@@ -207,7 +207,10 @@ function loadTab(tab) {
   else if (tab === 'known-hosts') loadKnownHosts();
   else if (tab === 'raw-config') loadRawConfig();
   else if (tab === 'sessions') loadSessions();
-  else if (tab === 'agents') loadAgents();
+  else if (tab === 'agents') {
+    loadAgents();
+    toggleAgentAutoRefresh();
+  }
   else if (tab === 'agent-presets') loadAgentPresets();
   else if (tab === 'todo') loadTodos();
   else if (tab === 'kanban') loadKanban();
@@ -245,3 +248,4 @@ function initNav() {
 initNav();
 syncNavState(document.querySelector('.nav-item.active'));
 loadAgents();
+toggleAgentAutoRefresh();

@@ -31,8 +31,6 @@ export function toggleAgentAutoRefresh() {
 export function clearAgentAutoRefresh() {
   clearInterval(agentsAutoRefreshTimer);
   agentsAutoRefreshTimer = null;
-  const cb = document.getElementById('agents-auto-refresh');
-  if (cb) cb.checked = false;
 }
 
 function updateNonInteractiveToggle(hiddenCount = 0) {
