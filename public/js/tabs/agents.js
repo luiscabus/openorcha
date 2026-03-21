@@ -15,6 +15,7 @@ export const AGENT_META = {
 };
 
 const AGENT_INITIATIVES_KEY = 'ssh-manager.ai-agents.initiatives';
+const LAST_OPENED_AGENT_KEY = 'ssh-manager.ai-agents.last-opened';
 
 let draggedAgentKey = null;
 let draggedInitiativeId = null;
@@ -108,6 +109,14 @@ function loadInitiativesState() {
   return state;
 }
 
+function readLastOpenedAgentKey() {
+  return window.localStorage.getItem(LAST_OPENED_AGENT_KEY) || '';
+}
+
+function writeLastOpenedAgentKey(agentKey) {
+  window.localStorage.setItem(LAST_OPENED_AGENT_KEY, agentKey);
+}
+
 function initiativeCollapseKey(initiativeId) {
   return initiativeId || '__unassigned__';
 }
@@ -134,8 +143,9 @@ function renderAgentLane(agent, initiativeName = '') {
   const statusLabels = { idle: 'Idle', thinking: 'Thinking', waiting_input: 'Waiting' };
   const statusLabel = statusLabels[statusClass] || statusClass;
   const statusBadge = `<span class="agent-status-badge agent-status-${statusClass}" title="${escAttr(statusLabel)}">${escHtml(statusLabel)}</span>`;
+  const isLastOpened = readLastOpenedAgentKey() === key;
 
-  return `<div class="agent-card agent-card-draggable" draggable="true" ondragstart="window.startAgentInitiativeDrag(event, '${escAttr(key)}')" ondragend="window.endAgentInitiativeDrag()" style="cursor:pointer" onclick="window.openAgentMessages('${escAttr(agent.pid)}','${escAttr(agent.agentId)}','${escAttr(agent.agentName)}','${escAttr(agent.cwd || '')}')" title="Click to view conversation">
+  return `<div class="agent-card agent-card-draggable${isLastOpened ? ' agent-card-last-opened' : ''}" draggable="true" ondragstart="window.startAgentInitiativeDrag(event, '${escAttr(key)}')" ondragend="window.endAgentInitiativeDrag()" style="cursor:pointer" onclick="window.openAgentMessages('${escAttr(agent.pid)}','${escAttr(agent.agentId)}','${escAttr(agent.agentName)}','${escAttr(agent.cwd || '')}')" title="Click to view conversation">
     <div class="agent-card-header">
       <div class="agent-icon agent-icon-${agent.agentId}">${meta.label}</div>
       <div class="agent-name">${escHtml(agent.agentName)}</div>
@@ -154,6 +164,7 @@ function renderAgentLane(agent, initiativeName = '') {
     </div>
     <div class="agent-card-footer">
       <div style="display:flex;gap:6px;align-items:center" onclick="event.stopPropagation()">
+        ${isLastOpened ? '<span class="agent-last-opened-dot" title="Last opened"></span>' : ''}
         ${statusBadge}
         <span class="agent-status-badge agent-status-pid">PID ${escHtml(agent.pid)}</span>
         ${agent.tty && agent.terminalApp ? `<button class="btn btn-ghost btn-sm" onclick="window.focusSession('${escAttr(agent.tty)}','${escAttr(agent.terminalApp || '')}')">Focus</button>` : ''}
@@ -841,6 +852,8 @@ export async function openAgentMessages(pid, agentId, agentName, cwd) {
   drawerCurrentPid = pid;
   drawerTmuxSession = null;
   drawerDraftKey = getDrawerDraftKey(pid, agentId, cwd);
+  writeLastOpenedAgentKey(agentInitiativeKey({ pid, agentId, cwd, multiplexer: window._agentMux?.[pid], tty: null }));
+  loadAgents();
   const meta = AGENT_META[agentId] || { label: '?', color: 'aider' };
 
   // Set up header
