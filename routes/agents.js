@@ -758,14 +758,21 @@ router.get('/:pid/context', (req, res) => {
 function parsePermissionPrompt(text) {
   const lines = text.split('\n');
 
-  // Find the "Do you want to proceed?" (or similar) trigger line
+  // Find the question/trigger line — prefer the question over a trailing confirm hint
   let triggerIdx = -1;
+  let confirmIdx = -1;
   for (let i = lines.length - 1; i >= 0; i--) {
-    if (/do you want to|allow this|proceed\?/i.test(lines[i])) {
+    if (/press enter to confirm|press .* to cancel/i.test(lines[i])) {
+      if (confirmIdx === -1) confirmIdx = i;
+      continue;
+    }
+    if (/do you want to|would you like to|allow this|proceed\?/i.test(lines[i])) {
       triggerIdx = i;
       break;
     }
   }
+  // If we only found a confirm hint, use that (scan backwards for options)
+  if (triggerIdx === -1 && confirmIdx !== -1) triggerIdx = confirmIdx;
   if (triggerIdx === -1) return null;
 
   // Collect context: strip box-drawing chars from lines above trigger
@@ -775,31 +782,43 @@ function parsePermissionPrompt(text) {
     if (l) contextLines.push(l);
   }
 
-  // Parse options that follow the trigger
+  // Parse options from lines around the trigger
   const options = [];
   let selectedIdx = 0;
   let isNumbered = false;
 
-  for (let i = triggerIdx + 1; i < Math.min(lines.length, triggerIdx + 12); i++) {
-    const line = lines[i];
-    // Arrow-key style: ❯ selected option
-    const selectedArrow = line.match(/[❯>]\s+(.+)/);
-    // Arrow-key style: unselected option (2+ leading spaces, no ❯)
-    const unselectedArrow = line.match(/^ {2,}([A-Za-z].+)/);
-    // Numbered style: 1. option
-    const numbered = line.match(/^\s*(\d+)[.)]\s+(.+)/);
+  function scanLines(start, end, step) {
+    for (let i = start; step > 0 ? i < end : i >= end; i += step) {
+      const line = lines[i];
+      const numbered = line.match(/^\s*[›»]?\s*(\d+)[.)]\s+(.+)/);
+      const selectedArrow = line.match(/[❯>]\s+(.+)/);
+      const unselectedArrow = line.match(/^ {2,}([A-Za-z].+)/);
 
-    if (numbered) {
-      isNumbered = true;
-      options.push({ label: numbered[2].trim(), key: numbered[1] });
-    } else if (selectedArrow) {
-      selectedIdx = options.length;
-      options.push({ label: selectedArrow[1].trim(), key: null });
-    } else if (unselectedArrow && options.length > 0 && !isNumbered) {
-      options.push({ label: unselectedArrow[1].trim(), key: null });
-    } else if (line.trim() === '' && options.length > 0) {
-      break;
+      if (numbered) {
+        isNumbered = true;
+        if (/^\s*[›»]/.test(line)) selectedIdx = options.length;
+        options.push({ label: numbered[2].trim(), key: numbered[1] });
+      } else if (selectedArrow && !isNumbered) {
+        selectedIdx = options.length;
+        options.push({ label: selectedArrow[1].trim(), key: null });
+      } else if (unselectedArrow && options.length > 0 && !isNumbered) {
+        options.push({ label: unselectedArrow[1].trim(), key: null });
+      } else if (line.trim() === '' && options.length > 0) {
+        break;
+      }
     }
+  }
+
+  // Scan forward from trigger
+  scanLines(triggerIdx + 1, Math.min(lines.length, triggerIdx + 12), 1);
+
+  // If no options found forward, scan backward (confirm line at bottom, options above)
+  if (!options.length) {
+    scanLines(triggerIdx - 1, Math.max(0, triggerIdx - 12), -1);
+    options.reverse(); // restore top-to-bottom order
+    // Recalculate selectedIdx after reverse
+    const selLabel = options[options.length - 1 - selectedIdx]?.label;
+    if (selLabel) selectedIdx = options.findIndex(o => o.label === selLabel);
   }
 
   if (!options.length) return null;

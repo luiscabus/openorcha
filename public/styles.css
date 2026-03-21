@@ -659,15 +659,23 @@ body {
 .agent-status-thinking {
   background: rgba(79,142,247,0.15);
   color: var(--accent);
-  animation: status-pulse 1.5s ease-in-out infinite;
 }
 .agent-status-waiting_input {
-  background: rgba(245,166,35,0.15);
+  background: rgba(245,166,35,0.2);
   color: #f5a623;
+  animation: waiting-pulse 0.95s ease-in-out infinite;
 }
-@keyframes status-pulse {
-  0%, 100% { opacity: 1; }
-  50% { opacity: 0.5; }
+@keyframes waiting-pulse {
+  0%, 100% {
+    opacity: 1;
+    box-shadow: 0 0 0 0 rgba(245,166,35,0.38);
+    transform: scale(1);
+  }
+  50% {
+    opacity: 1;
+    box-shadow: 0 0 0 7px rgba(245,166,35,0.12);
+    transform: scale(1.06);
+  }
 }
 
 .agent-card {
