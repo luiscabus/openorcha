@@ -159,7 +159,7 @@ function renderAgentLane(agent, initiativeName = '') {
         ${statusBadge}
         <span class="agent-status-badge agent-status-pid">PID ${escHtml(agent.pid)}</span>
         ${agent.tty && agent.terminalApp ? `<button class="btn btn-ghost btn-sm" onclick="window.focusSession('${escAttr(agent.tty)}','${escAttr(agent.terminalApp || '')}')">Focus</button>` : ''}
-        <button class="btn btn-danger btn-sm" onclick="window.killAgent('${escAttr(agent.pid)}','${escAttr(agent.agentName)}')">Kill</button>
+        <button class="btn btn-danger btn-sm agent-kill-btn" onclick="window.killAgent('${escAttr(agent.pid)}','${escAttr(agent.agentName)}')">Kill</button>
       </div>
     </div>
   </div>`;

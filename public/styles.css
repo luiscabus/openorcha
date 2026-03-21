@@ -788,6 +788,24 @@ body {
   font-weight: 400;
 }
 
+.agent-kill-btn {
+  color: var(--text2);
+  border-color: var(--border);
+  padding: 1px 7px;
+  border-radius: 999px;
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.3px;
+  text-transform: uppercase;
+  line-height: 1.2;
+}
+
+.agent-kill-btn:hover {
+  background: var(--danger);
+  border-color: var(--danger);
+  color: #fff;
+}
+
 .initiative-lane {
   background: var(--bg2);
   border: 1px solid var(--border);
