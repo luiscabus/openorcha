@@ -130,16 +130,17 @@ function renderAgentLane(agent, initiativeName = '') {
   const muxBadge = agent.multiplexer
     ? `<span class="app-badge app-badge-mux" title="${escAttr(agent.multiplexer.type + ': ' + muxTarget)}">${escHtml(muxSessionName)}</span>`
     : '';
-  const laneBadge = initiativeName
-    ? `<span class="agent-lane-badge">${escHtml(initiativeName)}</span>`
-    : '';
   const key = agentInitiativeKey(agent);
+
+  const statusClass = agent.status || 'idle';
+  const statusLabels = { idle: 'Idle', thinking: 'Thinking', waiting_input: 'Waiting' };
+  const statusLabel = statusLabels[statusClass] || statusClass;
+  const statusBadge = `<span class="agent-status-badge agent-status-${statusClass}" title="${escAttr(statusLabel)}">${escHtml(statusLabel)}</span>`;
 
   return `<div class="agent-card agent-card-draggable" draggable="true" ondragstart="window.startAgentInitiativeDrag(event, '${escAttr(key)}')" ondragend="window.endAgentInitiativeDrag()" style="cursor:pointer" onclick="window.openAgentMessages('${escAttr(agent.pid)}','${escAttr(agent.agentId)}','${escAttr(agent.agentName)}','${escAttr(agent.cwd || '')}')" title="Click to view conversation">
     <div class="agent-card-header">
       <div class="agent-icon agent-icon-${agent.agentId}">${meta.label}</div>
       <div class="agent-name">${escHtml(agent.agentName)}</div>
-      ${laneBadge}
       ${termBadge}
       ${muxBadge}
     </div>
@@ -154,8 +155,9 @@ function renderAgentLane(agent, initiativeName = '') {
       </div>` : ''}
     </div>
     <div class="agent-card-footer">
-      <div style="display:flex;gap:6px" onclick="event.stopPropagation()">
-        <span class="agent-pid">PID ${escHtml(agent.pid)}</span>
+      <div style="display:flex;gap:6px;align-items:center" onclick="event.stopPropagation()">
+        ${statusBadge}
+        <span class="agent-status-badge agent-status-pid">PID ${escHtml(agent.pid)}</span>
         ${agent.tty && agent.terminalApp ? `<button class="btn btn-ghost btn-sm" onclick="window.focusSession('${escAttr(agent.tty)}','${escAttr(agent.terminalApp || '')}')">Focus</button>` : ''}
         <button class="btn btn-danger btn-sm" onclick="window.killAgent('${escAttr(agent.pid)}','${escAttr(agent.agentName)}')">Kill</button>
       </div>

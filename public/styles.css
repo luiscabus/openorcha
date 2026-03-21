@@ -642,6 +642,34 @@ body {
   border-color: rgba(62,207,142,0.25);
 }
 
+.agent-status-badge {
+  display: inline-flex;
+  align-items: center;
+  font-size: 10px;
+  font-weight: 600;
+  padding: 1px 7px;
+  border-radius: 20px;
+  letter-spacing: 0.3px;
+  text-transform: uppercase;
+}
+.agent-status-idle {
+  background: rgba(140,140,160,0.12);
+  color: var(--text3);
+}
+.agent-status-thinking {
+  background: rgba(79,142,247,0.15);
+  color: var(--accent);
+  animation: status-pulse 1.5s ease-in-out infinite;
+}
+.agent-status-waiting_input {
+  background: rgba(245,166,35,0.15);
+  color: #f5a623;
+}
+@keyframes status-pulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.5; }
+}
+
 .agent-card {
   background: var(--bg2);
   border: 1px solid var(--border);
@@ -753,13 +781,11 @@ body {
   gap: 6px;
 }
 
-.agent-lane-badge {
-  font-size: 10.5px;
-  color: var(--accent);
-  background: rgba(79, 142, 247, 0.12);
-  border: 1px solid rgba(79, 142, 247, 0.22);
-  padding: 2px 7px;
-  border-radius: 999px;
+.agent-status-pid {
+  color: var(--text2);
+  background: var(--bg3);
+  border-color: var(--border);
+  font-weight: 400;
 }
 
 .initiative-lane {
