@@ -1,0 +1,136 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>OpenOrcha | Open Source Agent Orchestration</title>
+  <meta
+    name="description"
+    content="OpenOrcha is a local-first orchestration workspace for launching, coordinating, and monitoring coding agents across sessions, SSH hosts, and reusable presets."
+  />
+  <link rel="stylesheet" href="styles.css" />
+</head>
+<body>
+  <div class="site-shell">
+    <header class="hero" id="top">
+      <nav class="topbar">
+        <a class="brand" href="#top">OpenOrcha</a>
+        <div class="topbar-links">
+          <a href="#features">Features</a>
+          <a href="#workflow">Workflow</a>
+          <a href="#open-source">Open Source</a>
+        </div>
+      </nav>
+
+      <div class="hero-grid">
+        <div class="hero-copy">
+          <p class="eyebrow">Local-first orchestration for coding agents</p>
+          <h1>Run the swarm from your own machine.</h1>
+          <p class="hero-text">
+            OpenOrcha gives you a focused control surface for coordinating coding agents,
+            managing SSH hosts, tracking sessions, and keeping orchestration local instead
+            of handing the whole workflow to a hosted dashboard.
+          </p>
+          <div class="hero-actions">
+            <a class="button button-primary" href="https://github.com/luiscabus/openorcha" target="_blank" rel="noreferrer">View on GitHub</a>
+            <a class="button button-secondary" href="#open-source">Why open source</a>
+          </div>
+        </div>
+
+        <aside class="hero-panel" aria-label="OpenOrcha summary">
+          <div class="panel-chip">Today</div>
+          <h2>What OpenOrcha is built for</h2>
+          <ul class="panel-list">
+            <li>Launch and organize multiple coding agents</li>
+            <li>Keep tabs on sessions, prompts, and terminal state</li>
+            <li>Manage SSH hosts, keys, and known hosts from one place</li>
+            <li>Reuse presets instead of rebuilding launch commands</li>
+          </ul>
+          <div class="terminal-card">
+            <span class="terminal-label">Quick start</span>
+            <code>npm install && npm start</code>
+          </div>
+        </aside>
+      </div>
+    </header>
+
+    <main>
+      <section class="section intro" id="features">
+        <div class="section-heading">
+          <p class="eyebrow">What it covers</p>
+          <h2>One workspace for the operational side of agentic coding.</h2>
+        </div>
+        <div class="feature-grid">
+          <article class="feature-card feature-card-dark">
+            <h3>Agent coordination</h3>
+            <p>Spin up agents, group work, and keep the moving pieces visible without relying on ad hoc terminal tabs.</p>
+          </article>
+          <article class="feature-card">
+            <h3>Session visibility</h3>
+            <p>Track active sessions and inspect terminal context so long-running work is easier to supervise.</p>
+          </article>
+          <article class="feature-card">
+            <h3>SSH management</h3>
+            <p>Work across boxes with built-in support for SSH hosts, keys, and known hosts instead of bouncing between files.</p>
+          </article>
+          <article class="feature-card feature-card-accent">
+            <h3>Reusable presets</h3>
+            <p>Save launch patterns for different agents and workflows, then reuse them without reconstructing flags every time.</p>
+          </article>
+        </div>
+      </section>
+
+      <section class="section workflow" id="workflow">
+        <div class="section-heading">
+          <p class="eyebrow">Workflow</p>
+          <h2>Designed for people who want leverage, not mystery.</h2>
+        </div>
+        <div class="timeline">
+          <article class="timeline-step">
+            <span class="step-number">01</span>
+            <h3>Define the work</h3>
+            <p>Create tasks, initiatives, or presets that match how you already run agents.</p>
+          </article>
+          <article class="timeline-step">
+            <span class="step-number">02</span>
+            <h3>Launch locally</h3>
+            <p>Keep execution on infrastructure you control, whether that is your laptop or a remote machine over SSH.</p>
+          </article>
+          <article class="timeline-step">
+            <span class="step-number">03</span>
+            <h3>Monitor in one place</h3>
+            <p>Follow sessions, prompts, and runtime state without scattering context across tools.</p>
+          </article>
+        </div>
+      </section>
+
+      <section class="section manifesto" id="open-source">
+        <div class="manifesto-copy">
+          <p class="eyebrow">Open Source</p>
+          <h2>OpenOrcha is meant to be inspectable, adaptable, and yours to run.</h2>
+          <p>
+            The point is not just to orchestrate agents. It is to do it with tooling you can
+            read, fork, host, and shape around your own environment. No black box control plane,
+            no mandatory cloud dependency, and no need to give up operational visibility.
+          </p>
+        </div>
+        <div class="manifesto-card">
+          <p class="manifesto-label">Repository</p>
+          <a class="repo-link" href="https://github.com/luiscabus/openorcha" target="_blank" rel="noreferrer">
+            github.com/luiscabus/openorcha
+          </a>
+          <p class="manifesto-note">
+            This website is a standalone static folder, so it can be deployed directly with
+            GitHub Pages or Cloudflare Pages while the orchestration app stays local-only.
+          </p>
+        </div>
+      </section>
+    </main>
+
+    <footer class="footer">
+      <p>OpenOrcha</p>
+      <p>Local-first orchestration for open-source coding workflows.</p>
+    </footer>
+  </div>
+</body>
+</html>
