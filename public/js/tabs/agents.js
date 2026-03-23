@@ -16,6 +16,7 @@ export const AGENT_META = {
 
 const AGENT_INITIATIVES_KEY = 'ssh-manager.ai-agents.initiatives';
 const LAST_OPENED_AGENT_KEY = 'ssh-manager.ai-agents.last-opened';
+const CONTEXT_UI_STATE_KEY = 'ssh-manager.ai-agents.context-ui';
 
 let draggedAgentKey = null;
 let draggedInitiativeId = null;
@@ -115,6 +116,70 @@ function readLastOpenedAgentKey() {
 
 function writeLastOpenedAgentKey(agentKey) {
   window.localStorage.setItem(LAST_OPENED_AGENT_KEY, agentKey);
+}
+
+function readContextUiState() {
+  try {
+    const parsed = JSON.parse(window.localStorage.getItem(CONTEXT_UI_STATE_KEY) || 'null');
+    if (parsed && typeof parsed === 'object') return parsed;
+  } catch {}
+  return {};
+}
+
+let contextUiState = readContextUiState();
+
+function persistContextUiState() {
+  window.localStorage.setItem(CONTEXT_UI_STATE_KEY, JSON.stringify(contextUiState));
+}
+
+function makeContextUiKey(agentId, cwd, kind, name) {
+  return [agentId || 'unknown', cwd || '', kind, name || ''].join('::');
+}
+
+function contextDomKey(key) {
+  return encodeURIComponent(key);
+}
+
+function isContextBlockOpen(key, defaultOpen = true) {
+  if (Object.prototype.hasOwnProperty.call(contextUiState, key)) return !!contextUiState[key];
+  return defaultOpen;
+}
+
+function setContextBlockOpen(key, open) {
+  contextUiState[key] = !!open;
+  persistContextUiState();
+}
+
+function applyContextBlockState(node, open) {
+  if (!node) return;
+  node.classList.toggle('is-open', !!open);
+  node.classList.toggle('is-collapsed', !open);
+  const toggle = node.firstElementChild;
+  const body = node.children[1];
+  if (toggle) toggle.setAttribute('aria-expanded', open ? 'true' : 'false');
+  if (body) body.hidden = !open;
+}
+
+export function toggleContextBlock(targetOrKey) {
+  let key = null;
+  let nodes = [];
+
+  if (typeof targetOrKey === 'string') {
+    key = decodeURIComponent(targetOrKey);
+    nodes = Array.from(document.querySelectorAll(`[data-context-key="${targetOrKey}"]`));
+  } else {
+    const toggle = targetOrKey?.closest?.('.ctx-collapsible-toggle');
+    const node = toggle?.closest?.('[data-context-key]');
+    const domKey = node?.getAttribute('data-context-key');
+    if (!domKey) return;
+    key = decodeURIComponent(domKey);
+    nodes = [node];
+  }
+
+  if (!key || !nodes.length) return;
+  const nextOpen = !isContextBlockOpen(key, true);
+  setContextBlockOpen(key, nextOpen);
+  nodes.forEach(node => applyContextBlockState(node, nextOpen));
 }
 
 function initiativeCollapseKey(initiativeId) {
@@ -1185,90 +1250,128 @@ async function fetchAndRenderContext(pid) {
       return;
     }
 
-    container.innerHTML = html + sections.map(s => renderContextSection(s)).join('');
+    container.innerHTML = html + `<div class="ctx-stack">${sections.map(s => renderContextSection(s, agentId, cwd)).join('')}</div>`;
   } catch (err) {
     container.innerHTML = `<div class="drawer-empty" style="color:var(--danger)">${escHtml(err.message)}</div>`;
   }
 }
 
-function renderContextSection(section) {
+function renderContextBlock({ key, open = true, className, headerClass, bodyClass = '', headerHtml, bodyHtml }) {
+  const domKey = contextDomKey(key);
+  const bodyClassName = bodyClass ? `${bodyClass} ctx-collapsible-body` : 'ctx-collapsible-body';
+  return `<section class="${className}${open ? ' is-open' : ' is-collapsed'}" data-context-key="${escAttr(domKey)}">
+    <button type="button" class="${headerClass} ctx-collapsible-toggle" aria-expanded="${open ? 'true' : 'false'}" onclick="window.toggleContextBlock(this)">
+      ${headerHtml}
+      <span class="ctx-collapse-icon" aria-hidden="true">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="6 9 12 15 18 9"/></svg>
+      </span>
+    </button>
+    <div class="${bodyClassName}"${open ? '' : ' hidden'}>
+      ${bodyHtml}
+    </div>
+  </section>`;
+}
+
+function renderContextMemoryEntry(memory, agentId, cwd, kind, defaultOpen = false) {
+  const entryKey = makeContextUiKey(agentId, cwd, kind, memory.file || memory.name || kind);
+  const open = isContextBlockOpen(entryKey, defaultOpen);
+  const typeBadge = `<span class="ctx-mem-type">${escHtml(memory.type || 'note')}</span>`;
+  const name = memory.name || memory.file || 'Untitled';
+  const fileBadge = memory.file ? `<span class="ctx-memory-file">${escHtml(memory.file)}</span>` : '';
+  const description = memory.description
+    ? `<span class="ctx-memory-desc">${escHtml(memory.description)}</span>`
+    : '';
+
+  return renderContextBlock({
+    key: entryKey,
+    open,
+    className: 'ctx-memory',
+    headerClass: 'ctx-memory-summary',
+    bodyClass: 'ctx-memory-panel',
+    headerHtml: `${typeBadge}
+      <div class="ctx-memory-headings">
+        <span class="ctx-memory-name">${escHtml(name)}</span>
+        ${description}
+      </div>
+      ${fileBadge}`,
+    bodyHtml: `<pre class="ctx-memory-body">${escHtml(memory.body || '')}</pre>`,
+  });
+}
+
+function renderContextSection(section, agentId, cwd) {
   const scopeBadge = `<span class="ctx-scope ctx-scope-${section.scope}">${section.scope}</span>`;
   const icon = contextIcon(section.icon);
+  const sectionKey = makeContextUiKey(agentId, cwd, 'section', `${section.scope}:${section.title}`);
+  let countBadge = '';
+  let bodyHtml = '';
 
-  // Active MCP servers section
   if (section.servers) {
-    const rows = section.servers.map(s => {
+    countBadge = `<span class="ctx-active-count">${section.servers.length}</span>`;
+    bodyHtml = `<div class="ctx-servers">${section.servers.map(s => {
       const sBadge = `<span class="ctx-scope ctx-scope-${s.scope}">${s.scope}</span>`;
       return `<div class="ctx-server-row">
-        <span class="ctx-server-name">${escHtml(s.name)}</span>
-        <span class="ctx-server-type">${escHtml(s.type)}</span>
-        <span class="ctx-server-source">${escHtml(s.source || '')}</span>
-        ${sBadge}
+        <div class="ctx-server-main">
+          <span class="ctx-server-name">${escHtml(s.name)}</span>
+          <span class="ctx-server-source">${escHtml(s.source || '')}</span>
+        </div>
+        <div class="ctx-server-meta">
+          <span class="ctx-server-type">${escHtml(s.type)}</span>
+          ${sBadge}
+        </div>
       </div>`;
-    }).join('');
-    return `<div class="ctx-section">
-      <div class="ctx-section-header">${icon}<span class="ctx-section-title">${escHtml(section.title)}</span><span class="ctx-active-count">${section.servers.length}</span>${scopeBadge}</div>
-      <div class="ctx-servers">${rows}</div>
-    </div>`;
-  }
-
-  // Marketplace plugins section
-  if (section.plugins) {
-    const rows = section.plugins.map(p => {
-      const statusCls = p.active ? 'ctx-plugin-active' : '';
+    }).join('')}</div>`;
+  } else if (section.plugins) {
+    countBadge = `<span class="ctx-active-count">${section.plugins.length}</span>`;
+    bodyHtml = `<div class="ctx-plugins">${section.plugins.map(p => {
       const statusLabel = p.active ? 'active' : p.hasMcp ? 'available' : 'skill';
       const typeLabel = p.builtin ? 'builtin' : 'external';
-      return `<div class="ctx-plugin-row ${statusCls}">
-        <span class="ctx-plugin-name">${escHtml(p.name)}</span>
-        ${p.description ? `<span class="ctx-plugin-desc">${escHtml(p.description)}</span>` : ''}
-        <span class="ctx-plugin-badge ctx-plugin-badge-${statusLabel}">${statusLabel}</span>
-        <span class="ctx-plugin-type">${typeLabel}</span>
+      return `<div class="ctx-plugin-row${p.active ? ' ctx-plugin-row-active' : ''}">
+        <div class="ctx-plugin-main">
+          <span class="ctx-plugin-name">${escHtml(p.name)}</span>
+          ${p.description ? `<span class="ctx-plugin-desc">${escHtml(p.description)}</span>` : ''}
+        </div>
+        <div class="ctx-plugin-meta">
+          <span class="ctx-plugin-badge ctx-plugin-badge-${statusLabel}">${statusLabel}</span>
+          <span class="ctx-plugin-type">${typeLabel}</span>
+        </div>
       </div>`;
-    }).join('');
-    return `<details class="ctx-section">
-      <summary class="ctx-section-header" style="cursor:pointer">${icon}<span class="ctx-section-title">${escHtml(section.title)}</span><span class="ctx-active-count">${section.plugins.length}</span>${scopeBadge}</summary>
-      <div class="ctx-plugins">${rows}</div>
-    </details>`;
+    }).join('')}</div>`;
+  } else if (section.memories) {
+    const blocks = [];
+    if (section.index && section.index.trim()) {
+      blocks.push(renderContextMemoryEntry({
+        file: 'MEMORY.md',
+        name: 'Memory Index',
+        type: 'index',
+        description: 'Project-wide memory overview',
+        body: section.index,
+      }, agentId, cwd, 'memory-index', true));
+    }
+    if (section.memories.length) {
+      countBadge = `<span class="ctx-active-count">${section.memories.length}</span>`;
+      blocks.push(`<div class="ctx-memory-list">${section.memories.map(m => renderContextMemoryEntry(m, agentId, cwd, 'memory-entry')).join('')}</div>`);
+    }
+    bodyHtml = blocks.join('') || '<div class="ctx-section-empty">No memory entries available.</div>';
+  } else if (section.content) {
+    bodyHtml = `<pre class="ctx-doc-content">${escHtml(section.content)}</pre>`;
+  } else if (section.items) {
+    bodyHtml = `<div class="ctx-items">${section.items.map(item => `<div class="ctx-item-row">
+      <span class="ctx-item-label">${escHtml(item.label)}</span>
+      <span class="ctx-item-value">${escHtml(item.value)}</span>
+    </div>`).join('')}</div>`;
+  } else {
+    return '';
   }
 
-  // Memory section
-  if (section.memories) {
-    const mems = section.memories.map(m => {
-      const typeBadge = `<span class="ctx-mem-type">${escHtml(m.type)}</span>`;
-      return `<details class="ctx-memory">
-        <summary class="ctx-memory-summary">${typeBadge}<span class="ctx-memory-name">${escHtml(m.name)}</span>${m.description ? `<span class="ctx-memory-desc">${escHtml(m.description)}</span>` : ''}</summary>
-        <pre class="ctx-memory-body">${escHtml(m.body)}</pre>
-      </details>`;
-    }).join('');
-    return `<div class="ctx-section">
-      <div class="ctx-section-header">${icon}<span class="ctx-section-title">${escHtml(section.title)}</span>${scopeBadge}</div>
-      ${mems}
-    </div>`;
-  }
-
-  // Markdown content section (CLAUDE.md, AGENTS.md etc)
-  if (section.content) {
-    return `<div class="ctx-section">
-      <div class="ctx-section-header">${icon}<span class="ctx-section-title">${escHtml(section.title)}</span>${scopeBadge}</div>
-      <pre class="ctx-doc-content">${escHtml(section.content)}</pre>
-    </div>`;
-  }
-
-  // Key-value items section
-  if (section.items) {
-    const rows = section.items.map(item =>
-      `<div class="ctx-item-row">
-        <span class="ctx-item-label">${escHtml(item.label)}</span>
-        <span class="ctx-item-value">${escHtml(item.value)}</span>
-      </div>`
-    ).join('');
-    return `<div class="ctx-section">
-      <div class="ctx-section-header">${icon}<span class="ctx-section-title">${escHtml(section.title)}</span>${scopeBadge}</div>
-      <div class="ctx-items">${rows}</div>
-    </div>`;
-  }
-
-  return '';
+  return renderContextBlock({
+    key: sectionKey,
+    open: isContextBlockOpen(sectionKey, true),
+    className: 'ctx-section',
+    headerClass: 'ctx-section-header',
+    bodyClass: 'ctx-section-body',
+    headerHtml: `${icon}<span class="ctx-section-title">${escHtml(section.title)}</span>${countBadge}${scopeBadge}`,
+    bodyHtml,
+  });
 }
 
 function contextIcon(name) {

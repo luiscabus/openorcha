@@ -103,23 +103,61 @@ function detectMultiplexer(agentPid, agentTty, procs, tmuxMap, screenMap) {
   return null;
 }
 
+function captureMuxText(mux, pid, startLine = -30) {
+  try {
+    if (mux?.type === 'tmux') {
+      return execSync(`tmux capture-pane -t ${shellEscape(mux.target)} -p -S ${startLine} 2>/dev/null`, { encoding: 'utf8', timeout: 2000 });
+    }
+    if (mux?.type === 'screen') {
+      const tmpFile = `/tmp/agent-orch-screen-${pid}-${Date.now()}`;
+      execSync(`screen -S ${shellEscape(mux.session)} -X hardcopy ${shellEscape(tmpFile)}`, { timeout: 3000 });
+      const content = fs.readFileSync(tmpFile, 'utf8');
+      fs.unlinkSync(tmpFile);
+      return content;
+    }
+  } catch {}
+  return '';
+}
+
+function stripAnsi(text) {
+  return String(text || '').replace(/\x1B\[[0-9;?]*[ -/]*[@-~]/g, '');
+}
+
+function detectCodexTerminalState(text) {
+  const lines = stripAnsi(text)
+    .split('\n')
+    .map(line => line.replace(/\r/g, '').trim())
+    .filter(Boolean)
+    .slice(-12);
+
+  for (const line of lines.reverse()) {
+    const normalized = line
+      .toLowerCase()
+      .replace(/^status:\s*/, '')
+      .replace(/^[|/\\\-⠁-⣿◐◓◑◒●•○·▪▸▹▶▷►>]+\s*/, '')
+      .replace(/\s+/g, ' ')
+      .trim();
+
+    if (/^(thinking|working)(?:\s*(?:\.\.\.|…))?$/.test(normalized)) return 'thinking';
+  }
+
+  return null;
+}
 // ─── Agent status inference ──────────────────────────────────────────────────
 
 // Infer whether an agent is idle, thinking, or waiting for a permission prompt.
 // Uses CPU usage and terminal output heuristics.
 function inferAgentStatus(agent, procs, tmuxMap, screenMap) {
-  // Check for permission prompt first (highest priority)
-  if (agent.multiplexer?.type === 'tmux') {
-    try {
-      const text = execSync(`tmux capture-pane -t ${shellEscape(agent.multiplexer.target)} -p -S -30 2>/dev/null`, { encoding: 'utf8', timeout: 2000 });
+  if (agent.multiplexer) {
+    const text = captureMuxText(agent.multiplexer, agent.pid, -30);
+    if (text) {
       if (parsePermissionPrompt(text)) return 'waiting_input';
-      // Check if the agent's input prompt is visible (last non-empty line is ❯ or >)
+      if (agent.agentId === 'codex' && detectCodexTerminalState(text) === 'thinking') return 'thinking';
       const lines = text.split('\n').filter(l => l.trim());
       const lastLine = lines[lines.length - 1]?.trim() || '';
       if (/^[❯>]\s*$/.test(lastLine)) return 'idle';
-    } catch {}
+    }
   }
-  // CPU-based heuristic: if agent is using significant CPU, it's thinking
   if (agent.cpu > 2) return 'thinking';
   return 'idle';
 }
@@ -1003,12 +1041,17 @@ router.get('/:pid/wait', async (req, res) => {
       const mux = detectMultiplexer(pid, tty, procs, buildTmuxPaneMap(), buildScreenMap());
 
       // Check terminal for idle prompt or permission prompt
-      if (mux?.type === 'tmux') {
-        const text = execSync(`tmux capture-pane -t ${shellEscape(mux.target)} -p -S -30 2>/dev/null`, { encoding: 'utf8', timeout: 2000 });
-        if (parsePermissionPrompt(text)) return { done: true, reason: 'waiting_input' };
-        const lines = text.split('\n').filter(l => l.trim());
-        const lastLine = lines[lines.length - 1]?.trim() || '';
-        if (/^[❯>]\s*$/.test(lastLine) && cpu < 2) return { done: true, reason: 'idle' };
+      if (mux) {
+        const text = captureMuxText(mux, pid, -30);
+        if (text) {
+          if (parsePermissionPrompt(text)) return { done: true, reason: 'waiting_input' };
+          if (proc.args && /(^|\/)codex(\s|$)/.test(proc.args) && detectCodexTerminalState(text) === 'thinking') {
+            return { done: false };
+          }
+          const lines = text.split('\n').filter(l => l.trim());
+          const lastLine = lines[lines.length - 1]?.trim() || '';
+          if (/^[❯>]\s*$/.test(lastLine) && cpu < 2) return { done: true, reason: 'idle' };
+        }
       }
 
       // CPU-based fallback

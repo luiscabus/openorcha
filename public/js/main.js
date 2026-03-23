@@ -60,6 +60,7 @@ import {
   relaunchDrawerSession,
   relaunchAgent,
   openTmuxTerminal,
+  toggleContextBlock,
 } from './tabs/agents.js';
 import {
   loadTodos,
@@ -171,6 +172,7 @@ window.switchDrawerView = switchDrawerView;
 window.sendKey = sendKey;
 window.clickPromptOption = clickPromptOption;
 window.endDrawerSession = endDrawerSession;
+window.toggleContextBlock = toggleContextBlock;
 window.relaunchDrawerSession = relaunchDrawerSession;
 
 // Todo
