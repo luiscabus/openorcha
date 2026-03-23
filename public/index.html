@@ -660,13 +660,8 @@
             <div id="drawer-agent-cwd" class="drawer-subtitle"></div>
           </div>
         </div>
-        <div style="display:flex;gap:8px;align-items:center">
+        <div class="drawer-header-actions">
           <span id="drawer-msg-count" class="drawer-count"></span>
-          <div class="drawer-view-toggle">
-            <button id="drawer-tab-messages" class="drawer-tab active" onclick="switchDrawerView('messages')">Messages</button>
-            <button id="drawer-tab-terminal" class="drawer-tab" onclick="switchDrawerView('terminal')">Terminal</button>
-            <button id="drawer-tab-context" class="drawer-tab" onclick="switchDrawerView('context')">Context</button>
-          </div>
           <button class="btn btn-ghost btn-sm" id="drawer-refresh-btn" onclick="refreshDrawer()">
             <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="23 4 23 10 17 10"/><path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"/></svg>
           </button>
@@ -677,9 +672,18 @@
           </button>
         </div>
       </div>
+      <div class="drawer-toolbar">
+        <div class="drawer-view-toggle">
+          <button id="drawer-tab-messages" class="drawer-tab active" onclick="switchDrawerView('messages')">Messages</button>
+          <button id="drawer-tab-terminal" class="drawer-tab" onclick="switchDrawerView('terminal')">Terminal</button>
+          <button id="drawer-tab-git" class="drawer-tab" onclick="switchDrawerView('git')">Git</button>
+          <button id="drawer-tab-context" class="drawer-tab" onclick="switchDrawerView('context')">Context</button>
+        </div>
+      </div>
       <div id="drawer-session-meta" class="drawer-session-meta" style="display:none"></div>
       <div id="drawer-messages" class="drawer-messages"></div>
       <div id="drawer-terminal" class="drawer-terminal" style="display:none"></div>
+      <div id="drawer-git" class="drawer-git" style="display:none"></div>
       <div id="drawer-context" class="drawer-context" style="display:none"></div>
       <div id="drawer-prompt" class="drawer-prompt" style="display:none"></div>
       <div id="drawer-quickkeys" class="drawer-quickkeys" style="display:none">

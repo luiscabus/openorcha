@@ -574,6 +574,66 @@ function readTomlSafe(fp) {
   } catch { return null; }
 }
 
+function runGit(cwd, args) {
+  return execSync(`git -C ${shellEscape(cwd)} ${args}`, {
+    encoding: 'utf8',
+    timeout: 3000,
+    stdio: ['ignore', 'pipe', 'ignore'],
+  }).trim();
+}
+
+function getGitInfo(cwd) {
+  if (!cwd) return { isRepo: false, note: 'No working directory found for this session.' };
+
+  try {
+    const root = runGit(cwd, 'rev-parse --show-toplevel');
+    const branch = runGit(cwd, 'branch --show-current') || 'HEAD';
+    let upstream = '';
+    try {
+      upstream = runGit(cwd, 'rev-parse --abbrev-ref --symbolic-full-name @{upstream}');
+    } catch {}
+
+    let ahead = 0;
+    let behind = 0;
+    if (upstream) {
+      try {
+        const counts = runGit(cwd, `rev-list --left-right --count ${shellEscape(`${branch}...${upstream}`)}`);
+        const [aheadStr, behindStr] = counts.split(/\s+/);
+        ahead = parseInt(aheadStr, 10) || 0;
+        behind = parseInt(behindStr, 10) || 0;
+      } catch {}
+    }
+
+    const statusText = runGit(cwd, 'status --short');
+    const files = statusText
+      ? statusText.split('\n').filter(Boolean).map(line => ({
+          code: line.slice(0, 2).trim() || '??',
+          path: line.slice(3).trim(),
+        }))
+      : [];
+
+    const stagedCount = files.filter(f => f.code[0] && f.code[0] !== '?').length;
+    const untrackedCount = files.filter(f => f.code === '??').length;
+    const changedCount = files.filter(f => f.code[1] && f.code[1] !== '?').length;
+
+    return {
+      isRepo: true,
+      root,
+      rootName: path.basename(root),
+      branch,
+      upstream,
+      ahead,
+      behind,
+      stagedCount,
+      changedCount,
+      untrackedCount,
+      files: files.slice(0, 80),
+    };
+  } catch {
+    return { isRepo: false, note: 'This session is not inside a git repository.' };
+  }
+}
+
 function getClaudeContext(cwd) {
   const home = os.homedir();
   const sections = [];
@@ -839,6 +899,20 @@ router.get('/:pid/context', (req, res) => {
     }
 
     res.json({ agentId: def.id, agentName: def.name, cwd, sections });
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
+router.get('/:pid/git', (req, res) => {
+  try {
+    const { pid } = req.params;
+    const psOut = execSync(`ps -p ${pid} -o args= 2>/dev/null`, { encoding: 'utf8' }).trim();
+    if (!psOut) return res.status(404).json({ error: 'Process not found' });
+
+    const cwdMap = getCwdMap([pid]);
+    const cwd = cwdMap[pid] || null;
+    res.json(getGitInfo(cwd));
   } catch (e) {
     res.status(500).json({ error: e.message });
   }

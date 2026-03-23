@@ -893,7 +893,7 @@ let drawerCurrentPid = null;
 let drawerTmuxSession = null; // set when opening a raw tmux terminal (no PID)
 const drawerDrafts = {};
 let drawerDraftKey = null;
-let drawerView = 'messages'; // 'messages' | 'terminal' | 'context'
+let drawerView = 'messages'; // 'messages' | 'terminal' | 'git' | 'context'
 let drawerHasMux = false;
 let terminalRefreshTimer = null;
 let promptPollTimer = null;
@@ -934,9 +934,10 @@ export function handleSendKeydown(e) {
 function updateDrawerSendVisibility() {
   const inTerminal = drawerView === 'terminal';
   const inContext = drawerView === 'context';
-  document.getElementById('drawer-send-area').style.display = (drawerHasMux && !inContext) ? 'flex' : 'none';
+  const inGit = drawerView === 'git';
+  document.getElementById('drawer-send-area').style.display = (drawerHasMux && !inContext && !inGit) ? 'flex' : 'none';
   document.getElementById('drawer-quickkeys').style.display = (drawerHasMux && inTerminal) ? 'flex' : 'none';
-  document.getElementById('drawer-no-mux').style.display = (!drawerHasMux && !inTerminal && !inContext) ? 'flex' : 'none';
+  document.getElementById('drawer-no-mux').style.display = (!drawerHasMux && !inTerminal && !inContext && !inGit) ? 'flex' : 'none';
 }
 
 export async function openAgentMessages(pid, agentId, agentName, cwd) {
@@ -1068,18 +1069,21 @@ export function switchDrawerView(view) {
 
   const msgs = document.getElementById('drawer-messages');
   const term = document.getElementById('drawer-terminal');
+  const git  = document.getElementById('drawer-git');
   const ctx  = document.getElementById('drawer-context');
   const refreshBtn = document.getElementById('drawer-refresh-btn');
   const metaBar = document.getElementById('drawer-session-meta');
 
   document.getElementById('drawer-tab-messages').classList.toggle('active', view === 'messages');
   document.getElementById('drawer-tab-terminal').classList.toggle('active', view === 'terminal');
+  document.getElementById('drawer-tab-git').classList.toggle('active', view === 'git');
   document.getElementById('drawer-tab-context').classList.toggle('active', view === 'context');
   updateDrawerSendVisibility();
 
   // Hide all panels
   msgs.style.display = 'none';
   term.style.display = 'none';
+  git.style.display = 'none';
   ctx.style.display  = 'none';
 
   const sendInput = document.getElementById('drawer-send-input');
@@ -1110,6 +1114,16 @@ export function switchDrawerView(view) {
     document.getElementById('drawer-prompt').style.display = 'none';
     fetchAndRenderTerminal(drawerCurrentPid);
     terminalRefreshTimer = setInterval(() => fetchAndRenderTerminal(drawerCurrentPid), 2000);
+  } else if (view === 'git') {
+    git.style.display = 'flex';
+    if (metaBar) metaBar.style.display = 'none';
+    clearInterval(promptPollTimer);
+    clearInterval(messagesPollTimer);
+    promptPollTimer = null;
+    messagesPollTimer = null;
+    document.getElementById('drawer-prompt').style.display = 'none';
+    refreshBtn.onclick = () => fetchAndRenderGit(drawerCurrentPid);
+    fetchAndRenderGit(drawerCurrentPid);
   } else if (view === 'context') {
     ctx.style.display = 'flex';
     if (metaBar) metaBar.style.display = 'none';
@@ -1137,6 +1151,70 @@ async function fetchAndRenderTerminal(pid) {
     if (atBottom) el.scrollTop = el.scrollHeight;
   } catch (err) {
     el.textContent = err.message;
+  }
+}
+
+async function fetchAndRenderGit(pid) {
+  const container = document.getElementById('drawer-git');
+  if (!pid) {
+    container.innerHTML = `<div class="drawer-empty">Git info is only available for agent sessions.</div>`;
+    return;
+  }
+
+  container.innerHTML = `<div class="drawer-loading">Loading git info…</div>`;
+  try {
+    const data = await api('GET', `/api/agents/${pid}/git`);
+    if (!data.isRepo) {
+      container.innerHTML = `<div class="drawer-empty">${escHtml(data.note || 'This session is not inside a git repository.')}</div>`;
+      return;
+    }
+
+    const branchMeta = [];
+    if (data.branch) branchMeta.push(`<span class="meta-pill meta-pill-model">${escHtml(data.branch)}</span>`);
+    if (data.upstream) branchMeta.push(`<span class="meta-pill">${escHtml(data.upstream)}</span>`);
+    if (data.ahead > 0) branchMeta.push(`<span class="meta-pill git-ahead"><strong>+${data.ahead}</strong> ahead</span>`);
+    if (data.behind > 0) branchMeta.push(`<span class="meta-pill git-behind"><strong>${data.behind}</strong> behind</span>`);
+
+    const stats = [
+      { label: 'Changed', value: data.changedCount || 0 },
+      { label: 'Staged', value: data.stagedCount || 0 },
+      { label: 'Untracked', value: data.untrackedCount || 0 },
+    ];
+
+    const filesHtml = data.files.length
+      ? `<div class="git-panel">
+          <div class="git-panel-header">
+            <div class="git-panel-title">Files</div>
+          </div>
+          <div class="git-status-list">
+            ${data.files.map(file => `<div class="git-status-row">
+              <span class="git-status-code">${escHtml(file.code)}</span>
+              <span class="git-status-path">${escHtml(file.path)}</span>
+            </div>`).join('')}
+          </div>
+        </div>`
+      : `<div class="git-panel"><div class="git-empty">Working tree clean.</div></div>`;
+
+    container.innerHTML = `
+      <div class="git-panel">
+        <div class="git-panel-header">
+          <div>
+            <div class="git-panel-title">Repository</div>
+            <div class="git-branch">${escHtml(data.rootName || data.root || 'Repository')}</div>
+          </div>
+          <div class="git-branch-meta">${branchMeta.join('')}</div>
+        </div>
+        <div class="git-stat-grid">
+          ${stats.map(stat => `<div class="git-stat">
+            <div class="git-stat-label">${escHtml(stat.label)}</div>
+            <div class="git-stat-value">${escHtml(String(stat.value))}</div>
+          </div>`).join('')}
+        </div>
+      </div>
+      ${filesHtml}
+    `;
+  } catch (err) {
+    container.innerHTML = `<div class="drawer-empty" style="color:var(--danger)">${escHtml(err.message)}</div>`;
   }
 }
 
@@ -1217,7 +1295,11 @@ function renderSessionMeta(meta) {
 }
 
 export async function refreshDrawer() {
-  if (drawerCurrentPid) await fetchAndRenderMessages(drawerCurrentPid);
+  if (!drawerCurrentPid) return;
+  if (drawerView === 'terminal') await fetchAndRenderTerminal(drawerCurrentPid);
+  else if (drawerView === 'git') await fetchAndRenderGit(drawerCurrentPid);
+  else if (drawerView === 'context') await fetchAndRenderContext(drawerCurrentPid);
+  else await fetchAndRenderMessages(drawerCurrentPid);
 }
 
 // ─── Context Tab ──────────────────────────────────────────────────────────────
