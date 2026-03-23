@@ -808,7 +808,11 @@ router.get('/:pid/context', (req, res) => {
 
 // Parse a tmux pane capture looking for a Claude Code permission prompt
 function parsePermissionPrompt(text) {
-  const lines = text.split('\n');
+  const allLines = text.split('\n');
+  // Only scan the last 20 lines — a real prompt is always near the bottom.
+  // This avoids false positives from conversation text scrolled up in the terminal.
+  const startIdx = Math.max(0, allLines.length - 20);
+  const lines = allLines.slice(startIdx);
 
   // Find the question/trigger line — prefer the question over a trailing confirm hint
   let triggerIdx = -1;
