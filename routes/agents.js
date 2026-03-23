@@ -451,7 +451,19 @@ router.post('/launch', (req, res) => {
     }
     // For terminal-only sessions, just leave the shell open; otherwise send the agent command
     if (!isTerminal) {
-      execSync('sleep 0.5');
+      // Wait for shell prompt to be ready (handles oh-my-zsh updates, slow init, etc.)
+      const maxWait = 10000;
+      const start = Date.now();
+      while (Date.now() - start < maxWait) {
+        execSync('sleep 0.5');
+        try {
+          const pane = execSync(`tmux capture-pane -t ${shellEscape(sessionName)} -p 2>/dev/null`, { encoding: 'utf8', timeout: 2000 });
+          const lines = pane.split('\n').filter(l => l.trim());
+          const last = lines[lines.length - 1]?.trim() || '';
+          // Shell prompt indicators: ends with $, %, >, ❯, ➜, or #
+          if (/[$%>❯➜#]\s*$/.test(last)) break;
+        } catch {}
+      }
       execSync(`tmux send-keys -t ${shellEscape(sessionName)} ${shellEscape(cmd)} Enter`, { timeout: 5000 });
     }
 
@@ -1034,6 +1046,100 @@ router.get('/:pid/wait', async (req, res) => {
   }
 
   res.json({ status: 'timeout', messages: [], elapsed: Date.now() - start });
+});
+
+router.post('/:pid/relaunch', (req, res) => {
+  try {
+    const pid = parseInt(req.params.pid, 10);
+    if (!pid || pid <= 1) return res.status(400).json({ error: 'Invalid PID' });
+
+    // Gather info before killing
+    const psOut = execSync(`ps -p ${pid} -o args= 2>/dev/null`, { encoding: 'utf8' }).trim();
+    if (!psOut) return res.status(404).json({ error: 'Process not found' });
+
+    const bin = path.basename(psOut.split(/\s+/)[0]);
+    const def = AGENT_DEFS.find(d => d.match(bin, psOut));
+    if (!def) return res.status(400).json({ error: 'Not a recognized agent' });
+
+    const cwdMap = getCwdMap([String(pid)]);
+    const cwd = cwdMap[String(pid)];
+    if (!cwd) return res.status(400).json({ error: 'Could not determine working directory' });
+
+    // Find the session file to resume
+    let sessionId = null;
+    if (def.id === 'claude') {
+      const sessionFile = findClaudeSessionFile(cwd, String(pid), psOut);
+      if (sessionFile) sessionId = path.basename(sessionFile, '.jsonl');
+    } else if (def.id === 'codex') {
+      const sessionFile = findCodexSessionFile(cwd, String(pid), psOut);
+      if (sessionFile) {
+        const meta = require('./agents').readCodexSessionMeta ? null : null;
+        // Extract session ID from codex file metadata
+        try {
+          const first = fs.readFileSync(sessionFile, 'utf8').split('\n')[0];
+          const m = JSON.parse(first);
+          if (m.type === 'session_meta' && m.payload?.id) sessionId = m.payload.id;
+        } catch {}
+        if (!sessionId) sessionId = path.basename(sessionFile, '.jsonl');
+      }
+    }
+
+    // Reconstruct the command — use the original args but replace/add --resume
+    let cmd = psOut;
+    // Strip any existing --resume flag (we'll add ours)
+    cmd = cmd.replace(/--resume\s+[0-9a-f-]+/i, '').trim();
+    // For codex, strip 'resume <id>' subcommand
+    cmd = cmd.replace(/\bresume\s+[0-9a-f-]+/i, '').trim();
+    // Add resume flag if we found a session
+    if (sessionId && AGENT_RESUME_FLAG[def.id]) {
+      cmd = `${cmd} ${AGENT_RESUME_FLAG[def.id](sessionId)}`;
+    }
+
+    // Get tmux session info
+    const procs = buildProcTable();
+    const tty = procs[pid]?.tty;
+    const mux = tty ? detectMultiplexer(pid, tty, procs, buildTmuxPaneMap(), buildScreenMap()) : null;
+    const tmuxSession = mux?.type === 'tmux' ? mux.target?.split(':')[0] : null;
+
+    // Kill the process
+    execSync(`kill ${pid}`);
+    // Wait for it to die
+    try { execSync(`sleep 1`); } catch {}
+
+    // Kill the old tmux session
+    if (tmuxSession) {
+      try { execSync(`tmux kill-session -t ${shellEscape(tmuxSession)} 2>/dev/null`); } catch {}
+    }
+
+    // Relaunch in a new tmux session
+    const sessionName = tmuxSession || `${def.id}-${path.basename(cwd)}`;
+    const userShell = resolveUserShell();
+
+    try {
+      execSync(`tmux new-session -d -s ${shellEscape(sessionName)} -c ${shellEscape(cwd)} ${shellEscape(userShell)} -l`, { timeout: 5000 });
+    } catch {
+      // Session name taken — add suffix
+      const altName = `${sessionName}-${Date.now() % 10000}`;
+      execSync(`tmux new-session -d -s ${shellEscape(altName)} -c ${shellEscape(cwd)} ${shellEscape(userShell)} -l`, { timeout: 5000 });
+    }
+    // Wait for shell prompt before sending command
+    const maxWait = 10000;
+    const startWait = Date.now();
+    while (Date.now() - startWait < maxWait) {
+      execSync('sleep 0.5');
+      try {
+        const pane = execSync(`tmux capture-pane -t ${shellEscape(sessionName)} -p 2>/dev/null`, { encoding: 'utf8', timeout: 2000 });
+        const pLines = pane.split('\n').filter(l => l.trim());
+        const last = pLines[pLines.length - 1]?.trim() || '';
+        if (/[$%>❯➜#]\s*$/.test(last)) break;
+      } catch {}
+    }
+    execSync(`tmux send-keys -t ${shellEscape(sessionName)} ${shellEscape(cmd)} Enter`, { timeout: 5000 });
+
+    res.json({ ok: true, sessionName, cmd, sessionId });
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
 });
 
 router.delete('/:pid', (req, res) => {

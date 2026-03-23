@@ -57,6 +57,8 @@ import {
   sendKey,
   clickPromptOption,
   endDrawerSession,
+  relaunchDrawerSession,
+  relaunchAgent,
   openTmuxTerminal,
 } from './tabs/agents.js';
 import {
@@ -136,6 +138,7 @@ window.openTmuxTerminal = openTmuxTerminal;
 window.loadAgents = loadAgents;
 window.toggleAgentNonInteractive = toggleAgentNonInteractive;
 window.killAgent = killAgent;
+window.relaunchAgent = relaunchAgent;
 window.toggleAgentAutoRefresh = toggleAgentAutoRefresh;
 window.openAgentMessages = openAgentMessages;
 window.refreshDrawer = refreshDrawer;
@@ -168,6 +171,7 @@ window.switchDrawerView = switchDrawerView;
 window.sendKey = sendKey;
 window.clickPromptOption = clickPromptOption;
 window.endDrawerSession = endDrawerSession;
+window.relaunchDrawerSession = relaunchDrawerSession;
 
 // Todo
 window.addTodo = addTodo;

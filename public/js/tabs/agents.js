@@ -785,12 +785,38 @@ export async function endDrawerSession() {
   }
 }
 
+export async function relaunchDrawerSession() {
+  if (!drawerCurrentPid) return;
+  const name = document.getElementById('drawer-agent-name').textContent;
+  if (!window.confirm(`Relaunch ${name}? This will kill and resume its session.`)) return;
+  try {
+    const { sessionName } = await api('POST', `/api/agents/${drawerCurrentPid}/relaunch`);
+    toast(`${name} relaunched in "${sessionName}"`);
+    closeMessagesDrawer();
+    setTimeout(loadAgents, 3000);
+  } catch (err) {
+    toast(err.message, 'error');
+  }
+}
+
 export async function killAgent(pid, name) {
   if (!window.confirm(`Kill ${name} (PID ${pid})?`)) return;
   try {
     await api('DELETE', `/api/agents/${pid}`);
     toast(`${name} killed`);
     loadAgents();
+  } catch (err) {
+    toast(err.message, 'error');
+  }
+}
+
+export async function relaunchAgent(pid, name) {
+  if (!window.confirm(`Relaunch ${name}? This will kill the process and resume its session.`)) return;
+  try {
+    const { sessionName } = await api('POST', `/api/agents/${pid}/relaunch`);
+    toast(`${name} relaunched in "${sessionName}"`);
+    closeMessagesDrawer();
+    setTimeout(loadAgents, 3000);
   } catch (err) {
     toast(err.message, 'error');
   }
