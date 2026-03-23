@@ -238,7 +238,7 @@ router.get('/:pid/messages', (req, res) => {
       sessionFile = findClaudeSessionFile(cwd, pid, psOut);
       if (sessionFile) parsed = parseClaudeSession(sessionFile);
     } else if (def.id === 'codex') {
-      sessionFile = findCodexSessionFile(cwd, psOut);
+      sessionFile = findCodexSessionFile(cwd, pid, psOut);
       if (sessionFile) {
         const msgs = parseCodexSession(sessionFile);
         parsed = { messages: msgs, sessionMeta: {} };
