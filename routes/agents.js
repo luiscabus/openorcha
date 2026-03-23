@@ -14,6 +14,51 @@ function shellEscape(str) {
   return "'" + String(str).replace(/'/g, "'\\''") + "'";
 }
 
+function normalizeTtyPath(agentTty) {
+  if (!agentTty || agentTty === '??') return null;
+  const tty = String(agentTty).trim();
+  if (!tty) return null;
+  if (tty.startsWith('/dev/')) return tty;
+  if (tty.startsWith('pts/')) return `/dev/${tty}`;
+  if (tty.startsWith('tty')) return `/dev/${tty}`;
+  if (/^\d+$/.test(tty)) return `/dev/pts/${tty}`;
+  return `/dev/${tty}`;
+}
+
+function findTmuxTarget(agentTty, tmuxMap) {
+  const ttyPath = normalizeTtyPath(agentTty);
+  if (!ttyPath) return null;
+  if (tmuxMap[ttyPath]) return tmuxMap[ttyPath];
+
+  const normalized = ttyPath.replace(/^\/dev\//, '');
+  for (const [paneTty, target] of Object.entries(tmuxMap)) {
+    if (paneTty.replace(/^\/dev\//, '') === normalized) return target;
+  }
+  return null;
+}
+
+function resolveUserShell() {
+  const candidates = [];
+  if (process.env.SHELL) candidates.push(process.env.SHELL);
+  candidates.push('/bin/bash', '/bin/sh', '/bin/zsh');
+
+  for (const candidate of candidates) {
+    if (!candidate) continue;
+    try {
+      if (candidate.startsWith('/') && fs.existsSync(candidate)) return candidate;
+    } catch {}
+  }
+
+  for (const name of ['bash', 'sh', 'zsh']) {
+    try {
+      const found = execSync(`command -v ${name} 2>/dev/null`, { encoding: 'utf8', timeout: 1000 }).trim();
+      if (found) return found;
+    } catch {}
+  }
+
+  return '/bin/sh';
+}
+
 function buildTmuxPaneMap() {
   try {
     const out = execSync('tmux list-panes -a -F "#{pane_tty} #{session_name}:#{window_index}.#{pane_index}" 2>/dev/null', { encoding: 'utf8', timeout: 2000 });
@@ -45,12 +90,7 @@ function detectMultiplexer(agentPid, agentTty, procs, tmuxMap, screenMap) {
   while (p && depth < 20) {
     const comm = path.basename(p.comm || '');
     if (comm === 'tmux' || comm.startsWith('tmux:')) {
-      if (!agentTty || agentTty === '??') return null;
-      // ps tty column gives "ttys006"; tmux uses "/dev/ttys006"
-      const ttyPath = agentTty.startsWith('/')   ? agentTty
-                    : agentTty.startsWith('tty') ? `/dev/${agentTty}`
-                    : `/dev/tty${agentTty}`;
-      const target = tmuxMap[ttyPath];
+      const target = findTmuxTarget(agentTty, tmuxMap);
       return target ? { type: 'tmux', target } : null;
     }
     if (comm === 'screen') {
@@ -400,7 +440,7 @@ router.post('/launch', (req, res) => {
     }
 
     // Use a login shell so the user's PATH (~/.zshrc, nvm, homebrew, etc.) is sourced
-    const userShell = process.env.SHELL || '/bin/zsh';
+    const userShell = resolveUserShell();
 
     // Create tmux session (or new window if session already exists)
     try {

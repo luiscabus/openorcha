@@ -1,7 +1,7 @@
 {
-  "name": "ssh-config-ui",
+  "name": "openorcha",
   "version": "1.0.0",
-  "description": "UI for managing SSH configurations, known hosts, and keys",
+  "description": "OpenOrcha is a local orchestration UI for launching, monitoring, and coordinating coding agents.",
   "main": "server.js",
   "scripts": {
     "start": "nodemon server.js"
