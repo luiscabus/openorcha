@@ -911,6 +911,8 @@ let drawerHasMux = false;
 let terminalRefreshTimer = null;
 let promptPollTimer = null;
 let messagesPollTimer = null;
+let drawerRenderedMessagesPid = null;
+let drawerRenderedMessageKeys = [];
 
 function getDrawerDraftKey(pid, agentId, cwd) {
   return `${agentId || ''}::${cwd || ''}::${pid || ''}`;
@@ -923,6 +925,34 @@ function bindDrawerDraftTracking(key) {
     if (value.trim()) drawerDrafts[key] = value;
     else delete drawerDrafts[key];
   };
+}
+
+function messageRenderKey(msg, idx) {
+  const stamp = msg.timestamp || '';
+  const text = msg.text || '';
+  return `${idx}|${msg.role || ''}|${stamp}|${text.length}|${text.slice(0, 48)}`;
+}
+
+function renderTypingIndicator() {
+  return `<div class="msg-entry assistant" data-msg-typing="true">
+    <div class="msg-role-row">
+      <span class="msg-role-label msg-role-assistant">Agent</span>
+    </div>
+    <div class="typing-dots"><span></span><span></span><span></span></div>
+  </div>`;
+}
+
+function clearTypingIndicator(container) {
+  const typing = container.querySelector('[data-msg-typing="true"]');
+  if (typing) typing.remove();
+}
+
+function hasExpandedSelectionInside(container) {
+  const selection = window.getSelection?.();
+  if (!selection || selection.isCollapsed || selection.rangeCount === 0) return false;
+  const anchorNode = selection.anchorNode;
+  const focusNode = selection.focusNode;
+  return !!((anchorNode && container.contains(anchorNode)) || (focusNode && container.contains(focusNode)));
 }
 
 export function handleSendKeydown(e) {
@@ -957,6 +987,8 @@ export async function openAgentMessages(pid, agentId, agentName, cwd) {
   drawerCurrentPid = pid;
   drawerTmuxSession = null;
   drawerDraftKey = getDrawerDraftKey(pid, agentId, cwd);
+  drawerRenderedMessagesPid = null;
+  drawerRenderedMessageKeys = [];
   writeLastOpenedAgentKey(agentInitiativeKey({ pid, agentId, cwd, multiplexer: window._agentMux?.[pid], tty: null }));
   loadAgents();
   const meta = AGENT_META[agentId] || { label: '?', color: 'aider' };
@@ -1009,6 +1041,8 @@ export function openTmuxTerminal(sessionName) {
   drawerCurrentPid = null;
   drawerTmuxSession = sessionName;
   drawerHasMux = true;
+  drawerRenderedMessagesPid = null;
+  drawerRenderedMessageKeys = [];
 
   const icon = document.getElementById('drawer-agent-icon');
   icon.textContent = '>';
@@ -1234,6 +1268,7 @@ async function fetchAndRenderGit(pid) {
 export async function fetchAndRenderMessages(pid) {
   const container = document.getElementById('drawer-messages');
   const atBottom = container.scrollHeight - container.scrollTop - container.clientHeight < 60;
+  const selectionInside = hasExpandedSelectionInside(container);
   try {
     const data = await api('GET', `/api/agents/${pid}/messages`);
     const { messages, total, note, sessionMeta, isWorking } = data;
@@ -1247,22 +1282,48 @@ export async function fetchAndRenderMessages(pid) {
       container.innerHTML = `<div class="drawer-empty">
         ${note ? escHtml(note) : 'No messages found for this session.'}
       </div>`;
+      drawerRenderedMessagesPid = pid;
+      drawerRenderedMessageKeys = [];
       return;
     }
 
-    let html = messages.map(m => renderMessage(m)).join('');
-    if (isWorking) {
-      html += `<div class="msg-entry assistant">
-        <div class="msg-role-row">
-          <span class="msg-role-label msg-role-assistant">Agent</span>
-        </div>
-        <div class="typing-dots"><span></span><span></span><span></span></div>
-      </div>`;
+    const baseEntries = messages.map((m, idx) => ({ key: messageRenderKey(m, idx), html: renderMessage(m) }));
+    const baseKeys = baseEntries.map(entry => entry.key);
+    const oldBaseKeys = drawerRenderedMessageKeys.filter(key => key !== '__typing__');
+    const canAppend =
+      drawerRenderedMessagesPid === pid &&
+      oldBaseKeys.length <= baseKeys.length &&
+      oldBaseKeys.every((key, idx) => key === baseKeys[idx]);
+
+    if (canAppend) {
+      clearTypingIndicator(container);
+      if (baseKeys.length > oldBaseKeys.length) {
+        container.insertAdjacentHTML('beforeend', baseEntries.slice(oldBaseKeys.length).map(entry => entry.html).join(''));
+      }
+      if (isWorking) {
+        container.insertAdjacentHTML('beforeend', renderTypingIndicator());
+      }
+      drawerRenderedMessagesPid = pid;
+      drawerRenderedMessageKeys = [...baseKeys, ...(isWorking ? ['__typing__'] : [])];
+      if (atBottom) container.scrollTop = container.scrollHeight;
+      return;
     }
+
+    if (selectionInside) return;
+
+    const previousBottomOffset = container.scrollHeight - container.scrollTop;
+    let html = baseEntries.map(entry => entry.html).join('');
+    if (isWorking) html += renderTypingIndicator();
     container.innerHTML = html;
+    drawerRenderedMessagesPid = pid;
+    drawerRenderedMessageKeys = [...baseKeys, ...(isWorking ? ['__typing__'] : [])];
+
     if (atBottom) container.scrollTop = container.scrollHeight;
+    else container.scrollTop = Math.max(0, container.scrollHeight - previousBottomOffset);
   } catch (err) {
     container.innerHTML = `<div class="drawer-empty" style="color:var(--danger)">${escHtml(err.message)}</div>`;
+    drawerRenderedMessagesPid = null;
+    drawerRenderedMessageKeys = [];
   }
 }
 
@@ -1487,6 +1548,8 @@ export function closeMessagesDrawer() {
   document.getElementById('messages-drawer').style.display = 'none';
   drawerCurrentPid = null;
   drawerDraftKey = null;
+  drawerRenderedMessagesPid = null;
+  drawerRenderedMessageKeys = [];
   clearInterval(terminalRefreshTimer);
   clearInterval(promptPollTimer);
   clearInterval(messagesPollTimer);
