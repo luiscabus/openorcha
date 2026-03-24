@@ -296,25 +296,24 @@ export async function toggleAgentHistory() {
       return;
     }
 
-    // Group by project
+    const orderedSessions = [...sessions].sort((a, b) => new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime());
     const byProject = {};
-    for (const s of sessions) {
+    for (const s of orderedSessions) {
       const key = s.project || 'unknown';
       if (!byProject[key]) byProject[key] = { cwd: s.cwd, sessions: [] };
       byProject[key].sessions.push(s);
     }
 
-    // Cross-reference with running agents
     const running = window._runningAgents || [];
 
     let html = '<div class="history-header">Recent Sessions</div><div class="history-scroll">';
     let projIdx = 0;
 
     for (const [project, group] of Object.entries(byProject)) {
+      group.sessions.sort((a, b) => new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime());
       const latestAgo = formatTimeAgo(new Date(group.sessions[0].updatedAt));
       const count = group.sessions.length;
       const pid = `hist-proj-${projIdx++}`;
-      // Check if any session in this project is currently running
       const projRunning = running.find(a => a.cwd === group.cwd);
       const projBadge = projRunning
         ? `<span class="history-badge history-badge-active">${projRunning.multiplexer ? 'interactive' : 'running'}</span>`
@@ -338,8 +337,12 @@ export async function toggleAgentHistory() {
         const model = s.model ? s.model.replace('claude-', '').replace(/-\d{8}$/, '') : '';
         const preview = s.firstMessage.length > 80 ? s.firstMessage.slice(0, 80) + '…' : s.firstMessage;
 
-        // Check if this specific session is currently running
-        const match = running.find(a => a.agentId === s.agentId && a.cwd === s.cwd);
+        const match = running.find(a =>
+          a.agentId === s.agentId &&
+          a.cwd === s.cwd &&
+          a.historySessionId &&
+          a.historySessionId === s.id
+        );
         let badge = '';
         if (match) {
           badge = match.multiplexer

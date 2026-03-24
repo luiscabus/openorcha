@@ -162,6 +162,22 @@ function inferAgentStatus(agent, procs, tmuxMap, screenMap) {
   return 'idle';
 }
 
+function findAgentHistorySessionId(agent) {
+  if (!agent?.cwd || !agent?.pid) return null;
+
+  if (agent.agentId === 'claude') {
+    const fp = findClaudeSessionFile(agent.cwd, agent.pid, agent.args || '');
+    return fp ? path.basename(fp, '.jsonl') : null;
+  }
+
+  if (agent.agentId === 'codex') {
+    const fp = findCodexSessionFile(agent.cwd, agent.pid, agent.args || '');
+    return fp ? path.basename(fp, '.jsonl') : null;
+  }
+
+  return null;
+}
+
 // Debug: show all processes that nearly-match agent names (without strict AGENT_DEF filtering)
 router.get('/debug', (req, res) => {
   try {
@@ -247,6 +263,7 @@ router.get('/', (req, res) => {
     for (const a of agents) {
       a.multiplexer = detectMultiplexer(a.pid, a.tty, procs, tmuxMap, screenMap);
       a.status = inferAgentStatus(a, procs, tmuxMap, screenMap);
+      a.historySessionId = findAgentHistorySessionId(a);
     }
 
     res.json({ agents });
