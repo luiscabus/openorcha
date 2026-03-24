@@ -163,7 +163,7 @@ function detectCodexTerminalState(text) {
 // Uses CPU usage and terminal output heuristics.
 function inferAgentStatus(agent, procs, tmuxMap, screenMap) {
   if (agent.multiplexer) {
-    const text = captureMuxText(agent.multiplexer, agent.pid, -30);
+    const text = captureMuxText(agent.multiplexer, agent.pid, -60);
     if (text) {
       if (parsePermissionPrompt(text)) return 'waiting_input';
       if (agent.agentId === 'codex' && detectCodexTerminalState(text) === 'thinking') return 'thinking';

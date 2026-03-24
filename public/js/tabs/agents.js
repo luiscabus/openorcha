@@ -1076,7 +1076,7 @@ export function openTmuxTerminal(sessionName) {
 }
 
 async function checkForPrompt(pid) {
-  if (!pid || drawerView !== 'messages') return;
+  if (!pid) return;
   try {
     const data = await api('GET', `/api/agents/${pid}/prompt`);
     const banner = document.getElementById('drawer-prompt');
@@ -1166,33 +1166,39 @@ export function switchDrawerView(view) {
     if (metaBar) metaBar.style.display = 'none';
     refreshBtn.onclick = () => fetchAndRenderTerminal(drawerCurrentPid);
     sendInput.placeholder = 'Type a response and press Enter (e.g. y, 1, 2)…';
-    clearInterval(promptPollTimer);
     clearInterval(messagesPollTimer);
-    promptPollTimer = null;
     messagesPollTimer = null;
-    document.getElementById('drawer-prompt').style.display = 'none';
     fetchAndRenderTerminal(drawerCurrentPid);
     terminalRefreshTimer = setInterval(() => fetchAndRenderTerminal(drawerCurrentPid), 2000);
+    // Keep prompt polling active
+    if (!promptPollTimer && drawerHasMux && drawerCurrentPid) {
+      checkForPrompt(drawerCurrentPid);
+      promptPollTimer = setInterval(() => checkForPrompt(drawerCurrentPid), 2500);
+    }
   } else if (view === 'git') {
     git.style.display = 'flex';
     if (metaBar) metaBar.style.display = 'none';
-    clearInterval(promptPollTimer);
     clearInterval(messagesPollTimer);
-    promptPollTimer = null;
     messagesPollTimer = null;
-    document.getElementById('drawer-prompt').style.display = 'none';
     refreshBtn.onclick = () => fetchAndRenderGit(drawerCurrentPid);
     fetchAndRenderGit(drawerCurrentPid);
+    // Keep prompt polling active
+    if (!promptPollTimer && drawerHasMux && drawerCurrentPid) {
+      checkForPrompt(drawerCurrentPid);
+      promptPollTimer = setInterval(() => checkForPrompt(drawerCurrentPid), 2500);
+    }
   } else if (view === 'context') {
     ctx.style.display = 'flex';
     if (metaBar) metaBar.style.display = 'none';
-    clearInterval(promptPollTimer);
     clearInterval(messagesPollTimer);
-    promptPollTimer = null;
     messagesPollTimer = null;
-    document.getElementById('drawer-prompt').style.display = 'none';
     refreshBtn.onclick = () => fetchAndRenderContext(drawerCurrentPid);
     fetchAndRenderContext(drawerCurrentPid);
+    // Keep prompt polling active
+    if (!promptPollTimer && drawerHasMux && drawerCurrentPid) {
+      checkForPrompt(drawerCurrentPid);
+      promptPollTimer = setInterval(() => checkForPrompt(drawerCurrentPid), 2500);
+    }
   }
 }
 
