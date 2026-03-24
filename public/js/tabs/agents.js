@@ -788,6 +788,7 @@ async function fetchLaunchSessions() {
       const ago = formatTimeAgo(date);
       const preview = escHtml(s.firstMessage.length > 100 ? s.firstMessage.slice(0, 100) + '…' : s.firstMessage);
       const model = s.model ? s.model.replace('claude-', '').replace(/-\d{8}$/, '') : '';
+      const recent = Array.isArray(s.recentMessages) ? s.recentMessages.slice(-2) : [];
       html += `<div class="session-option" data-session-id="${escAttr(s.id)}" onclick="window.selectLaunchSession(this, '${escAttr(s.id)}')">
         <div class="session-option-header">
           <span class="session-option-msgs">${s.messageCount} msgs</span>
@@ -796,6 +797,12 @@ async function fetchLaunchSessions() {
           <span class="session-option-size">${s.sizeMB} MB</span>
         </div>
         <div class="session-option-preview">${preview}</div>
+        ${recent.length ? `<div class="session-option-recent">
+          ${recent.map(msg => `<div class="session-option-recent-item">
+            <span class="session-option-recent-role session-option-recent-role-${escAttr(msg.role)}">${msg.role === 'assistant' ? 'Agent' : 'You'}</span>
+            <span class="session-option-recent-text">${escHtml(msg.text.length > 140 ? msg.text.slice(0, 140) + '…' : msg.text)}</span>
+          </div>`).join('')}
+        </div>` : ''}
       </div>`;
     }
 
