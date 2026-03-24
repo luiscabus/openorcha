@@ -103,6 +103,11 @@ function detectMultiplexer(agentPid, agentTty, procs, tmuxMap, screenMap) {
   return null;
 }
 
+function tmuxSessionNameFromMux(mux) {
+  if (!mux || mux.type !== 'tmux') return null;
+  return mux.target?.split(':')[0] || null;
+}
+
 function captureMuxText(mux, pid, startLine = -30) {
   try {
     if (mux?.type === 'tmux') {
@@ -1293,7 +1298,6 @@ router.post('/:pid/relaunch', (req, res) => {
     } else if (def.id === 'codex') {
       const sessionFile = findCodexSessionFile(cwd, String(pid), psOut);
       if (sessionFile) {
-        const meta = require('./agents').readCodexSessionMeta ? null : null;
         // Extract session ID from codex file metadata
         try {
           const first = fs.readFileSync(sessionFile, 'utf8').split('\n')[0];
@@ -1319,29 +1323,29 @@ router.post('/:pid/relaunch', (req, res) => {
     const procs = buildProcTable();
     const tty = procs[pid]?.tty;
     const mux = tty ? detectMultiplexer(pid, tty, procs, buildTmuxPaneMap(), buildScreenMap()) : null;
-    const tmuxSession = mux?.type === 'tmux' ? mux.target?.split(':')[0] : null;
+    const tmuxSession = tmuxSessionNameFromMux(mux);
+    if (!tmuxSession) return res.status(400).json({ error: 'Relaunch currently requires the agent to be running in tmux' });
 
     // Kill the process
-    execSync(`kill ${pid}`);
-    // Wait for it to die
-    try { execSync(`sleep 1`); } catch {}
+    try { execSync(`kill ${pid}`, { timeout: 2000 }); } catch {}
+    try { execSync('sleep 0.5'); } catch {}
 
     // Kill the old tmux session
-    if (tmuxSession) {
-      try { execSync(`tmux kill-session -t ${shellEscape(tmuxSession)} 2>/dev/null`); } catch {}
-    }
+    try { execSync(`tmux kill-session -t ${shellEscape(tmuxSession)} 2>/dev/null`, { timeout: 3000 }); } catch {}
+    try { execSync('sleep 0.3'); } catch {}
 
-    // Relaunch in a new tmux session
-    const sessionName = tmuxSession || `${def.id}-${path.basename(cwd)}`;
+    // Ensure the original session name is actually free before recreating it.
+    try {
+      execSync(`tmux has-session -t ${shellEscape(tmuxSession)} 2>/dev/null`, { timeout: 2000 });
+      return res.status(409).json({ error: `tmux session "${tmuxSession}" is still active; could not recreate it cleanly` });
+    } catch {}
+
+    // Relaunch in a new tmux session with the same name
+    const sessionName = tmuxSession;
     const userShell = resolveUserShell();
 
-    try {
-      execSync(`tmux new-session -d -s ${shellEscape(sessionName)} -c ${shellEscape(cwd)} ${shellEscape(userShell)} -l`, { timeout: 5000 });
-    } catch {
-      // Session name taken — add suffix
-      const altName = `${sessionName}-${Date.now() % 10000}`;
-      execSync(`tmux new-session -d -s ${shellEscape(altName)} -c ${shellEscape(cwd)} ${shellEscape(userShell)} -l`, { timeout: 5000 });
-    }
+    execSync(`tmux new-session -d -s ${shellEscape(sessionName)} -c ${shellEscape(cwd)} ${shellEscape(userShell)} -l`, { timeout: 5000 });
+
     // Wait for shell prompt before sending command
     const maxWait = 10000;
     const startWait = Date.now();
@@ -1354,7 +1358,10 @@ router.post('/:pid/relaunch', (req, res) => {
         if (/[$%>❯➜#]\s*$/.test(last)) break;
       } catch {}
     }
-    execSync(`tmux send-keys -t ${shellEscape(sessionName)} ${shellEscape(cmd)} Enter`, { timeout: 5000 });
+    execSync(`tmux set-buffer -- ${shellEscape(cmd)}`, { timeout: 3000 });
+    execSync(`tmux paste-buffer -t ${shellEscape(sessionName)} -d`, { timeout: 3000 });
+    execSync('sleep 0.15');
+    execSync(`tmux send-keys -t ${shellEscape(sessionName)} Enter`, { timeout: 3000 });
 
     res.json({ ok: true, sessionName, cmd, sessionId });
   } catch (e) {
@@ -1375,8 +1382,9 @@ router.delete('/:pid', (req, res) => {
     execSync(`kill ${pid}`);
 
     // Kill the tmux session if the agent was running in one
-    if (mux?.type === 'tmux' && mux.session) {
-      try { execSync(`tmux kill-session -t ${shellEscape(mux.session)} 2>/dev/null`); } catch {}
+    const tmuxSession = tmuxSessionNameFromMux(mux);
+    if (tmuxSession) {
+      try { execSync(`tmux kill-session -t ${shellEscape(tmuxSession)} 2>/dev/null`); } catch {}
     }
 
     res.json({ ok: true });
