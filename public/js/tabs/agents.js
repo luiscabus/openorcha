@@ -944,15 +944,27 @@ function renderTypingIndicator() {
 
 function clearTypingIndicator(container) {
   const typing = container.querySelector('[data-msg-typing="true"]');
-  if (typing) typing.remove();
+  if (typing && typing.parentNode) typing.parentNode.removeChild(typing);
 }
 
 function hasExpandedSelectionInside(container) {
-  const selection = window.getSelection?.();
+  if (!window.getSelection) return false;
+  const selection = window.getSelection();
   if (!selection || selection.isCollapsed || selection.rangeCount === 0) return false;
   const anchorNode = selection.anchorNode;
   const focusNode = selection.focusNode;
   return !!((anchorNode && container.contains(anchorNode)) || (focusNode && container.contains(focusNode)));
+}
+
+function appendHtml(container, html) {
+  if (!html) return;
+  if (typeof container.insertAdjacentHTML === 'function') {
+    container.insertAdjacentHTML('beforeend', html);
+    return;
+  }
+  const wrapper = document.createElement('div');
+  wrapper.innerHTML = html;
+  while (wrapper.firstChild) container.appendChild(wrapper.firstChild);
 }
 
 export function handleSendKeydown(e) {
@@ -1296,17 +1308,19 @@ export async function fetchAndRenderMessages(pid) {
       oldBaseKeys.every((key, idx) => key === baseKeys[idx]);
 
     if (canAppend) {
-      clearTypingIndicator(container);
-      if (baseKeys.length > oldBaseKeys.length) {
-        container.insertAdjacentHTML('beforeend', baseEntries.slice(oldBaseKeys.length).map(entry => entry.html).join(''));
-      }
-      if (isWorking) {
-        container.insertAdjacentHTML('beforeend', renderTypingIndicator());
-      }
-      drawerRenderedMessagesPid = pid;
-      drawerRenderedMessageKeys = [...baseKeys, ...(isWorking ? ['__typing__'] : [])];
-      if (atBottom) container.scrollTop = container.scrollHeight;
-      return;
+      try {
+        clearTypingIndicator(container);
+        if (baseKeys.length > oldBaseKeys.length) {
+          appendHtml(container, baseEntries.slice(oldBaseKeys.length).map(entry => entry.html).join(''));
+        }
+        if (isWorking) {
+          appendHtml(container, renderTypingIndicator());
+        }
+        drawerRenderedMessagesPid = pid;
+        drawerRenderedMessageKeys = [...baseKeys, ...(isWorking ? ['__typing__'] : [])];
+        if (atBottom) container.scrollTop = container.scrollHeight;
+        return;
+      } catch {}
     }
 
     if (selectionInside) return;
