@@ -163,10 +163,12 @@ function applyContextBlockState(node, open) {
 export function toggleContextBlock(targetOrKey) {
   let key = null;
   let nodes = [];
+  let currentOpen = true;
 
   if (typeof targetOrKey === 'string') {
     key = decodeURIComponent(targetOrKey);
     nodes = Array.from(document.querySelectorAll(`[data-context-key="${targetOrKey}"]`));
+    currentOpen = isContextBlockOpen(key, true);
   } else {
     const toggle = targetOrKey?.closest?.('.ctx-collapsible-toggle');
     const node = toggle?.closest?.('[data-context-key]');
@@ -174,10 +176,11 @@ export function toggleContextBlock(targetOrKey) {
     if (!domKey) return;
     key = decodeURIComponent(domKey);
     nodes = [node];
+    currentOpen = toggle?.getAttribute('aria-expanded') === 'true';
   }
 
   if (!key || !nodes.length) return;
-  const nextOpen = !isContextBlockOpen(key, true);
+  const nextOpen = !currentOpen;
   setContextBlockOpen(key, nextOpen);
   nodes.forEach(node => applyContextBlockState(node, nextOpen));
 }

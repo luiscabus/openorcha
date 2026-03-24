@@ -2129,6 +2129,10 @@ body {
   flex-direction: column;
 }
 
+.ctx-collapsible-body[hidden] {
+  display: none !important;
+}
+
 .ctx-section-empty {
   padding: 14px 12px;
   color: var(--text3);
