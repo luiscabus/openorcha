@@ -13,3 +13,4 @@ coverage/
 dist/
 tmp/
 *.tmp
+data/agent-presets/

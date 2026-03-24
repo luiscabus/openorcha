@@ -40,7 +40,7 @@ Content-Type: application/json
   "sessionName": "my-session",   // optional — tmux session name (auto-generated if blank)
   "skipPermissions": false,      // optional — skip permission prompts
   "resumeSessionId": null,       // optional — resume a previous session by ID
-  "presetId": null               // optional — use a preset configuration
+  "presetFile": null             // optional — use a preset configuration
 }
 ```
 Returns `{ ok: true, sessionName: "..." }`
@@ -181,7 +181,7 @@ When given a complex task:
 
 - Use `--dangerously-skip-permissions` (set `skipPermissions: true`) for agents doing trusted work to avoid them blocking on prompts
 - Give each agent a descriptive `sessionName` so you can track them
-- Use the `presetId` field to launch specialized agents (reviewer, planner, etc.)
+- Use the `presetFile` field to launch specialized agents (reviewer, planner, etc.)
 - Read the last few messages to check progress — don't read the entire history each time
 - An agent is done when its latest message is from the assistant and contains no pending tool calls
 - If an agent errors, you can kill it and launch a fresh one
