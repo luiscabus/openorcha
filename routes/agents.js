@@ -3,7 +3,8 @@ const path = require('path');
 const os = require('os');
 const fs = require('fs');
 const { execSync } = require('child_process');
-const { AGENT_DEFS, findClaudeSessionFile, parseClaudeSession, findCodexSessionFile, parseCodexSession, parseOpenCodeSession, listClaudeSessions, listCodexSessions, listAllRecentSessions } = require('../lib/agentParsers');
+const { AGENT_DEFS, listAllRecentSessions } = require('../lib/agentParsers');
+const { getSessionResolver } = require('../lib/sessionResolvers');
 const { buildProcTable, findAncestorApp, getCwdMap } = require('../lib/processTree');
 
 const router = express.Router();
@@ -124,6 +125,14 @@ function captureMuxText(mux, pid, startLine = -30) {
   return '';
 }
 
+function captureAgentPaneText(pid, procs = null, tmuxMap = null, screenMap = null, startLine = -80) {
+  const procTable = procs || buildProcTable();
+  const proc = procTable[String(pid)] || procTable[pid];
+  const tty = proc?.tty;
+  const mux = tty ? detectMultiplexer(String(pid), tty, procTable, tmuxMap || buildTmuxPaneMap(), screenMap || buildScreenMap()) : null;
+  return captureMuxText(mux, pid, startLine);
+}
+
 function stripAnsi(text) {
   return String(text || '').replace(/\x1B\[[0-9;?]*[ -/]*[@-~]/g, '');
 }
@@ -169,18 +178,10 @@ function inferAgentStatus(agent, procs, tmuxMap, screenMap) {
 
 function findAgentHistorySessionId(agent, paneText = '') {
   if (!agent?.cwd || !agent?.pid) return null;
-
-  if (agent.agentId === 'claude') {
-    const fp = findClaudeSessionFile(agent.cwd, agent.pid, agent.args || '');
-    return fp ? path.basename(fp, '.jsonl') : null;
-  }
-
-  if (agent.agentId === 'codex') {
-    const fp = findCodexSessionFile(agent.cwd, agent.pid, agent.args || '', null, paneText);
-    return fp ? path.basename(fp, '.jsonl') : null;
-  }
-
-  return null;
+  const resolver = getSessionResolver(agent.agentId);
+  if (!resolver?.resolveLiveSession || !resolver?.getHistorySessionId) return null;
+  const resolved = resolver.resolveLiveSession({ cwd: agent.cwd, pid: agent.pid, args: agent.args || '', paneText });
+  return resolver.getHistorySessionId(resolved);
 }
 
 // Debug: show all processes that nearly-match agent names (without strict AGENT_DEF filtering)
@@ -268,7 +269,7 @@ router.get('/', (req, res) => {
     for (const a of agents) {
       a.multiplexer = detectMultiplexer(a.pid, a.tty, procs, tmuxMap, screenMap);
       a.status = inferAgentStatus(a, procs, tmuxMap, screenMap);
-      const paneText = a.agentId === 'codex' ? captureMuxText(a.multiplexer, a.pid, -80) : '';
+      const paneText = ['claude', 'codex'].includes(a.agentId) ? captureMuxText(a.multiplexer, a.pid, -80) : '';
       a.historySessionId = findAgentHistorySessionId(a, paneText);
     }
 
@@ -294,22 +295,14 @@ router.get('/:pid/messages', (req, res) => {
 
     let parsed = null;
     let sessionFile = null;
-
-    if (def.id === 'claude') {
-      sessionFile = findClaudeSessionFile(cwd, pid, psOut);
-      if (sessionFile) parsed = parseClaudeSession(sessionFile);
-    } else if (def.id === 'codex') {
-      const procs = buildProcTable();
-      const proc = procs[pid];
-      const tmuxMap = buildTmuxPaneMap();
-      const screenMap = buildScreenMap();
-      const mux = detectMultiplexer(pid, proc?.tty, procs, tmuxMap, screenMap);
-      const paneText = captureMuxText(mux, pid, -80);
-      sessionFile = findCodexSessionFile(cwd, pid, psOut, null, paneText);
-      if (sessionFile) parsed = parseCodexSession(sessionFile);
-    } else if (def.id === 'opencode') {
-      const msgs = parseOpenCodeSession(cwd);
-      parsed = msgs !== null ? { messages: msgs, sessionMeta: {} } : null;
+    const resolver = getSessionResolver(def.id);
+    const paneText = ['claude', 'codex'].includes(def.id) ? captureAgentPaneText(pid) : '';
+    const resolved = resolver?.resolveLiveSession
+      ? resolver.resolveLiveSession({ cwd, pid, args: psOut, paneText })
+      : null;
+    if (resolved && resolver?.parseResolved) {
+      sessionFile = resolved.sessionFile || null;
+      parsed = resolver.parseResolved(resolved);
     }
 
     if (parsed === null) {
@@ -385,8 +378,8 @@ router.get('/sessions', (req, res) => {
     cwd = cwd.trim().replace(/^~(?=\/|$)/, os.homedir());
 
     let sessions = [];
-    if (agentId === 'claude') sessions = listClaudeSessions(cwd);
-    else if (agentId === 'codex') sessions = listCodexSessions(cwd);
+    const resolver = getSessionResolver(agentId);
+    if (resolver?.listSessions) sessions = resolver.listSessions(cwd);
 
     res.json({ sessions, supportsResume: !!AGENT_RESUME_FLAG[agentId] });
   } catch (e) {
@@ -1353,10 +1346,14 @@ router.get('/:pid/wait', async (req, res) => {
         const cwd = cwdMap[pid];
         let lastMessages = [];
 
-        if (def?.id === 'claude' && cwd) {
-          const sessionFile = findClaudeSessionFile(cwd, pid, psOut);
-          if (sessionFile) {
-            const parsed = parseClaudeSession(sessionFile);
+        if (def?.id && cwd) {
+          const resolver = getSessionResolver(def.id);
+          const paneText = ['claude', 'codex'].includes(def.id) ? captureAgentPaneText(pid) : '';
+          const resolved = resolver?.resolveLiveSession
+            ? resolver.resolveLiveSession({ cwd, pid, args: psOut, paneText })
+            : null;
+          if (resolved && resolver?.parseResolved) {
+            const parsed = resolver.parseResolved(resolved);
             lastMessages = parsed.messages.slice(-5);
           }
         }
@@ -1390,22 +1387,12 @@ router.post('/:pid/relaunch', (req, res) => {
     if (!cwd) return res.status(400).json({ error: 'Could not determine working directory' });
 
     // Find the session file to resume
-    let sessionId = null;
-    if (def.id === 'claude') {
-      const sessionFile = findClaudeSessionFile(cwd, String(pid), psOut);
-      if (sessionFile) sessionId = path.basename(sessionFile, '.jsonl');
-    } else if (def.id === 'codex') {
-      const sessionFile = findCodexSessionFile(cwd, String(pid), psOut);
-      if (sessionFile) {
-        // Extract session ID from codex file metadata
-        try {
-          const first = fs.readFileSync(sessionFile, 'utf8').split('\n')[0];
-          const m = JSON.parse(first);
-          if (m.type === 'session_meta' && m.payload?.id) sessionId = m.payload.id;
-        } catch {}
-        if (!sessionId) sessionId = path.basename(sessionFile, '.jsonl');
-      }
-    }
+    const resolver = getSessionResolver(def.id);
+    const paneText = ['claude', 'codex'].includes(def.id) ? captureAgentPaneText(pid) : '';
+    const resolved = resolver?.resolveLiveSession
+      ? resolver.resolveLiveSession({ cwd, pid: String(pid), args: psOut, paneText })
+      : null;
+    const sessionId = resolver?.getResumeSessionId ? resolver.getResumeSessionId(resolved) : null;
 
     // Reconstruct the command — use the original args but replace/add --resume
     let cmd = psOut;

@@ -4,7 +4,8 @@
   "description": "OpenOrcha is a local orchestration UI for launching, monitoring, and coordinating coding agents.",
   "main": "server.js",
   "scripts": {
-    "start": "nodemon server.js"
+    "start": "nodemon server.js",
+    "test": "node --test"
   },
   "dependencies": {
     "express": "^4.18.2"
