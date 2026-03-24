@@ -1279,7 +1279,7 @@ function renderSessionMeta(meta) {
     pills.push(`<span class="meta-pill" title="Cache read tokens">${(meta.totalCacheRead / 1000).toFixed(1)}k cached</span>`);
   }
   if (meta.lastContextTokens && meta.model) {
-    const maxCtx = contextWindowSize(meta.model);
+    const maxCtx = meta.modelContextWindow || contextWindowSize(meta.model);
     const pctUsed = Math.min(100, (meta.lastContextTokens / maxCtx) * 100);
     const pctLeft = Math.max(0, 100 - pctUsed);
     const cls = pctLeft < 15 ? 'meta-pill-ctx-low' : pctLeft < 35 ? 'meta-pill-ctx-mid' : 'meta-pill-ctx-ok';
