@@ -167,7 +167,7 @@ function inferAgentStatus(agent, procs, tmuxMap, screenMap) {
   return 'idle';
 }
 
-function findAgentHistorySessionId(agent) {
+function findAgentHistorySessionId(agent, paneText = '') {
   if (!agent?.cwd || !agent?.pid) return null;
 
   if (agent.agentId === 'claude') {
@@ -176,7 +176,7 @@ function findAgentHistorySessionId(agent) {
   }
 
   if (agent.agentId === 'codex') {
-    const fp = findCodexSessionFile(agent.cwd, agent.pid, agent.args || '');
+    const fp = findCodexSessionFile(agent.cwd, agent.pid, agent.args || '', null, paneText);
     return fp ? path.basename(fp, '.jsonl') : null;
   }
 
@@ -268,7 +268,8 @@ router.get('/', (req, res) => {
     for (const a of agents) {
       a.multiplexer = detectMultiplexer(a.pid, a.tty, procs, tmuxMap, screenMap);
       a.status = inferAgentStatus(a, procs, tmuxMap, screenMap);
-      a.historySessionId = findAgentHistorySessionId(a);
+      const paneText = a.agentId === 'codex' ? captureMuxText(a.multiplexer, a.pid, -80) : '';
+      a.historySessionId = findAgentHistorySessionId(a, paneText);
     }
 
     res.json({ agents });
@@ -298,7 +299,13 @@ router.get('/:pid/messages', (req, res) => {
       sessionFile = findClaudeSessionFile(cwd, pid, psOut);
       if (sessionFile) parsed = parseClaudeSession(sessionFile);
     } else if (def.id === 'codex') {
-      sessionFile = findCodexSessionFile(cwd, pid, psOut);
+      const procs = buildProcTable();
+      const proc = procs[pid];
+      const tmuxMap = buildTmuxPaneMap();
+      const screenMap = buildScreenMap();
+      const mux = detectMultiplexer(pid, proc?.tty, procs, tmuxMap, screenMap);
+      const paneText = captureMuxText(mux, pid, -80);
+      sessionFile = findCodexSessionFile(cwd, pid, psOut, null, paneText);
       if (sessionFile) parsed = parseCodexSession(sessionFile);
     } else if (def.id === 'opencode') {
       const msgs = parseOpenCodeSession(cwd);
