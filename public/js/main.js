@@ -61,6 +61,7 @@ import {
   relaunchAgent,
   openTmuxTerminal,
   toggleContextBlock,
+  toggleMcpServer,
 } from './tabs/agents.js';
 import {
   loadTodos,
@@ -173,6 +174,7 @@ window.sendKey = sendKey;
 window.clickPromptOption = clickPromptOption;
 window.endDrawerSession = endDrawerSession;
 window.toggleContextBlock = toggleContextBlock;
+window.toggleMcpServer = toggleMcpServer;
 window.relaunchDrawerSession = relaunchDrawerSession;
 
 // Todo

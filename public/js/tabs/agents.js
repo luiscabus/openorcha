@@ -1462,10 +1462,17 @@ function renderContextSection(section, agentId, cwd) {
   let bodyHtml = '';
 
   if (section.servers) {
-    countBadge = `<span class="ctx-active-count">${section.servers.length}</span>`;
+    const enabledCount = section.servers.filter(s => !s.disabled).length;
+    countBadge = `<span class="ctx-active-count">${enabledCount}/${section.servers.length}</span>`;
     bodyHtml = `<div class="ctx-servers">${section.servers.map(s => {
       const sBadge = `<span class="ctx-scope ctx-scope-${s.scope}">${s.scope}</span>`;
-      return `<div class="ctx-server-row">
+      const isOAuth = s.type === 'oauth';
+      const toggleId = `mcp-toggle-${escAttr(s.name)}`;
+      const toggleHtml = isOAuth ? '' : `<label class="mcp-toggle" title="${s.disabled ? 'Enable' : 'Disable'} this MCP server">
+          <input type="checkbox" id="${toggleId}" ${s.disabled ? '' : 'checked'} onchange="window.toggleMcpServer('${escAttr(s.name)}','${escAttr(s.scope)}',!this.checked)">
+          <span class="mcp-toggle-slider"></span>
+        </label>`;
+      return `<div class="ctx-server-row${s.disabled ? ' ctx-server-disabled' : ''}">
         <div class="ctx-server-main">
           <span class="ctx-server-name">${escHtml(s.name)}</span>
           <span class="ctx-server-source">${escHtml(s.source || '')}</span>
@@ -1473,6 +1480,7 @@ function renderContextSection(section, agentId, cwd) {
         <div class="ctx-server-meta">
           <span class="ctx-server-type">${escHtml(s.type)}</span>
           ${sBadge}
+          ${toggleHtml}
         </div>
       </div>`;
     }).join('')}</div>`;
@@ -1540,6 +1548,20 @@ function contextIcon(name) {
     brain:    '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 2a7 7 0 0 0-7 7c0 3 1.5 5 3 6.5V20a2 2 0 0 0 2 2h4a2 2 0 0 0 2-2v-4.5c1.5-1.5 3-3.5 3-6.5a7 7 0 0 0-7-7z"/><line x1="10" y1="22" x2="14" y2="22"/></svg>',
   };
   return `<span class="ctx-icon">${icons[name] || icons.doc}</span>`;
+}
+
+export async function toggleMcpServer(serverName, scope, disabled) {
+  if (!drawerCurrentPid) return;
+  try {
+    await api('POST', `/api/agents/${drawerCurrentPid}/mcp-toggle`, { serverName, scope, disabled });
+    toast(`${serverName} ${disabled ? 'disabled' : 'enabled'}`);
+    // Refresh context tab
+    await fetchAndRenderContext(drawerCurrentPid);
+  } catch (err) {
+    toast(err.message, 'error');
+    // Re-render to reset toggle state
+    await fetchAndRenderContext(drawerCurrentPid);
+  }
 }
 
 export function closeMessagesDrawer() {

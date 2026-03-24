@@ -776,30 +776,40 @@ function getClaudeContext(cwd) {
   // Active MCP Servers — actually configured and usable
   const activeServers = [];
 
+  // Helper: extract servers from a .mcp.json (handles mcpServers wrapper or flat)
+  function extractMcpServers(data) {
+    if (!data) return {};
+    if (data.mcpServers && typeof data.mcpServers === 'object') return data.mcpServers;
+    // Flat format (keys are server names directly)
+    const result = {};
+    for (const [k, v] of Object.entries(data)) {
+      if (typeof v === 'object' && v !== null) result[k] = v;
+    }
+    return result;
+  }
+
   // 1. OAuth-connected servers (claude.ai integrations)
   const mcpAuth = readJsonSafe(path.join(home, '.claude', 'mcp-needs-auth-cache.json'));
   if (mcpAuth) {
     for (const name of Object.keys(mcpAuth)) {
-      activeServers.push({ name, type: 'oauth', source: 'claude.ai', scope: 'global' });
+      activeServers.push({ name, type: 'oauth', source: 'claude.ai', scope: 'global', disabled: false });
     }
   }
 
   // 2. Project-level .mcp.json (configured for this project)
   if (cwd) {
-    const projectMcp = readJsonSafe(path.join(cwd, '.mcp.json'));
-    if (projectMcp) {
-      for (const [name, conf] of Object.entries(projectMcp)) {
-        activeServers.push({ name, type: conf.type || '—', source: '.mcp.json', scope: 'project' });
-      }
+    const projectMcpRaw = readJsonSafe(path.join(cwd, '.mcp.json'));
+    const projectMcp = extractMcpServers(projectMcpRaw);
+    for (const [name, conf] of Object.entries(projectMcp)) {
+      activeServers.push({ name, type: conf.type || '—', source: '.mcp.json', scope: 'project', disabled: !!conf.disabled });
     }
   }
 
   // 3. Global .mcp.json (user-configured globally)
-  const globalMcp = readJsonSafe(path.join(home, '.claude', '.mcp.json'));
-  if (globalMcp) {
-    for (const [name, conf] of Object.entries(globalMcp)) {
-      activeServers.push({ name, type: conf.type || '—', source: '~/.claude/.mcp.json', scope: 'global' });
-    }
+  const globalMcpRaw = readJsonSafe(path.join(home, '.claude', '.mcp.json'));
+  const globalMcp = extractMcpServers(globalMcpRaw);
+  for (const [name, conf] of Object.entries(globalMcp)) {
+    activeServers.push({ name, type: conf.type || '—', source: '~/.claude/.mcp.json', scope: 'global', disabled: !!conf.disabled });
   }
 
   if (activeServers.length) {
@@ -874,12 +884,43 @@ function getClaudeContext(cwd) {
     });
   }
 
-  // CLAUDE.md (project)
+  // CLAUDE.md files — project root, parent directories, and global
+  // Claude Code loads CLAUDE.md from cwd up to the git root (or home), plus ~/.claude/CLAUDE.md
+  const claudeMdFiles = [];
   if (cwd) {
-    const claudeMd = readTextSafe(path.join(cwd, 'CLAUDE.md'));
-    if (claudeMd) {
-      sections.push({ title: 'CLAUDE.md', scope: 'project', icon: 'doc', content: claudeMd });
+    // Find git root to know where to stop scanning
+    let gitRoot = null;
+    try { gitRoot = runGit(cwd, 'rev-parse --show-toplevel'); } catch {}
+
+    // Walk from cwd upward to git root (or home)
+    const stopAt = gitRoot || home;
+    let dir = cwd;
+    while (true) {
+      const filePath = path.join(dir, 'CLAUDE.md');
+      const content = readTextSafe(filePath);
+      if (content) {
+        const rel = dir === cwd ? 'CLAUDE.md' : path.relative(cwd, filePath);
+        claudeMdFiles.push({ title: rel, scope: 'project', path: filePath, content });
+      }
+      // Also check .claude/CLAUDE.md in project directories
+      const dotClaudeMd = readTextSafe(path.join(dir, '.claude', 'CLAUDE.md'));
+      if (dotClaudeMd) {
+        const rel = path.relative(cwd, path.join(dir, '.claude', 'CLAUDE.md'));
+        claudeMdFiles.push({ title: rel, scope: 'project', path: path.join(dir, '.claude', 'CLAUDE.md'), content: dotClaudeMd });
+      }
+      if (dir === stopAt || dir === '/') break;
+      dir = path.dirname(dir);
     }
+  }
+
+  // Global ~/.claude/CLAUDE.md
+  const globalClaudeMd = readTextSafe(path.join(home, '.claude', 'CLAUDE.md'));
+  if (globalClaudeMd) {
+    claudeMdFiles.push({ title: '~/.claude/CLAUDE.md', scope: 'global', path: path.join(home, '.claude', 'CLAUDE.md'), content: globalClaudeMd });
+  }
+
+  for (const f of claudeMdFiles) {
+    sections.push({ title: f.title, scope: f.scope, icon: 'doc', content: f.content });
   }
 
   // Memory (project)
@@ -1003,6 +1044,57 @@ router.get('/:pid/context', (req, res) => {
     }
 
     res.json({ agentId: def.id, agentName: def.name, cwd, sections });
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
+// Toggle MCP server enabled/disabled
+router.post('/:pid/mcp-toggle', (req, res) => {
+  try {
+    const { pid } = req.params;
+    const { serverName, scope, disabled } = req.body;
+
+    if (!serverName || typeof disabled !== 'boolean') {
+      return res.status(400).json({ error: 'serverName and disabled (boolean) are required' });
+    }
+
+    const home = os.homedir();
+    let mcpPath;
+
+    if (scope === 'project') {
+      const cwdMap = getCwdMap([pid]);
+      const cwd = cwdMap[pid];
+      if (!cwd) return res.status(400).json({ error: 'Cannot determine agent working directory' });
+      mcpPath = path.join(cwd, '.mcp.json');
+    } else {
+      mcpPath = path.join(home, '.claude', '.mcp.json');
+    }
+
+    let data = readJsonSafe(mcpPath) || {};
+
+    // Handle mcpServers wrapper format
+    const hasMcpServers = data.mcpServers && typeof data.mcpServers === 'object';
+    const servers = hasMcpServers ? data.mcpServers : data;
+
+    if (!servers[serverName]) {
+      return res.status(404).json({ error: `Server "${serverName}" not found in ${scope} config` });
+    }
+
+    if (disabled) {
+      servers[serverName].disabled = true;
+    } else {
+      delete servers[serverName].disabled;
+    }
+
+    if (hasMcpServers) {
+      data.mcpServers = servers;
+    } else {
+      data = servers;
+    }
+
+    fs.writeFileSync(mcpPath, JSON.stringify(data, null, 2) + '\n');
+    res.json({ ok: true, serverName, disabled });
   } catch (e) {
     res.status(500).json({ error: e.message });
   }

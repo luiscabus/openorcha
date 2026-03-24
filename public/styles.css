@@ -2297,6 +2297,49 @@ body {
   word-break: break-word;
 }
 
+/* MCP toggle switch */
+.mcp-toggle {
+  position: relative;
+  display: inline-block;
+  width: 32px;
+  height: 18px;
+  flex-shrink: 0;
+  cursor: pointer;
+}
+.mcp-toggle input { opacity: 0; width: 0; height: 0; }
+.mcp-toggle-slider {
+  position: absolute;
+  inset: 0;
+  background: var(--bg3);
+  border-radius: 18px;
+  transition: background 0.2s;
+}
+.mcp-toggle-slider::before {
+  content: '';
+  position: absolute;
+  width: 14px;
+  height: 14px;
+  left: 2px;
+  top: 2px;
+  background: var(--text3);
+  border-radius: 50%;
+  transition: transform 0.2s, background 0.2s;
+}
+.mcp-toggle input:checked + .mcp-toggle-slider {
+  background: var(--accent);
+}
+.mcp-toggle input:checked + .mcp-toggle-slider::before {
+  transform: translateX(14px);
+  background: #fff;
+}
+.ctx-server-disabled {
+  opacity: 0.5;
+}
+.ctx-server-disabled .ctx-server-name {
+  text-decoration: line-through;
+  color: var(--text3);
+}
+
 .ctx-plugin-badge {
   font-size: 9.5px;
   font-weight: 600;
