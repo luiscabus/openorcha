@@ -17,6 +17,7 @@ export const AGENT_META = {
 const AGENT_INITIATIVES_KEY = 'ssh-manager.ai-agents.initiatives';
 const LAST_OPENED_AGENT_KEY = 'ssh-manager.ai-agents.last-opened';
 const CONTEXT_UI_STATE_KEY = 'ssh-manager.ai-agents.context-ui';
+const LAUNCH_RECENT_CWDS_KEY = 'ssh-manager.ai-agents.launch.recent-cwds';
 
 let draggedAgentKey = null;
 let draggedInitiativeId = null;
@@ -606,6 +607,137 @@ export async function loadAgents() {
 let launchSelectedSessionId = null;
 let launchSelectedPresetFile = null;
 let launchSessionsDebounce = null;
+let launchPresets = [];
+let launchUiRefresh = null;
+let launchDuplicateAgent = null;
+let launchResumeSessionCount = 0;
+let launchTmuxSessionsCache = null;
+let launchSubmitting = false;
+
+function readRecentLaunchCwds() {
+  try {
+    const parsed = JSON.parse(window.localStorage.getItem(LAUNCH_RECENT_CWDS_KEY) || '[]');
+    return Array.isArray(parsed) ? parsed.filter(Boolean) : [];
+  } catch {
+    return [];
+  }
+}
+
+function rememberRecentLaunchCwd(cwd) {
+  if (!cwd) return;
+  const next = [cwd, ...readRecentLaunchCwds().filter(entry => entry !== cwd)].slice(0, 12);
+  window.localStorage.setItem(LAUNCH_RECENT_CWDS_KEY, JSON.stringify(next));
+}
+
+function basenameish(input) {
+  const trimmed = String(input || '').trim().replace(/\/+$/, '');
+  if (!trimmed || trimmed === '~') return 'home';
+  const parts = trimmed.split('/').filter(Boolean);
+  return parts[parts.length - 1] || 'home';
+}
+
+function sanitizeTmuxSessionName(input) {
+  return String(input || '').trim().replace(/[^a-zA-Z0-9_.\-]/g, '-');
+}
+
+function suggestedLaunchSessionName(agentId, cwd, presetFile, explicitName = '') {
+  const cleanedExplicit = sanitizeTmuxSessionName(explicitName);
+  if (cleanedExplicit) return cleanedExplicit;
+  if (presetFile) return sanitizeTmuxSessionName(`${presetFile}-${basenameish(cwd)}`);
+  return sanitizeTmuxSessionName(`${agentId}-${basenameish(cwd)}`);
+}
+
+function uniqueLaunchSessionName(baseName, tmuxSessions = []) {
+  const base = sanitizeTmuxSessionName(baseName) || 'session';
+  const names = new Set((tmuxSessions || []).map(session => session.name));
+  if (!names.has(base)) return base;
+  for (let i = 2; i < 1000; i++) {
+    const candidate = `${base}-${i}`;
+    if (!names.has(candidate)) return candidate;
+  }
+  return `${base}-${Date.now() % 10000}`;
+}
+
+function setLaunchSubmitting(submitting) {
+  launchSubmitting = submitting;
+  const submit = document.getElementById('launch-agent-submit');
+  if (!submit) return;
+  submit.disabled = submitting;
+  submit.textContent = submitting ? 'Launching…' : 'Launch';
+}
+
+function renderLaunchCwdSuggestions() {
+  const datalist = document.getElementById('launch-agent-cwd-suggestions');
+  if (!datalist) return;
+  const suggestions = [
+    ...readRecentLaunchCwds(),
+    ...((window._runningAgents || []).map(agent => agent.cwd).filter(Boolean)),
+  ];
+  const unique = [...new Set(suggestions)].slice(0, 20);
+  datalist.innerHTML = unique.map(cwd => `<option value="${escAttr(cwd)}"></option>`).join('');
+}
+
+async function ensureLaunchTmuxSessions() {
+  if (launchTmuxSessionsCache) return launchTmuxSessionsCache;
+  try {
+    launchTmuxSessionsCache = await api('GET', '/api/sessions/tmux');
+  } catch {
+    launchTmuxSessionsCache = { installed: false, sessions: [] };
+  }
+  return launchTmuxSessionsCache;
+}
+
+async function refreshLaunchPreflight() {
+  const panel = document.getElementById('launch-preflight');
+  if (!panel) return;
+
+  const agentId = document.getElementById('launch-agent-id').value;
+  const cwd = document.getElementById('launch-agent-cwd').value.trim();
+  const explicitSessionName = document.getElementById('launch-agent-session').value.trim();
+  const isTerminal = agentId === 'terminal';
+  const previewSessionName = suggestedLaunchSessionName(agentId, cwd, launchSelectedPresetFile, explicitSessionName);
+
+  if (!cwd && !previewSessionName) {
+    panel.style.display = 'none';
+    panel.innerHTML = '';
+    return;
+  }
+
+  const tmuxInfo = await ensureLaunchTmuxSessions();
+  const running = window._runningAgents || [];
+  const finalSessionName = uniqueLaunchSessionName(previewSessionName, tmuxInfo.sessions);
+  launchDuplicateAgent = !isTerminal
+    ? running.find(agent => agent.agentId === agentId && agent.cwd === cwd)
+    : null;
+  const tmuxCollision = tmuxInfo.sessions?.find(session => session.name === previewSessionName);
+
+  panel.style.display = 'block';
+  panel.innerHTML = `
+    <div class="launch-preflight-title">Launch Preflight</div>
+    <div class="launch-preflight-row">
+      <span class="launch-preflight-label">Session</span>
+      <span class="launch-preflight-value mono">${escHtml(finalSessionName || '—')}</span>
+      <span class="launch-preflight-note">${tmuxCollision ? 'auto-suffixed' : (explicitSessionName ? 'custom' : 'auto')}</span>
+    </div>
+    <div class="launch-preflight-row">
+      <span class="launch-preflight-label">Resume</span>
+      <span class="launch-preflight-value">${launchResumeSessionCount ? `${launchResumeSessionCount} saved session${launchResumeSessionCount > 1 ? 's' : ''}` : 'none found'}</span>
+      <span class="launch-preflight-note"></span>
+    </div>
+    <div class="launch-preflight-row">
+      <span class="launch-preflight-label">Live Agent</span>
+      ${launchDuplicateAgent
+        ? `<span class="launch-preflight-value">Already running in this project</span>
+           <button type="button" class="btn btn-ghost btn-sm" onclick="window.openExistingLaunchAgent()">Open Existing</button>`
+        : '<span class="launch-preflight-value">No matching live agent</span><span class="launch-preflight-note"></span>'}
+    </div>
+    <div class="launch-preflight-row">
+      <span class="launch-preflight-label">tmux</span>
+      <span class="launch-preflight-value">${tmuxCollision ? 'Name collision resolved automatically' : 'Session name is free'}</span>
+      <span class="launch-preflight-note">${tmuxCollision ? escHtml(finalSessionName) : 'new session'}</span>
+    </div>
+  `;
+}
 
 export async function openLaunchAgentModal() {
   document.getElementById('launch-agent-id').value = 'claude';
@@ -614,13 +746,19 @@ export async function openLaunchAgentModal() {
   document.getElementById('launch-skip-permissions').checked = false;
   launchSelectedSessionId = null;
   launchSelectedPresetFile = null;
+  launchDuplicateAgent = null;
+  launchResumeSessionCount = 0;
+  launchTmuxSessionsCache = null;
+  setLaunchSubmitting(false);
   document.getElementById('launch-sessions-group').style.display = 'none';
+  document.getElementById('launch-preflight').style.display = 'none';
   document.getElementById('launch-agent-modal').style.display = 'flex';
   setTimeout(() => document.getElementById('launch-agent-cwd').focus(), 50);
 
   // Wire up session fetching on cwd/agent change
   const cwdInput = document.getElementById('launch-agent-cwd');
   const agentSelect = document.getElementById('launch-agent-id');
+  const sessionInput = document.getElementById('launch-agent-session');
   const updateLaunchUI = () => {
     const isTerminal = agentSelect.value === 'terminal';
     cwdInput.required = !isTerminal;
@@ -628,13 +766,24 @@ export async function openLaunchAgentModal() {
     document.getElementById('launch-skip-permissions').closest('.form-group').style.display = isTerminal ? 'none' : '';
     document.getElementById('launch-sessions-group').style.display = isTerminal ? 'none' : document.getElementById('launch-sessions-group').style.display;
   };
-  const handler = () => { updateLaunchUI(); clearTimeout(launchSessionsDebounce); launchSessionsDebounce = setTimeout(fetchLaunchSessions, 400); };
+  const handler = () => {
+    updateLaunchUI();
+    clearTimeout(launchSessionsDebounce);
+    launchSessionsDebounce = setTimeout(async () => {
+      await fetchLaunchSessions();
+      await refreshLaunchPreflight();
+    }, 400);
+  };
   cwdInput.oninput = handler;
   agentSelect.onchange = handler;
+  sessionInput.oninput = handler;
+  launchUiRefresh = handler;
   updateLaunchUI();
+  renderLaunchCwdSuggestions();
 
   // Load presets
-  renderPresetPicker();
+  await renderPresetPicker();
+  await refreshLaunchPreflight();
 }
 
 // ─── Presets ──────────────────────────────────────────────────────────────────
@@ -643,6 +792,7 @@ async function renderPresetPicker() {
   const container = document.getElementById('launch-presets');
   try {
     const { presets } = await api('GET', '/api/agents/presets');
+    launchPresets = presets;
     let html = `<div class="preset-chip preset-chip-none${!launchSelectedPresetFile ? ' preset-chip-selected' : ''}" onclick="window.selectPreset(null)">None</div>`;
     for (const p of presets) {
       const selected = launchSelectedPresetFile === p.filename ? ' preset-chip-selected' : '';
@@ -668,12 +818,20 @@ export function selectPreset(presetFile) {
     const chipId = chip.dataset.preset || null;
     chip.classList.toggle('preset-chip-selected', presetFile ? chipId === presetFile : isNone);
   }
-  // Auto-select the preset's agent
-  if (presetFile) {
-    const chip = container.querySelector(`[data-preset="${presetFile}"]`);
-    // Find agent from presets data (stored in chip title won't work, fetch from API cache)
-    // For now, presets always map to an agent — we'll set it when data is available
-  }
+  const preset = launchPresets.find(entry => entry.filename === presetFile);
+  if (preset) document.getElementById('launch-agent-id').value = preset.agent;
+  if (launchUiRefresh) launchUiRefresh();
+}
+
+export function openExistingLaunchAgent() {
+  if (!launchDuplicateAgent) return;
+  closeModal('launch-agent-modal');
+  openAgentMessages(
+    launchDuplicateAgent.pid,
+    launchDuplicateAgent.agentId,
+    launchDuplicateAgent.agentName,
+    launchDuplicateAgent.cwd || '',
+  );
 }
 
 export async function openPresetsModal() {
@@ -763,6 +921,7 @@ async function fetchLaunchSessions() {
   if (!cwd || cwd.length < 2) {
     group.style.display = 'none';
     launchSelectedSessionId = null;
+    launchResumeSessionCount = 0;
     return;
   }
 
@@ -771,6 +930,7 @@ async function fetchLaunchSessions() {
 
   try {
     const { sessions, supportsResume } = await api('GET', `/api/agents/sessions?agentId=${encodeURIComponent(agentId)}&cwd=${encodeURIComponent(cwd)}`);
+    launchResumeSessionCount = supportsResume ? sessions.length : 0;
     if (!supportsResume || !sessions.length) {
       group.style.display = 'none';
       launchSelectedSessionId = null;
@@ -810,6 +970,7 @@ async function fetchLaunchSessions() {
   } catch {
     group.style.display = 'none';
     launchSelectedSessionId = null;
+    launchResumeSessionCount = 0;
   }
 }
 
@@ -819,6 +980,7 @@ export function selectLaunchSession(el, sessionId) {
   for (const opt of list.querySelectorAll('.session-option')) {
     opt.classList.toggle('session-option-selected', opt === el);
   }
+  refreshLaunchPreflight();
 }
 
 function formatTimeAgo(date) {
@@ -832,6 +994,7 @@ function formatTimeAgo(date) {
 
 export async function launchAgent(e) {
   e.preventDefault();
+  if (launchSubmitting) return;
   const agentId         = document.getElementById('launch-agent-id').value;
   const cwd             = document.getElementById('launch-agent-cwd').value.trim();
   const sessionName     = document.getElementById('launch-agent-session').value.trim();
@@ -840,12 +1003,16 @@ export async function launchAgent(e) {
   const presetFile = launchSelectedPresetFile || null;
 
   try {
+    setLaunchSubmitting(true);
     const { sessionName: name } = await api('POST', '/api/agents/launch', { agentId, cwd, sessionName, skipPermissions, resumeSessionId, presetFile });
+    rememberRecentLaunchCwd(cwd);
     closeModal('launch-agent-modal');
     toast(`${resumeSessionId ? 'Resumed' : 'Launched'} in tmux session "${name}"`);
     setTimeout(loadAgents, 3000);
   } catch (err) {
     toast(err.message, 'error');
+  } finally {
+    setLaunchSubmitting(false);
   }
 }
 

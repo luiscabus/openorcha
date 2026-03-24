@@ -15,6 +15,25 @@ function shellEscape(str) {
   return "'" + String(str).replace(/'/g, "'\\''") + "'";
 }
 
+function tmuxSessionExists(name) {
+  try {
+    execSync(`tmux has-session -t ${shellEscape(name)} 2>/dev/null`, { timeout: 2000 });
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+function uniqueTmuxSessionName(baseName) {
+  const sanitizedBase = String(baseName || 'session').trim().replace(/[^a-zA-Z0-9_.\-]/g, '-') || 'session';
+  if (!tmuxSessionExists(sanitizedBase)) return sanitizedBase;
+  for (let i = 2; i < 1000; i++) {
+    const candidate = `${sanitizedBase}-${i}`;
+    if (!tmuxSessionExists(candidate)) return candidate;
+  }
+  throw new Error(`Could not allocate a unique tmux session name for "${sanitizedBase}"`);
+}
+
 function normalizeTtyPath(agentTty) {
   if (!agentTty || agentTty === '??') return null;
   const tty = String(agentTty).trim();
@@ -564,6 +583,7 @@ router.post('/launch', (req, res) => {
       sessionName = `${agentId}-${path.basename(cwd)}`;
     }
     sessionName = sessionName.trim().replace(/[^a-zA-Z0-9_.\-]/g, '-');
+    sessionName = uniqueTmuxSessionName(sessionName);
 
     if (!isTerminal) {
       if (skipPermissions && AGENT_SKIP_PERMISSIONS_FLAG[agentId]) {
@@ -584,13 +604,7 @@ router.post('/launch', (req, res) => {
     // Use a login shell so the user's PATH (~/.zshrc, nvm, homebrew, etc.) is sourced
     const userShell = resolveUserShell();
 
-    // Create tmux session (or new window if session already exists)
-    try {
-      execSync(`tmux new-session -d -s ${shellEscape(sessionName)} -c ${shellEscape(cwd)} ${shellEscape(userShell)} -l`, { timeout: 5000 });
-    } catch {
-      // Session name taken — add a new window instead
-      execSync(`tmux new-window -t ${shellEscape(sessionName)} -c ${shellEscape(cwd)} ${shellEscape(userShell)} -l`, { timeout: 5000 });
-    }
+    execSync(`tmux new-session -d -s ${shellEscape(sessionName)} -c ${shellEscape(cwd)} ${shellEscape(userShell)} -l`, { timeout: 5000 });
     // For terminal-only sessions, just leave the shell open; otherwise send the agent command
     if (!isTerminal) {
       // Wait for shell prompt to be ready (handles oh-my-zsh updates, slow init, etc.)

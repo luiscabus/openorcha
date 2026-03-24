@@ -36,6 +36,7 @@ import {
   launchAgent,
   selectLaunchSession,
   selectPreset,
+  openExistingLaunchAgent,
   openPresetsModal,
   loadAgentPresets,
   savePreset,
@@ -152,6 +153,7 @@ window.openLaunchAgentModal = openLaunchAgentModal;
 window.launchAgent = launchAgent;
 window.selectLaunchSession = selectLaunchSession;
 window.selectPreset = selectPreset;
+window.openExistingLaunchAgent = openExistingLaunchAgent;
 window.openPresetsModal = openPresetsModal;
 window.loadAgentPresets = loadAgentPresets;
 window.savePreset = savePreset;
