@@ -7,6 +7,7 @@
   --border: #2a3347;
   --accent: #4f8ef7;
   --accent-hover: #6ba3ff;
+  --warning: #f3b34c;
   --danger: #e05555;
   --danger-hover: #f06060;
   --success: #3ecf8e;
@@ -53,6 +54,71 @@ body {
 }
 
 .sidebar-header svg { color: var(--accent); flex-shrink: 0; }
+
+.sidebar-brand {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.sidebar-version {
+  font-size: 11px;
+  font-weight: 500;
+  color: var(--text3);
+}
+
+.sidebar-app-update {
+  padding: 12px 14px 6px;
+}
+
+.app-update-chip {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  width: 100%;
+  padding: 12px;
+  border-radius: 12px;
+  border: 1px solid var(--border);
+  background: rgba(255,255,255,0.02);
+}
+
+.app-update-chip[data-state="available"] {
+  border-color: rgba(243, 179, 76, 0.45);
+  background: rgba(243, 179, 76, 0.08);
+}
+
+.app-update-chip[data-state="blocked"] {
+  border-color: rgba(224, 85, 85, 0.45);
+  background: rgba(224, 85, 85, 0.08);
+}
+
+.app-update-chip[data-state="updating"] {
+  border-color: rgba(79, 142, 247, 0.45);
+  background: rgba(79, 142, 247, 0.08);
+}
+
+.app-update-chip[data-state="degraded"] {
+  border-color: rgba(136, 153, 170, 0.45);
+}
+
+.app-update-copy {
+  min-width: 0;
+  flex: 1;
+}
+
+.app-update-label {
+  font-size: 12px;
+  font-weight: 700;
+  color: var(--text);
+}
+
+.app-update-text {
+  margin-top: 2px;
+  font-size: 11.5px;
+  line-height: 1.4;
+  color: var(--text2);
+}
 
 .nav-list { list-style: none; padding: 10px 8px; flex: 1; }
 
@@ -140,6 +206,7 @@ body {
 .btn-danger:hover { background: var(--danger); color: #fff; }
 .btn-sm { padding: 5px 10px; font-size: 12px; }
 .btn-icon { padding: 6px; border-radius: 6px; }
+.btn:disabled { opacity: 0.55; cursor: not-allowed; pointer-events: none; }
 
 /* Cards */
 .cards-grid {

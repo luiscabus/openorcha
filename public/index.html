@@ -14,7 +14,19 @@
           <rect x="2" y="3" width="20" height="14" rx="2"/>
           <path d="M8 21h8M12 17v4"/>
         </svg>
-        <span>OpenOrcha</span>
+        <div class="sidebar-brand">
+          <span>OpenOrcha</span>
+          <span class="sidebar-version">Local agent orchestration</span>
+        </div>
+      </div>
+      <div class="sidebar-app-update">
+        <div id="app-update-chip" class="app-update-chip" data-state="loading">
+          <div class="app-update-copy">
+            <div id="app-update-label" class="app-update-label">Checking updates</div>
+            <div id="app-update-text" class="app-update-text">Comparing this checkout with its upstream branch.</div>
+          </div>
+          <button id="app-update-button" class="btn btn-primary btn-sm" onclick="triggerAppUpdate()" style="display:none">Update</button>
+        </div>
       </div>
       <ul class="nav-list">
         <li class="nav-section">

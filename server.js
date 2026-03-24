@@ -9,6 +9,7 @@ app.use(express.json());
 app.use(express.text());
 app.use(express.static(path.join(__dirname, 'public')));
 
+app.use('/api/app',          require('./routes/app'));
 app.use('/api/config',       require('./routes/config'));
 app.use('/api/keys',         require('./routes/keys'));
 app.use('/api/known-hosts',  require('./routes/known-hosts'));

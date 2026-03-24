@@ -1,4 +1,5 @@
 import { toast, closeModal } from './utils.js';
+import { initAppUpdate, triggerAppUpdate } from './app-update.js';
 
 import { loadHosts, openHostModal, saveHost, deleteHost } from './tabs/hosts.js';
 import { loadKeys, openKeyModal, generateKey, deleteKey, showPublicKey, copyPubKey } from './tabs/keys.js';
@@ -96,6 +97,7 @@ import {
 
 window.toast = toast;
 window.closeModal = closeModal;
+window.triggerAppUpdate = triggerAppUpdate;
 
 // Hosts
 window.loadHosts = loadHosts;
@@ -257,5 +259,6 @@ function initNav() {
 // ─── Init ─────────────────────────────────────────────────────────────────────
 initNav();
 syncNavState(document.querySelector('.nav-item.active'));
+initAppUpdate();
 loadAgents();
 toggleAgentAutoRefresh();
