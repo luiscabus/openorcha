@@ -267,11 +267,12 @@ export async function loadTmuxSessions() {
     <thead><tr><th>Name</th><th>Windows</th><th>Created</th><th>Status</th><th>Attach Command</th><th></th></tr></thead>
     <tbody>${sessions.map(s => {
       const attachCmd = `tmux attach -t ${s.name}`;
+      const staleTag = s.stale ? '<span class="session-state-tag session-state-tag-stale">Stale</span>' : '';
       return `<tr>
         <td class="mono">${escHtml(s.name)}</td>
         <td class="text-muted text-small">${s.windows}</td>
         <td class="text-muted text-small">${escHtml(s.created)}</td>
-        <td><span class="status-dot ${s.attached ? 'status-attached' : 'status-detached'}"></span>${s.attached ? 'Attached' : 'Detached'}</td>
+        <td><span class="status-dot ${s.attached ? 'status-attached' : 'status-detached'}"></span>${s.attached ? 'Attached' : 'Detached'}${staleTag}</td>
         <td>
           <span class="mono text-small" style="color:var(--accent);cursor:pointer" title="Click to copy" onclick="navigator.clipboard.writeText('${escAttr(attachCmd)}').then(()=>window.toast('Copied!'))">${escHtml(attachCmd)}</span>
         </td>

@@ -1563,6 +1563,24 @@ body {
 .status-attached { background: var(--success); }
 .status-detached { background: var(--text3); }
 
+.session-state-tag {
+  display: inline-flex;
+  align-items: center;
+  margin-left: 8px;
+  padding: 1px 7px;
+  border-radius: 999px;
+  font-size: 10px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.session-state-tag-stale {
+  color: #f5a623;
+  background: rgba(245, 166, 35, 0.12);
+  border: 1px solid rgba(245, 166, 35, 0.2);
+}
+
 /* Messages Drawer */
 .drawer-overlay {
   position: fixed;

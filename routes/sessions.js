@@ -18,6 +18,56 @@ function shellEscape(str) {
 
 const router = express.Router();
 
+function listTmuxSessionNames() {
+  let output = '';
+  try { output = execSync('tmux list-sessions 2>/dev/null || true', { encoding: 'utf8' }); } catch {}
+
+  const sessions = [];
+  for (const line of output.split('\n')) {
+    const m = line.match(/^([^:]+): (\d+) windows?.*\(created (.+?)\)(.*)/);
+    if (m) {
+      sessions.push({
+        name: m[1],
+        windows: parseInt(m[2], 10),
+        created: m[3],
+        attached: m[4].includes('attached'),
+      });
+    }
+  }
+  return sessions;
+}
+
+function findActiveTmuxSessions(sessionNames) {
+  const agentKeywords = ['claude', 'codex', 'gemini', 'opencode', 'aider', 'continue'];
+  const activeSessions = new Set();
+
+  for (const name of sessionNames) {
+    try {
+      const panes = execSync(`tmux list-panes -t ${shellEscape(name)} -F '#{pane_pid}' 2>/dev/null`, { encoding: 'utf8' }).trim();
+      for (const panePid of panes.split('\n')) {
+        const trimmedPanePid = panePid.trim();
+        if (!trimmedPanePid) continue;
+        try {
+          const children = execSync(`pgrep -P ${trimmedPanePid} 2>/dev/null`, { encoding: 'utf8' }).trim();
+          const pidsToCheck = [trimmedPanePid, ...children.split('\n')].filter(Boolean);
+          for (const pid of pidsToCheck) {
+            try {
+              const args = execSync(`ps -p ${pid} -o args= 2>/dev/null`, { encoding: 'utf8' }).trim().toLowerCase();
+              if (agentKeywords.some(k => args.includes(k))) {
+                activeSessions.add(name);
+                break;
+              }
+            } catch {}
+          }
+          if (activeSessions.has(name)) break;
+        } catch {}
+      }
+    } catch {}
+  }
+
+  return activeSessions;
+}
+
 router.get('/terminals', (req, res) => {
   res.json({ terminals: getTerminals() });
 });
@@ -209,20 +259,10 @@ router.get('/tmux', (req, res) => {
     try { execSync('which tmux 2>/dev/null'); installed = true; } catch {}
     if (!installed) return res.json({ installed: false, sessions: [] });
 
-    let output = '';
-    try { output = execSync('tmux list-sessions 2>/dev/null || true', { encoding: 'utf8' }); } catch {}
-
-    const sessions = [];
-    for (const line of output.split('\n')) {
-      const m = line.match(/^([^:]+): (\d+) windows?.*\(created (.+?)\)(.*)/);
-      if (m) {
-        sessions.push({
-          name: m[1],
-          windows: parseInt(m[2]),
-          created: m[3],
-          attached: m[4].includes('attached'),
-        });
-      }
+    const sessions = listTmuxSessionNames();
+    const activeSessions = findActiveTmuxSessions(sessions.map(s => s.name));
+    for (const session of sessions) {
+      session.stale = !activeSessions.has(session.name);
     }
     res.json({ installed: true, sessions });
   } catch (e) {
@@ -254,43 +294,8 @@ router.delete('/tmux/:name', (req, res) => {
 
 router.delete('/tmux-stale', (req, res) => {
   try {
-    // Get all tmux sessions
-    let output = '';
-    try { output = execSync('tmux list-sessions 2>/dev/null || true', { encoding: 'utf8' }); } catch {}
-    const sessionNames = [];
-    for (const line of output.split('\n')) {
-      const m = line.match(/^([^:]+):/);
-      if (m) sessionNames.push(m[1]);
-    }
-
-    // Get PIDs of all running agents
-    const agentKeywords = ['claude', 'codex', 'gemini', 'opencode', 'aider', 'continue'];
-    let psOut = '';
-    try { psOut = execSync('ps -eo pid,args 2>/dev/null', { encoding: 'utf8' }); } catch {}
-
-    // Find tmux sessions that have an active agent process
-    const activeSessions = new Set();
-    // Map tmux panes to session names via tmux list-panes
-    for (const name of sessionNames) {
-      try {
-        const panes = execSync(`tmux list-panes -t ${shellEscape(name)} -F '#{pane_pid}' 2>/dev/null`, { encoding: 'utf8' }).trim();
-        for (const panePid of panes.split('\n')) {
-          // Check if this pane PID or any of its children is a known agent
-          try {
-            const children = execSync(`pgrep -P ${panePid.trim()} 2>/dev/null`, { encoding: 'utf8' }).trim();
-            const pidsToCheck = [panePid.trim(), ...children.split('\n')].filter(Boolean);
-            for (const p of pidsToCheck) {
-              try {
-                const args = execSync(`ps -p ${p} -o args= 2>/dev/null`, { encoding: 'utf8' }).trim().toLowerCase();
-                if (agentKeywords.some(k => args.includes(k))) {
-                  activeSessions.add(name);
-                }
-              } catch {}
-            }
-          } catch {}
-        }
-      } catch {}
-    }
+    const sessionNames = listTmuxSessionNames().map(s => s.name);
+    const activeSessions = findActiveTmuxSessions(sessionNames);
 
     // Kill sessions that have no active agent
     const killed = [];
