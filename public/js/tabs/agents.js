@@ -17,7 +17,7 @@ export {
   openAgentMessages, openTmuxTerminal, closeMessagesDrawer, closeDrawerOnOverlay,
   refreshDrawer, fetchAndRenderMessages, switchDrawerView,
   handleSendKeydown, sendAgentMessage, sendKey,
-  clickPromptOption, endDrawerSession, relaunchDrawerSession,
+  clickPromptOption, endDrawerSession, attachDrawerSession, relaunchDrawerSession,
 } from './agentDrawer.js';
 export { toggleContextBlock, toggleMcpServer } from './agentContext.js';
 export { openPresetsModal, loadAgentPresets, savePreset, deletePreset } from './agentPresets.js';

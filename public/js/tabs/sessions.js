@@ -64,6 +64,17 @@ export async function loadTerminalPicker() {
   const { terminals } = await api('GET', '/api/sessions/terminals');
   const sel = document.getElementById('terminal-picker');
   sel.innerHTML = terminals.map(t => `<option value="${t.id}">${t.name}</option>`).join('');
+  const preferred = terminals.find(t => t.id === 'iterm')?.id || terminals.find(t => t.id === 'warp')?.id || terminals[0]?.id || '';
+  if (preferred) sel.value = preferred;
+}
+
+async function getSelectedTerminal() {
+  const sel = document.getElementById('terminal-picker');
+  if (!sel) return 'terminal';
+  if (!sel.value || !sel.options.length) {
+    await loadTerminalPicker();
+  }
+  return sel.value || 'terminal';
 }
 
 export async function loadQuickConnect() {
@@ -113,15 +124,28 @@ function buildSSHCmd(block) {
 }
 
 export async function launchSSH(command) {
-  const terminal = document.getElementById('terminal-picker').value;
-  // Copy to clipboard first for Warp (no AppleScript command support)
-  if (terminal === 'warp') {
+  const terminal = await getSelectedTerminal();
+  // Copy to clipboard first for terminals that may require a manual paste fallback.
+  if (terminal === 'warp' || terminal === 'iterm') {
     await navigator.clipboard.writeText(command);
   }
   try {
     const data = await api('POST', '/api/sessions/launch', { command, terminal });
     toast(data.note || `Launched in ${terminal}`);
   } catch (err) {
+    if (err.code === 'MAC_AUTOMATION_DENIED') {
+      try {
+        if (terminal !== 'warp' && terminal !== 'iterm') {
+          await navigator.clipboard.writeText(command);
+        }
+        toast(err.appOpened
+          ? `${err.appName || 'Terminal'} opened. Command copied; paste it manually.`
+          : `${err.appName || 'Terminal'} automation is blocked. Command copied; paste it manually.`, 'error');
+      } catch {
+        toast(err.message, 'error');
+      }
+      return;
+    }
     toast(err.message, 'error');
   }
 }

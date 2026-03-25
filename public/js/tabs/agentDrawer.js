@@ -99,7 +99,10 @@ function updateDrawerSendVisibility() {
 
 export async function openAgentMessages(pid, agentId, agentName, cwd) {
   setCurrentPid(pid);
-  drawerTmuxSession = null;
+  const mux = window._agentMux?.[pid] || null;
+  drawerTmuxSession = mux?.type === 'tmux'
+    ? ((mux.target || mux.session || '').split(':')[0] || null)
+    : null;
   drawerDraftKey = getDrawerDraftKey(pid, agentId, cwd);
   drawerRenderedMessagesPid = null;
   drawerRenderedMessageKeys = [];
@@ -116,8 +119,9 @@ export async function openAgentMessages(pid, agentId, agentName, cwd) {
   document.getElementById('drawer-msg-count').textContent = '';
   document.getElementById('drawer-messages').innerHTML = `<div class="drawer-loading">Loading conversation…</div>`;
 
-  const mux = window._agentMux?.[pid] || null;
   drawerHasMux = !!mux;
+  const attachBtn = document.getElementById('drawer-attach-btn');
+  if (attachBtn) attachBtn.style.display = drawerTmuxSession ? '' : 'none';
   const sendInput = document.getElementById('drawer-send-input');
   sendInput.value = drawerDrafts[drawerDraftKey] || '';
   sendInput.style.height = 'auto';
@@ -166,6 +170,8 @@ export function openTmuxTerminal(sessionName) {
   const sendInput = document.getElementById('drawer-send-input');
   sendInput.value = '';
   sendInput.style.height = 'auto';
+  const attachBtn = document.getElementById('drawer-attach-btn');
+  if (attachBtn) attachBtn.style.display = drawerTmuxSession ? '' : 'none';
   updateDrawerSendVisibility();
 
   switchDrawerView('terminal');
@@ -178,10 +184,13 @@ export function closeMessagesDrawer() {
   input.oninput = null;
   document.getElementById('messages-drawer').style.display = 'none';
   setCurrentPid(null);
+  drawerTmuxSession = null;
   drawerDraftKey = null;
   drawerRenderedMessagesPid = null;
   drawerRenderedMessageKeys = [];
   drawerSessionFile = null;
+  const attachBtn = document.getElementById('drawer-attach-btn');
+  if (attachBtn) attachBtn.style.display = 'none';
   clearInterval(terminalRefreshTimer);
   clearInterval(promptPollTimer);
   clearInterval(messagesPollTimer);
@@ -193,6 +202,11 @@ export function closeMessagesDrawer() {
 
 export function closeDrawerOnOverlay(e) {
   if (e.target === document.getElementById('messages-drawer')) closeMessagesDrawer();
+}
+
+export function attachDrawerSession() {
+  if (!drawerTmuxSession || !window.attachTmux) return;
+  window.attachTmux(drawerTmuxSession);
 }
 
 // ─── Prompt Detection ─────────────────────────────────────────────────────────

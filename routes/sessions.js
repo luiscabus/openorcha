@@ -328,9 +328,11 @@ router.post('/launch', (req, res) => {
     const cmd = command.trim().replace(/\\/g, '\\\\').replace(/"/g, '\\"');
     let script;
 
+    let appName = 'Terminal';
     if (terminal === 'iterm') {
+      appName = 'iTerm';
       script = [
-        'tell application "iTerm"',
+        'tell application id "com.googlecode.iterm2"',
         '  activate',
         '  set newWindow to (create window with default profile)',
         '  tell current session of newWindow',
@@ -339,6 +341,7 @@ router.post('/launch', (req, res) => {
         'end tell',
       ].join('\n');
     } else if (terminal === 'warp') {
+      appName = 'Warp';
       script = 'do shell script "open -na \'Warp\'"';
     } else {
       script = [
@@ -362,6 +365,27 @@ router.post('/launch', (req, res) => {
       note: terminal === 'warp' ? 'New Warp window opened — command is in your clipboard, just paste' : undefined,
     });
   } catch (e) {
+    if (String(e.message || '').includes('Not authorized to send Apple events') || String(e.message || '').includes('(-1743)')) {
+      const { command, terminal } = req.body || {};
+      const appName = terminal === 'iterm' ? 'iTerm' : terminal === 'warp' ? 'Warp' : 'Terminal';
+      let appOpened = false;
+      try {
+        if (terminal === 'iterm') {
+          execSync('open -b com.googlecode.iterm2', { timeout: 5000 });
+          appOpened = true;
+        } else if (terminal === 'terminal') {
+          execSync('open -a Terminal', { timeout: 5000 });
+          appOpened = true;
+        }
+      } catch {}
+      return res.status(403).json({
+        error: `${appName} automation is blocked by macOS. Allow automation in System Settings > Privacy & Security > Automation, or run the command manually.`,
+        code: 'MAC_AUTOMATION_DENIED',
+        appName,
+        appOpened,
+        command: String(command || '').trim(),
+      });
+    }
     res.status(500).json({ error: e.message });
   }
 });

@@ -59,6 +59,7 @@ import {
   sendKey,
   clickPromptOption,
   endDrawerSession,
+  attachDrawerSession,
   relaunchDrawerSession,
   relaunchAgent,
   openTmuxTerminal,
@@ -177,6 +178,7 @@ window.switchDrawerView = switchDrawerView;
 window.sendKey = sendKey;
 window.clickPromptOption = clickPromptOption;
 window.endDrawerSession = endDrawerSession;
+window.attachDrawerSession = attachDrawerSession;
 window.toggleContextBlock = toggleContextBlock;
 window.toggleMcpServer = toggleMcpServer;
 window.relaunchDrawerSession = relaunchDrawerSession;
