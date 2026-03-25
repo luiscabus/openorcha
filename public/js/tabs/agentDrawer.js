@@ -558,7 +558,9 @@ export async function sendAgentMessage() {
   const tmuxSess = drawerTmuxSession;
   if (!message || (!pid && !tmuxSess)) return;
 
-  const noEnter = drawerView === 'terminal';
+  // Normal sends should execute immediately in both messages and terminal views.
+  // Use the quick-key buttons for raw terminal keystrokes like Enter or Escape.
+  const noEnter = false;
 
   input.disabled = true;
   try {
