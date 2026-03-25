@@ -176,6 +176,39 @@ function detectCodexTerminalState(text) {
 
   return null;
 }
+// ─── PID → session file cache ────────────────────────────────────────────────
+// Once resolved, the session file for a given PID never changes during its lifetime.
+// Cache it to avoid re-running heuristic matching on every poll request.
+const pidSessionCache = new Map(); // pid → { sessionFile, agentId, cwd }
+
+function getCachedSession(pid) {
+  const entry = pidSessionCache.get(String(pid));
+  if (!entry) return null;
+  // Verify the cached file still exists (guard against deletion)
+  if (entry.sessionFile && !fs.existsSync(entry.sessionFile)) {
+    pidSessionCache.delete(String(pid));
+    return null;
+  }
+  return entry;
+}
+
+function setCachedSession(pid, sessionFile, agentId, cwd) {
+  if (sessionFile) {
+    pidSessionCache.set(String(pid), { sessionFile, agentId, cwd });
+  }
+}
+
+// Prune cache entries for dead PIDs periodically (every 60s)
+setInterval(() => {
+  for (const pid of pidSessionCache.keys()) {
+    try {
+      execSync(`ps -p ${pid} -o pid= 2>/dev/null`, { encoding: 'utf8' });
+    } catch {
+      pidSessionCache.delete(pid);
+    }
+  }
+}, 60000);
+
 // ─── Agent status inference ──────────────────────────────────────────────────
 
 // Infer whether an agent is idle, thinking, or waiting for a permission prompt.
@@ -315,13 +348,24 @@ router.get('/:pid/messages', (req, res) => {
     let parsed = null;
     let sessionFile = null;
     const resolver = getSessionResolver(def.id);
-    const paneText = ['claude', 'codex'].includes(def.id) ? captureAgentPaneText(pid) : '';
-    const resolved = resolver?.resolveLiveSession
-      ? resolver.resolveLiveSession({ cwd, pid, args: psOut, paneText })
-      : null;
-    if (resolved && resolver?.parseResolved) {
-      sessionFile = resolved.sessionFile || null;
-      parsed = resolver.parseResolved(resolved);
+
+    // Use cached session file if available — avoids re-running heuristic matching
+    const cached = getCachedSession(pid);
+    if (cached && cached.agentId === def.id && cached.cwd === cwd && cached.sessionFile) {
+      sessionFile = cached.sessionFile;
+      const resolved = { sessionFile };
+      parsed = resolver?.parseResolved ? resolver.parseResolved(resolved) : null;
+    } else {
+      const paneText = ['claude', 'codex'].includes(def.id) ? captureAgentPaneText(pid) : '';
+      const resolved = resolver?.resolveLiveSession
+        ? resolver.resolveLiveSession({ cwd, pid, args: psOut, paneText })
+        : null;
+      if (resolved && resolver?.parseResolved) {
+        sessionFile = resolved.sessionFile || null;
+        parsed = resolver.parseResolved(resolved);
+        // Cache the resolved session file for this PID
+        setCachedSession(pid, sessionFile, def.id, cwd);
+      }
     }
 
     if (parsed === null) {

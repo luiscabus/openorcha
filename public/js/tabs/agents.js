@@ -1080,6 +1080,7 @@ let promptPollTimer = null;
 let messagesPollTimer = null;
 let drawerRenderedMessagesPid = null;
 let drawerRenderedMessageKeys = [];
+let drawerSessionFile = null; // tracks the session file for the current drawer PID
 
 function getDrawerDraftKey(pid, agentId, cwd) {
   return `${agentId || ''}::${cwd || ''}::${pid || ''}`;
@@ -1168,6 +1169,7 @@ export async function openAgentMessages(pid, agentId, agentName, cwd) {
   drawerDraftKey = getDrawerDraftKey(pid, agentId, cwd);
   drawerRenderedMessagesPid = null;
   drawerRenderedMessageKeys = [];
+  drawerSessionFile = null;
   writeLastOpenedAgentKey(agentInitiativeKey({ pid, agentId, cwd, multiplexer: window._agentMux?.[pid], tty: null }));
   loadAgents();
   const meta = AGENT_META[agentId] || { label: '?', color: 'aider' };
@@ -1222,6 +1224,7 @@ export function openTmuxTerminal(sessionName) {
   drawerHasMux = true;
   drawerRenderedMessagesPid = null;
   drawerRenderedMessageKeys = [];
+  drawerSessionFile = null;
 
   const icon = document.getElementById('drawer-agent-icon');
   icon.textContent = '>';
@@ -1246,6 +1249,10 @@ async function checkForPrompt(pid) {
   if (!pid) return;
   try {
     const data = await api('GET', `/api/agents/${pid}/prompt`);
+
+    // Discard stale response — drawer has moved to a different session
+    if (pid !== drawerCurrentPid) return;
+
     const banner = document.getElementById('drawer-prompt');
     if (!data.hasPrompt) {
       banner.style.display = 'none';
@@ -1456,7 +1463,22 @@ export async function fetchAndRenderMessages(pid) {
   const selectionInside = hasExpandedSelectionInside(container);
   try {
     const data = await api('GET', `/api/agents/${pid}/messages`);
-    const { messages, total, note, sessionMeta, isWorking } = data;
+
+    // Discard stale response — drawer has moved to a different session
+    if (pid !== drawerCurrentPid) return;
+
+    const { messages, total, note, sessionMeta, isWorking, sessionFile } = data;
+
+    // Track session file — if the backend suddenly returns a different file for
+    // the same PID, force a full re-render to avoid mixing messages
+    if (sessionFile) {
+      if (drawerSessionFile && drawerSessionFile !== sessionFile) {
+        console.warn(`[agents] Session file changed for PID ${pid}: ${drawerSessionFile} → ${sessionFile} — forcing full re-render`);
+        drawerRenderedMessagesPid = null;
+        drawerRenderedMessageKeys = [];
+      }
+      drawerSessionFile = sessionFile;
+    }
 
     document.getElementById('drawer-msg-count').textContent =
       total > messages.length ? `last ${messages.length} of ${total}` : `${messages.length} messages`;
@@ -1759,6 +1781,7 @@ export function closeMessagesDrawer() {
   drawerDraftKey = null;
   drawerRenderedMessagesPid = null;
   drawerRenderedMessageKeys = [];
+  drawerSessionFile = null;
   clearInterval(terminalRefreshTimer);
   clearInterval(promptPollTimer);
   clearInterval(messagesPollTimer);
