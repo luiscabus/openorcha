@@ -6,208 +6,27 @@ const { execSync } = require('child_process');
 const { AGENT_DEFS, listAllRecentSessions } = require('../lib/agentParsers');
 const { getSessionResolver } = require('../lib/sessionResolvers');
 const { buildProcTable, findAncestorApp, getCwdMap } = require('../lib/processTree');
+const { getCachedSession, setCachedSession } = require('../lib/sessionCache');
+const { readJsonSafe, readTextSafe, getGitInfo, getClaudeContext, getCodexContext, getGeminiContext } = require('../lib/agentContext');
+const {
+  shellEscape,
+  uniqueTmuxSessionName,
+  resolveUserShell,
+  buildTmuxPaneMap,
+  buildScreenMap,
+  detectMultiplexer,
+  tmuxSessionNameFromMux,
+  captureMuxText,
+  captureAgentPaneText,
+  detectCodexTerminalState,
+  parsePermissionPrompt,
+} = require('../lib/multiplexer');
+const { router: presetsRouter, loadPresets } = require('./agentPresets');
 
 const router = express.Router();
 
-// ─── Multiplexer helpers ──────────────────────────────────────────────────────
-
-function shellEscape(str) {
-  return "'" + String(str).replace(/'/g, "'\\''") + "'";
-}
-
-function tmuxSessionExists(name) {
-  try {
-    execSync(`tmux has-session -t ${shellEscape(name)} 2>/dev/null`, { timeout: 2000 });
-    return true;
-  } catch {
-    return false;
-  }
-}
-
-function uniqueTmuxSessionName(baseName) {
-  const sanitizedBase = String(baseName || 'session').trim().replace(/[^a-zA-Z0-9_.\-]/g, '-') || 'session';
-  if (!tmuxSessionExists(sanitizedBase)) return sanitizedBase;
-  for (let i = 2; i < 1000; i++) {
-    const candidate = `${sanitizedBase}-${i}`;
-    if (!tmuxSessionExists(candidate)) return candidate;
-  }
-  throw new Error(`Could not allocate a unique tmux session name for "${sanitizedBase}"`);
-}
-
-function normalizeTtyPath(agentTty) {
-  if (!agentTty || agentTty === '??') return null;
-  const tty = String(agentTty).trim();
-  if (!tty) return null;
-  if (tty.startsWith('/dev/')) return tty;
-  if (tty.startsWith('pts/')) return `/dev/${tty}`;
-  if (tty.startsWith('tty')) return `/dev/${tty}`;
-  if (/^\d+$/.test(tty)) return `/dev/pts/${tty}`;
-  return `/dev/${tty}`;
-}
-
-function findTmuxTarget(agentTty, tmuxMap) {
-  const ttyPath = normalizeTtyPath(agentTty);
-  if (!ttyPath) return null;
-  if (tmuxMap[ttyPath]) return tmuxMap[ttyPath];
-
-  const normalized = ttyPath.replace(/^\/dev\//, '');
-  for (const [paneTty, target] of Object.entries(tmuxMap)) {
-    if (paneTty.replace(/^\/dev\//, '') === normalized) return target;
-  }
-  return null;
-}
-
-function resolveUserShell() {
-  const candidates = [];
-  if (process.env.SHELL) candidates.push(process.env.SHELL);
-  candidates.push('/bin/bash', '/bin/sh', '/bin/zsh');
-
-  for (const candidate of candidates) {
-    if (!candidate) continue;
-    try {
-      if (candidate.startsWith('/') && fs.existsSync(candidate)) return candidate;
-    } catch {}
-  }
-
-  for (const name of ['bash', 'sh', 'zsh']) {
-    try {
-      const found = execSync(`command -v ${name} 2>/dev/null`, { encoding: 'utf8', timeout: 1000 }).trim();
-      if (found) return found;
-    } catch {}
-  }
-
-  return '/bin/sh';
-}
-
-function buildTmuxPaneMap() {
-  try {
-    const out = execSync('tmux list-panes -a -F "#{pane_tty} #{session_name}:#{window_index}.#{pane_index}" 2>/dev/null', { encoding: 'utf8', timeout: 2000 });
-    const map = {};
-    for (const line of out.trim().split('\n')) {
-      const sp = line.indexOf(' ');
-      if (sp >= 0) map[line.slice(0, sp)] = line.slice(sp + 1).trim();
-    }
-    return map;
-  } catch { return {}; }
-}
-
-function buildScreenMap() {
-  try {
-    const out = execSync('screen -ls 2>/dev/null', { encoding: 'utf8', timeout: 2000 });
-    const map = {};
-    for (const line of out.split('\n')) {
-      const m = line.match(/^\s*(\d+)\.([\w.-]+)/);
-      if (m) map[m[1]] = `${m[1]}.${m[2]}`;
-    }
-    return map;
-  } catch { return {}; }
-}
-
-// Walk the process tree upward from agentPid looking for a tmux or screen ancestor.
-function detectMultiplexer(agentPid, agentTty, procs, tmuxMap, screenMap) {
-  let p = procs[procs[agentPid]?.ppid];
-  let depth = 0;
-  while (p && depth < 20) {
-    const comm = path.basename(p.comm || '');
-    if (comm === 'tmux' || comm.startsWith('tmux:')) {
-      const target = findTmuxTarget(agentTty, tmuxMap);
-      return target ? { type: 'tmux', target } : null;
-    }
-    if (comm === 'screen') {
-      const session = screenMap[p.pid];
-      return session ? { type: 'screen', session } : null;
-    }
-    p = procs[p.ppid];
-    depth++;
-  }
-  return null;
-}
-
-function tmuxSessionNameFromMux(mux) {
-  if (!mux || mux.type !== 'tmux') return null;
-  return mux.target?.split(':')[0] || null;
-}
-
-function captureMuxText(mux, pid, startLine = -30) {
-  try {
-    if (mux?.type === 'tmux') {
-      return execSync(`tmux capture-pane -t ${shellEscape(mux.target)} -p -S ${startLine} 2>/dev/null`, { encoding: 'utf8', timeout: 2000 });
-    }
-    if (mux?.type === 'screen') {
-      const tmpFile = `/tmp/agent-orch-screen-${pid}-${Date.now()}`;
-      execSync(`screen -S ${shellEscape(mux.session)} -X hardcopy ${shellEscape(tmpFile)}`, { timeout: 3000 });
-      const content = fs.readFileSync(tmpFile, 'utf8');
-      fs.unlinkSync(tmpFile);
-      return content;
-    }
-  } catch {}
-  return '';
-}
-
-function captureAgentPaneText(pid, procs = null, tmuxMap = null, screenMap = null, startLine = -80) {
-  const procTable = procs || buildProcTable();
-  const proc = procTable[String(pid)] || procTable[pid];
-  const tty = proc?.tty;
-  const mux = tty ? detectMultiplexer(String(pid), tty, procTable, tmuxMap || buildTmuxPaneMap(), screenMap || buildScreenMap()) : null;
-  return captureMuxText(mux, pid, startLine);
-}
-
-function stripAnsi(text) {
-  return String(text || '').replace(/\x1B\[[0-9;?]*[ -/]*[@-~]/g, '');
-}
-
-function detectCodexTerminalState(text) {
-  const lines = stripAnsi(text)
-    .split('\n')
-    .map(line => line.replace(/\r/g, '').trim())
-    .filter(Boolean)
-    .slice(-12);
-
-  for (const line of lines.reverse()) {
-    const normalized = line
-      .toLowerCase()
-      .replace(/^status:\s*/, '')
-      .replace(/^[|/\\\-⠁-⣿◐◓◑◒●•○·▪▸▹▶▷►>]+\s*/, '')
-      .replace(/\s+/g, ' ')
-      .trim();
-
-    if (/^(thinking|working)(?:\s*(?:\.\.\.|…))?$/.test(normalized)) return 'thinking';
-  }
-
-  return null;
-}
-// ─── PID → session file cache ────────────────────────────────────────────────
-// Once resolved, the session file for a given PID never changes during its lifetime.
-// Cache it to avoid re-running heuristic matching on every poll request.
-const pidSessionCache = new Map(); // pid → { sessionFile, agentId, cwd }
-
-function getCachedSession(pid) {
-  const entry = pidSessionCache.get(String(pid));
-  if (!entry) return null;
-  // Verify the cached file still exists (guard against deletion)
-  if (entry.sessionFile && !fs.existsSync(entry.sessionFile)) {
-    pidSessionCache.delete(String(pid));
-    return null;
-  }
-  return entry;
-}
-
-function setCachedSession(pid, sessionFile, agentId, cwd) {
-  if (sessionFile) {
-    pidSessionCache.set(String(pid), { sessionFile, agentId, cwd });
-  }
-}
-
-// Prune cache entries for dead PIDs periodically (every 60s)
-setInterval(() => {
-  for (const pid of pidSessionCache.keys()) {
-    try {
-      execSync(`ps -p ${pid} -o pid= 2>/dev/null`, { encoding: 'utf8' });
-    } catch {
-      pidSessionCache.delete(pid);
-    }
-  }
-}, 60000);
+// Mount presets sub-router
+router.use('/presets', presetsRouter);
 
 // ─── Agent status inference ──────────────────────────────────────────────────
 
@@ -235,6 +54,27 @@ function findAgentHistorySessionId(agent, paneText = '') {
   const resolved = resolver.resolveLiveSession({ cwd: agent.cwd, pid: agent.pid, args: agent.args || '', paneText });
   return resolver.getHistorySessionId(resolved);
 }
+
+// ─── Constants ───────────────────────────────────────────────────────────────
+
+const AGENT_COMMANDS = {
+  claude:   'claude',
+  codex:    'codex',
+  gemini:   'gemini',
+  opencode: 'opencode',
+  aider:    'aider',
+};
+
+const AGENT_SKIP_PERMISSIONS_FLAG = {
+  claude: '--dangerously-skip-permissions',
+};
+
+const AGENT_RESUME_FLAG = {
+  claude: (sessionId) => `--resume ${sessionId}`,
+  codex:  (sessionId) => `resume ${sessionId}`,
+};
+
+// ─── Routes ──────────────────────────────────────────────────────────────────
 
 // Debug: show all processes that nearly-match agent names (without strict AGENT_DEF filtering)
 router.get('/debug', (req, res) => {
@@ -405,24 +245,7 @@ router.get('/:pid/messages', (req, res) => {
   }
 });
 
-const AGENT_COMMANDS = {
-  claude:   'claude',
-  codex:    'codex',
-  gemini:   'gemini',
-  opencode: 'opencode',
-  aider:    'aider',
-};
-
-const AGENT_SKIP_PERMISSIONS_FLAG = {
-  claude: '--dangerously-skip-permissions',
-};
-
-// ─── List previous sessions for resume ────────────────────────────────────────
-
-const AGENT_RESUME_FLAG = {
-  claude: (sessionId) => `--resume ${sessionId}`,
-  codex:  (sessionId) => `resume ${sessionId}`,
-};
+// ─── Session history ─────────────────────────────────────────────────────────
 
 router.get('/history', (req, res) => {
   try {
@@ -450,154 +273,7 @@ router.get('/sessions', (req, res) => {
   }
 });
 
-// ─── Agent Presets ────────────────────────────────────────────────────────────
-
-const PRESETS_DIR = path.join(__dirname, '..', 'data', 'agent-presets');
-const LEGACY_PRESETS_FILE = path.join(__dirname, '..', 'data', 'agent-presets.json');
-
-function ensurePresetsDir() {
-  fs.mkdirSync(PRESETS_DIR, { recursive: true });
-}
-
-function slugifyPresetFilename(name) {
-  return String(name || '')
-    .toLowerCase()
-    .replace(/[^a-z0-9]+/g, '-')
-    .replace(/^-+|-+$/g, '') || 'preset';
-}
-
-function isValidPresetFilename(filename) {
-  return /^[a-z0-9][a-z0-9.-]*$/.test(filename || '');
-}
-
-function presetFilePath(filename) {
-  return path.join(PRESETS_DIR, `${filename}.json`);
-}
-
-function normalizePresetData(preset) {
-  const name = String(preset?.name || '').trim();
-  const agent = String(preset?.agent || '').trim();
-  return {
-    name,
-    agent,
-    icon: preset?.icon || name[0]?.toUpperCase() || '?',
-    color: preset?.color || '#818cf8',
-    description: preset?.description || '',
-    flags: preset?.flags || '',
-  };
-}
-
-function readPresetFile(filePath) {
-  const parsed = readJsonSafe(filePath);
-  if (!parsed || typeof parsed !== 'object') return null;
-  const preset = normalizePresetData(parsed);
-  if (!preset.name || !preset.agent) return null;
-  return { filename: path.basename(filePath, '.json'), ...preset };
-}
-
-function writePresetFile(filename, preset) {
-  ensurePresetsDir();
-  const normalized = normalizePresetData(preset);
-  fs.writeFileSync(presetFilePath(filename), JSON.stringify(normalized, null, 2));
-  return { filename, ...normalized };
-}
-
-function migrateLegacyPresets() {
-  ensurePresetsDir();
-  const hasPresetFiles = fs.readdirSync(PRESETS_DIR).some(f => f.endsWith('.json'));
-  if (hasPresetFiles || !fs.existsSync(LEGACY_PRESETS_FILE)) return;
-
-  const legacy = readJsonSafe(LEGACY_PRESETS_FILE);
-  if (!Array.isArray(legacy)) return;
-
-  for (const preset of legacy) {
-    const filename = slugifyPresetFilename(preset?.name || preset?.id || 'preset');
-    writePresetFile(filename, preset);
-  }
-}
-
-function loadPresets() {
-  ensurePresetsDir();
-  migrateLegacyPresets();
-
-  return fs.readdirSync(PRESETS_DIR)
-    .filter(f => f.endsWith('.json'))
-    .map(f => readPresetFile(path.join(PRESETS_DIR, f)))
-    .filter(Boolean)
-    .sort((a, b) => a.name.localeCompare(b.name) || a.filename.localeCompare(b.filename));
-}
-
-router.get('/presets', (req, res) => {
-  res.json({ presets: loadPresets() });
-});
-
-router.post('/presets', (req, res) => {
-  try {
-    const { name, agent, icon, color, description, flags } = req.body;
-    if (!name || !agent) return res.status(400).json({ error: 'name and agent are required' });
-
-    const filename = slugifyPresetFilename(name);
-    if (loadPresets().find(p => p.filename === filename)) {
-      return res.status(400).json({ error: `Preset "${filename}" already exists` });
-    }
-
-    const preset = writePresetFile(filename, { name, agent, icon, color, description, flags });
-    res.json({ preset });
-  } catch (e) {
-    res.status(500).json({ error: e.message });
-  }
-});
-
-router.put('/presets/:filename', (req, res) => {
-  try {
-    const currentFilename = decodeURIComponent(req.params.filename);
-    if (!isValidPresetFilename(currentFilename)) return res.status(400).json({ error: 'Invalid preset filename' });
-
-    const existing = readPresetFile(presetFilePath(currentFilename));
-    if (!existing) return res.status(404).json({ error: 'Preset not found' });
-
-    const { name, agent, icon, color, description, flags } = req.body;
-    const updated = {
-      name: name !== undefined ? name : existing.name,
-      agent: agent !== undefined ? agent : existing.agent,
-      icon: icon !== undefined ? icon : existing.icon,
-      color: color !== undefined ? color : existing.color,
-      description: description !== undefined ? description : existing.description,
-      flags: flags !== undefined ? flags : existing.flags,
-    };
-
-    if (!updated.name || !updated.agent) {
-      return res.status(400).json({ error: 'name and agent are required' });
-    }
-
-    const nextFilename = slugifyPresetFilename(updated.name);
-    if (nextFilename !== currentFilename && fs.existsSync(presetFilePath(nextFilename))) {
-      return res.status(400).json({ error: `Preset "${nextFilename}" already exists` });
-    }
-
-    const preset = writePresetFile(nextFilename, updated);
-    if (nextFilename !== currentFilename && fs.existsSync(presetFilePath(currentFilename))) {
-      fs.unlinkSync(presetFilePath(currentFilename));
-    }
-
-    res.json({ preset });
-  } catch (e) {
-    res.status(500).json({ error: e.message });
-  }
-});
-
-router.delete('/presets/:filename', (req, res) => {
-  try {
-    const filename = decodeURIComponent(req.params.filename);
-    if (!isValidPresetFilename(filename)) return res.status(400).json({ error: 'Invalid preset filename' });
-    const filePath = presetFilePath(filename);
-    if (!fs.existsSync(filePath)) return res.status(404).json({ error: 'Preset not found' });
-    fs.unlinkSync(filePath);
-    res.json({ ok: true });
-  } catch (e) {
-    res.status(500).json({ error: e.message });
-  }
-});
+// ─── Launch ──────────────────────────────────────────────────────────────────
 
 router.post('/launch', (req, res) => {
   try {
@@ -705,371 +381,7 @@ router.post('/tmux-terminal/:session/send', (req, res) => {
   }
 });
 
-// ─── Agent Context / Config endpoint ─────────────────────────────────────────
-
-function readJsonSafe(fp) {
-  try { return JSON.parse(fs.readFileSync(fp, 'utf8')); } catch { return null; }
-}
-
-function readTextSafe(fp) {
-  try { return fs.readFileSync(fp, 'utf8'); } catch { return null; }
-}
-
-function readTomlSafe(fp) {
-  try {
-    const text = fs.readFileSync(fp, 'utf8');
-    // Simple TOML parser for flat + section keys
-    const result = {};
-    let section = null;
-    for (const line of text.split('\n')) {
-      const trimmed = line.trim();
-      if (!trimmed || trimmed.startsWith('#')) continue;
-      const secMatch = trimmed.match(/^\[(.+)\]$/);
-      if (secMatch) { section = secMatch[1]; result[section] = result[section] || {}; continue; }
-      const kvMatch = trimmed.match(/^([\w.-]+)\s*=\s*"?(.*?)"?\s*$/);
-      if (kvMatch) {
-        const target = section ? (result[section] = result[section] || {}) : result;
-        target[kvMatch[1]] = kvMatch[2];
-      }
-    }
-    return result;
-  } catch { return null; }
-}
-
-function runGit(cwd, args) {
-  return execSync(`git -C ${shellEscape(cwd)} ${args}`, {
-    encoding: 'utf8',
-    timeout: 3000,
-    stdio: ['ignore', 'pipe', 'ignore'],
-  }).trim();
-}
-
-function getGitInfo(cwd) {
-  if (!cwd) return { isRepo: false, note: 'No working directory found for this session.' };
-
-  try {
-    const root = runGit(cwd, 'rev-parse --show-toplevel');
-    const branch = runGit(cwd, 'branch --show-current') || 'HEAD';
-    let upstream = '';
-    try {
-      upstream = runGit(cwd, 'rev-parse --abbrev-ref --symbolic-full-name @{upstream}');
-    } catch {}
-
-    let ahead = 0;
-    let behind = 0;
-    if (upstream) {
-      try {
-        const counts = runGit(cwd, `rev-list --left-right --count ${shellEscape(`${branch}...${upstream}`)}`);
-        const [aheadStr, behindStr] = counts.split(/\s+/);
-        ahead = parseInt(aheadStr, 10) || 0;
-        behind = parseInt(behindStr, 10) || 0;
-      } catch {}
-    }
-
-    const statusText = runGit(cwd, 'status --short');
-    const files = statusText
-      ? statusText.split('\n').filter(Boolean).map(line => ({
-          code: line.slice(0, 2).trim() || '??',
-          path: line.slice(3).trim(),
-        }))
-      : [];
-
-    const stagedCount = files.filter(f => f.code[0] && f.code[0] !== '?').length;
-    const untrackedCount = files.filter(f => f.code === '??').length;
-    const changedCount = files.filter(f => f.code[1] && f.code[1] !== '?').length;
-
-    return {
-      isRepo: true,
-      root,
-      rootName: path.basename(root),
-      branch,
-      upstream,
-      ahead,
-      behind,
-      stagedCount,
-      changedCount,
-      untrackedCount,
-      files: files.slice(0, 80),
-    };
-  } catch {
-    return { isRepo: false, note: 'This session is not inside a git repository.' };
-  }
-}
-
-function getClaudeContext(cwd) {
-  const home = os.homedir();
-  const sections = [];
-
-  // Global settings
-  const settings = readJsonSafe(path.join(home, '.claude', 'settings.json'));
-  if (settings) {
-    sections.push({
-      title: 'Settings',
-      scope: 'global',
-      icon: 'settings',
-      items: [
-        { label: 'Model', value: settings.model || '—' },
-        ...(settings.statusLine ? [{ label: 'Status Line', value: settings.statusLine.command ? 'Custom command' : settings.statusLine.type || 'enabled' }] : []),
-      ],
-    });
-  }
-
-  // Global stats
-  const stats = readJsonSafe(path.join(home, '.claude', 'stats-cache.json'));
-  if (stats) {
-    const models = stats.modelUsage ? Object.keys(stats.modelUsage) : [];
-    sections.push({
-      title: 'Usage Stats',
-      scope: 'global',
-      icon: 'chart',
-      items: [
-        { label: 'Total Sessions', value: String(stats.totalSessions || 0) },
-        { label: 'Total Messages', value: String(stats.totalMessages || 0) },
-        { label: 'First Session', value: stats.firstSessionDate ? new Date(stats.firstSessionDate).toLocaleDateString() : '—' },
-        { label: 'Models Used', value: models.map(m => m.replace('claude-', '').replace(/-\d{8}$/, '')).join(', ') || '—' },
-      ],
-    });
-  }
-
-  // Active MCP Servers — actually configured and usable
-  const activeServers = [];
-
-  // Helper: extract servers from a .mcp.json (handles mcpServers wrapper or flat)
-  function extractMcpServers(data) {
-    if (!data) return {};
-    if (data.mcpServers && typeof data.mcpServers === 'object') return data.mcpServers;
-    // Flat format (keys are server names directly)
-    const result = {};
-    for (const [k, v] of Object.entries(data)) {
-      if (typeof v === 'object' && v !== null) result[k] = v;
-    }
-    return result;
-  }
-
-  // 1. OAuth-connected servers (claude.ai integrations)
-  const mcpAuth = readJsonSafe(path.join(home, '.claude', 'mcp-needs-auth-cache.json'));
-  if (mcpAuth) {
-    for (const name of Object.keys(mcpAuth)) {
-      activeServers.push({ name, type: 'oauth', source: 'claude.ai', scope: 'global', disabled: false });
-    }
-  }
-
-  // 2. Project-level .mcp.json (configured for this project)
-  if (cwd) {
-    const projectMcpRaw = readJsonSafe(path.join(cwd, '.mcp.json'));
-    const projectMcp = extractMcpServers(projectMcpRaw);
-    for (const [name, conf] of Object.entries(projectMcp)) {
-      activeServers.push({ name, type: conf.type || '—', source: '.mcp.json', scope: 'project', disabled: !!conf.disabled });
-    }
-  }
-
-  // 3. Global .mcp.json (user-configured globally)
-  const globalMcpRaw = readJsonSafe(path.join(home, '.claude', '.mcp.json'));
-  const globalMcp = extractMcpServers(globalMcpRaw);
-  for (const [name, conf] of Object.entries(globalMcp)) {
-    activeServers.push({ name, type: conf.type || '—', source: '~/.claude/.mcp.json', scope: 'global', disabled: !!conf.disabled });
-  }
-
-  if (activeServers.length) {
-    sections.push({
-      title: 'Active MCP Servers',
-      scope: activeServers.some(s => s.scope === 'project') ? 'mixed' : 'global',
-      icon: 'plug',
-      servers: activeServers,
-    });
-  }
-
-  // Available marketplace plugins (downloaded, not necessarily active)
-  const availablePlugins = [];
-  const pluginsDir = path.join(home, '.claude', 'plugins', 'marketplaces');
-  try {
-    const marketplaces = fs.readdirSync(pluginsDir);
-    for (const mp of marketplaces) {
-      const extDir = path.join(pluginsDir, mp, 'external_plugins');
-      if (!fs.existsSync(extDir)) continue;
-      for (const plugin of fs.readdirSync(extDir)) {
-        const mcpFile = path.join(extDir, plugin, '.mcp.json');
-        const pluginMeta = readJsonSafe(path.join(extDir, plugin, '.claude-plugin', 'plugin.json'));
-        const mcp = readJsonSafe(mcpFile);
-        const isActive = activeServers.some(s => s.name === plugin || s.source === plugin);
-        availablePlugins.push({
-          name: pluginMeta?.name || plugin,
-          description: pluginMeta?.description || '',
-          hasMcp: !!mcp,
-          active: isActive,
-        });
-      }
-    }
-  } catch {}
-
-  // Also check built-in plugins (non-external)
-  const builtinDir = path.join(pluginsDir, 'claude-plugins-official', 'plugins');
-  try {
-    for (const plugin of fs.readdirSync(builtinDir)) {
-      const pluginMeta = readJsonSafe(path.join(builtinDir, plugin, '.claude-plugin', 'plugin.json'));
-      if (pluginMeta) {
-        availablePlugins.push({
-          name: pluginMeta.name || plugin,
-          description: pluginMeta.description || '',
-          hasMcp: false,
-          active: false,
-          builtin: true,
-        });
-      }
-    }
-  } catch {}
-
-  if (availablePlugins.length) {
-    sections.push({
-      title: 'Marketplace Plugins',
-      scope: 'global',
-      icon: 'block',
-      plugins: availablePlugins,
-    });
-  }
-
-  // Blocked plugins
-  const blocklist = readJsonSafe(path.join(home, '.claude', 'plugins', 'blocklist.json'));
-  if (blocklist && Array.isArray(blocklist) && blocklist.length) {
-    sections.push({
-      title: 'Blocked Plugins',
-      scope: 'global',
-      icon: 'block',
-      items: blocklist.map(b => ({
-        label: typeof b === 'string' ? b : b.name || b.id || JSON.stringify(b),
-        value: typeof b === 'object' && b.reason ? b.reason : '',
-      })),
-    });
-  }
-
-  // CLAUDE.md files — project root, parent directories, and global
-  // Claude Code loads CLAUDE.md from cwd up to the git root (or home), plus ~/.claude/CLAUDE.md
-  const claudeMdFiles = [];
-  if (cwd) {
-    // Find git root to know where to stop scanning
-    let gitRoot = null;
-    try { gitRoot = runGit(cwd, 'rev-parse --show-toplevel'); } catch {}
-
-    // Walk from cwd upward to git root (or home)
-    const stopAt = gitRoot || home;
-    let dir = cwd;
-    while (true) {
-      const filePath = path.join(dir, 'CLAUDE.md');
-      const content = readTextSafe(filePath);
-      if (content) {
-        const rel = dir === cwd ? 'CLAUDE.md' : path.relative(cwd, filePath);
-        claudeMdFiles.push({ title: rel, scope: 'project', path: filePath, content });
-      }
-      // Also check .claude/CLAUDE.md in project directories
-      const dotClaudeMd = readTextSafe(path.join(dir, '.claude', 'CLAUDE.md'));
-      if (dotClaudeMd) {
-        const rel = path.relative(cwd, path.join(dir, '.claude', 'CLAUDE.md'));
-        claudeMdFiles.push({ title: rel, scope: 'project', path: path.join(dir, '.claude', 'CLAUDE.md'), content: dotClaudeMd });
-      }
-      if (dir === stopAt || dir === '/') break;
-      dir = path.dirname(dir);
-    }
-  }
-
-  // Global ~/.claude/CLAUDE.md
-  const globalClaudeMd = readTextSafe(path.join(home, '.claude', 'CLAUDE.md'));
-  if (globalClaudeMd) {
-    claudeMdFiles.push({ title: '~/.claude/CLAUDE.md', scope: 'global', path: path.join(home, '.claude', 'CLAUDE.md'), content: globalClaudeMd });
-  }
-
-  for (const f of claudeMdFiles) {
-    sections.push({ title: f.title, scope: f.scope, icon: 'doc', content: f.content });
-  }
-
-  // Memory (project)
-  if (cwd) {
-    const encoded = cwd.replace(/\//g, '-');
-    const memDir = path.join(home, '.claude', 'projects', encoded, 'memory');
-    const memoryMd = readTextSafe(path.join(home, '.claude', 'projects', encoded, 'MEMORY.md'));
-    const memories = [];
-    try {
-      for (const f of fs.readdirSync(memDir)) {
-        if (!f.endsWith('.md')) continue;
-        const content = readTextSafe(path.join(memDir, f));
-        if (content) {
-          // Parse frontmatter
-          const fmMatch = content.match(/^---\n([\s\S]*?)\n---\n?([\s\S]*)/);
-          if (fmMatch) {
-            const meta = {};
-            for (const line of fmMatch[1].split('\n')) {
-              const kv = line.match(/^(\w+):\s*(.+)/);
-              if (kv) meta[kv[1]] = kv[2];
-            }
-            memories.push({ file: f, name: meta.name || f, type: meta.type || '—', description: meta.description || '', body: fmMatch[2].trim() });
-          } else {
-            memories.push({ file: f, name: f, type: '—', body: content.trim() });
-          }
-        }
-      }
-    } catch {}
-    if (memories.length || memoryMd) {
-      sections.push({ title: 'Memory', scope: 'project', icon: 'brain', memories, index: memoryMd || null });
-    }
-  }
-
-  return sections;
-}
-
-function getCodexContext(cwd) {
-  const home = os.homedir();
-  const sections = [];
-  const config = readTomlSafe(path.join(home, '.codex', 'config.toml'));
-  if (config) {
-    const items = [];
-    if (config.personality) items.push({ label: 'Personality', value: config.personality });
-    if (config.model) items.push({ label: 'Model', value: config.model });
-    if (config.model_reasoning_effort) items.push({ label: 'Reasoning Effort', value: config.model_reasoning_effort });
-
-    // Trusted projects
-    const trusted = Object.entries(config).filter(([k]) => k.startsWith('projects.'));
-    if (trusted.length) {
-      items.push({ label: 'Trusted Projects', value: trusted.map(([k]) => path.basename(k.replace('projects.', '').replace(/"/g, ''))).join(', ') });
-    }
-    sections.push({ title: 'Settings', scope: 'global', icon: 'settings', items });
-  }
-
-  // AGENTS.md
-  if (cwd) {
-    const agentsMd = readTextSafe(path.join(cwd, 'AGENTS.md'));
-    if (agentsMd && agentsMd.trim()) {
-      sections.push({ title: 'AGENTS.md', scope: 'project', icon: 'doc', content: agentsMd });
-    }
-  }
-
-  return sections;
-}
-
-function getGeminiContext(cwd) {
-  const home = os.homedir();
-  const sections = [];
-  const settings = readJsonSafe(path.join(home, '.gemini', 'settings.json'));
-  if (settings) {
-    const items = [];
-    if (settings.security?.auth?.selectedType) items.push({ label: 'Auth', value: settings.security.auth.selectedType });
-    if (settings.general?.previewFeatures != null) items.push({ label: 'Preview Features', value: String(settings.general.previewFeatures) });
-    sections.push({ title: 'Settings', scope: 'global', icon: 'settings', items });
-  }
-
-  // GEMINI.md
-  const geminiMd = readTextSafe(path.join(home, '.gemini', 'GEMINI.md'));
-  if (geminiMd && geminiMd.trim()) {
-    sections.push({ title: 'GEMINI.md', scope: 'global', icon: 'doc', content: geminiMd });
-  }
-
-  if (cwd) {
-    const projectGemini = readTextSafe(path.join(cwd, 'GEMINI.md'));
-    if (projectGemini && projectGemini.trim()) {
-      sections.push({ title: 'GEMINI.md', scope: 'project', icon: 'doc', content: projectGemini });
-    }
-  }
-
-  return sections;
-}
+// ─── Agent Context / Config ──────────────────────────────────────────────────
 
 router.get('/:pid/context', (req, res) => {
   try {
@@ -1172,87 +484,7 @@ router.get('/:pid/git', (req, res) => {
   }
 });
 
-// Parse a tmux pane capture looking for a Claude Code permission prompt
-function parsePermissionPrompt(text) {
-  const allLines = text.split('\n');
-  // Only scan the last 20 lines — a real prompt is always near the bottom.
-  // This avoids false positives from conversation text scrolled up in the terminal.
-  const startIdx = Math.max(0, allLines.length - 20);
-  const lines = allLines.slice(startIdx);
-
-  // Find the question/trigger line — prefer the question over a trailing confirm hint
-  let triggerIdx = -1;
-  let confirmIdx = -1;
-  for (let i = lines.length - 1; i >= 0; i--) {
-    if (/press enter to confirm|press .* to cancel/i.test(lines[i])) {
-      if (confirmIdx === -1) confirmIdx = i;
-      continue;
-    }
-    if (/do you want to|would you like to|allow this|proceed\?/i.test(lines[i])) {
-      triggerIdx = i;
-      break;
-    }
-  }
-  // If we only found a confirm hint, use that (scan backwards for options)
-  if (triggerIdx === -1 && confirmIdx !== -1) triggerIdx = confirmIdx;
-  if (triggerIdx === -1) return null;
-
-  // Collect context: strip box-drawing chars from lines above trigger
-  const contextLines = [];
-  for (let i = Math.max(0, triggerIdx - 15); i < triggerIdx; i++) {
-    const l = lines[i].replace(/[╭╮╰╯│─]/g, '').trim();
-    if (l) contextLines.push(l);
-  }
-
-  // Parse options from lines around the trigger
-  const options = [];
-  let selectedIdx = 0;
-  let isNumbered = false;
-
-  function scanLines(start, end, step) {
-    for (let i = start; step > 0 ? i < end : i >= end; i += step) {
-      const line = lines[i];
-      const numbered = line.match(/^\s*[›»]?\s*(\d+)[.)]\s+(.+)/);
-      const selectedArrow = line.match(/[❯>]\s+(.+)/);
-      const unselectedArrow = line.match(/^ {2,}([A-Za-z].+)/);
-
-      if (numbered) {
-        isNumbered = true;
-        if (/^\s*[›»]/.test(line)) selectedIdx = options.length;
-        options.push({ label: numbered[2].trim(), key: numbered[1] });
-      } else if (selectedArrow && !isNumbered) {
-        selectedIdx = options.length;
-        options.push({ label: selectedArrow[1].trim(), key: null });
-      } else if (unselectedArrow && options.length > 0 && !isNumbered) {
-        options.push({ label: unselectedArrow[1].trim(), key: null });
-      } else if (line.trim() === '' && options.length > 0) {
-        break;
-      }
-    }
-  }
-
-  // Scan forward from trigger
-  scanLines(triggerIdx + 1, Math.min(lines.length, triggerIdx + 12), 1);
-
-  // If no options found forward, scan backward (confirm line at bottom, options above)
-  if (!options.length) {
-    scanLines(triggerIdx - 1, Math.max(0, triggerIdx - 12), -1);
-    options.reverse(); // restore top-to-bottom order
-    // Recalculate selectedIdx after reverse
-    const selLabel = options[options.length - 1 - selectedIdx]?.label;
-    if (selLabel) selectedIdx = options.findIndex(o => o.label === selLabel);
-  }
-
-  if (!options.length) return null;
-
-  return {
-    context: contextLines.slice(-5).join('\n'), // last 5 context lines
-    question: lines[triggerIdx].trim(),
-    options,
-    selectedIdx,
-    isNumbered,
-  };
-}
+// ─── Prompt / Terminal / Send ────────────────────────────────────────────────
 
 router.get('/:pid/prompt', (req, res) => {
   try {
@@ -1290,8 +522,8 @@ router.get('/:pid/terminal', (req, res) => {
     } else if (mux.type === 'screen') {
       const tmpFile = `/tmp/screen-dump-${pid}`;
       execSync(`screen -S ${shellEscape(mux.session)} -X hardcopy ${shellEscape(tmpFile)}`, { timeout: 3000 });
-      content = require('fs').readFileSync(tmpFile, 'utf8');
-      require('fs').unlinkSync(tmpFile);
+      content = fs.readFileSync(tmpFile, 'utf8');
+      fs.unlinkSync(tmpFile);
     }
 
     res.json({ content, muxType: mux.type });
@@ -1426,6 +658,8 @@ router.get('/:pid/wait', async (req, res) => {
 
   res.json({ status: 'timeout', messages: [], elapsed: Date.now() - start });
 });
+
+// ─── Relaunch / Kill ─────────────────────────────────────────────────────────
 
 router.post('/:pid/relaunch', (req, res) => {
   try {
