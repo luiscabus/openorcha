@@ -14,6 +14,7 @@ app.use('/api/config',       require('./routes/config'));
 app.use('/api/keys',         require('./routes/keys'));
 app.use('/api/known-hosts',  require('./routes/known-hosts'));
 app.use('/api/sessions',     require('./routes/sessions'));
+app.use('/api/issues',       require('./routes/issues'));
 app.use('/api/agents',       require('./routes/agents'));
 
 app.listen(PORT, HOST, () => {

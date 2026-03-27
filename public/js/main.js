@@ -5,6 +5,7 @@ import { loadHosts, openHostModal, saveHost, deleteHost } from './tabs/hosts.js'
 import { loadKeys, openKeyModal, generateKey, deleteKey, showPublicKey, copyPubKey } from './tabs/keys.js';
 import { loadKnownHosts, filterKnownHosts, removeKnownHost } from './tabs/known-hosts.js';
 import { loadRawConfig, saveRawConfig } from './tabs/raw-config.js';
+import { loadIssues, setIssuesFilter } from './tabs/issues.js';
 import {
   loadSessions,
   focusSession,
@@ -123,6 +124,10 @@ window.removeKnownHost = removeKnownHost;
 window.loadRawConfig = loadRawConfig;
 window.saveRawConfig = saveRawConfig;
 
+// GitHub Issues
+window.loadIssues = loadIssues;
+window.setIssuesFilter = setIssuesFilter;
+
 // Sessions
 window.loadSessions = loadSessions;
 window.focusSession = focusSession;
@@ -220,6 +225,7 @@ function loadTab(tab) {
   else if (tab === 'keys') loadKeys();
   else if (tab === 'known-hosts') loadKnownHosts();
   else if (tab === 'raw-config') loadRawConfig();
+  else if (tab === 'issues') loadIssues();
   else if (tab === 'sessions') loadSessions();
   else if (tab === 'agents') {
     loadAgents();

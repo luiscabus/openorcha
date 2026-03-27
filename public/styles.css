@@ -2927,6 +2927,119 @@ body {
   font-size: 13px;
 }
 
+.issues-summary {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  gap: 14px;
+  margin-bottom: 18px;
+}
+
+.issues-stat-card {
+  background: var(--panel);
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  padding: 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.issues-stat-card strong {
+  font-size: 18px;
+  line-height: 1.2;
+}
+
+.issues-stat-card small,
+.issues-stat-label {
+  color: var(--text3);
+  font-size: 12px;
+}
+
+.issues-filter-group {
+  display: inline-flex;
+  gap: 6px;
+  padding: 4px;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  background: rgba(255,255,255,0.03);
+}
+
+.issues-filter-group .btn.active {
+  background: rgba(64, 153, 255, 0.14);
+  border-color: rgba(64, 153, 255, 0.35);
+  color: var(--text);
+}
+
+.issues-table td {
+  vertical-align: top;
+}
+
+.issue-title-wrap {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.issue-link {
+  color: var(--text);
+  text-decoration: none;
+  font-weight: 600;
+}
+
+.issue-link:hover {
+  color: var(--accent);
+}
+
+.issue-meta-line {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  color: var(--text3);
+  font-size: 12px;
+}
+
+.issue-state {
+  display: inline-flex;
+  align-items: center;
+  border-radius: 999px;
+  padding: 4px 10px;
+  font-size: 12px;
+  font-weight: 600;
+  text-transform: capitalize;
+}
+
+.issue-state-open {
+  background: rgba(62, 207, 142, 0.12);
+  color: var(--success);
+}
+
+.issue-state-closed {
+  background: rgba(148, 163, 184, 0.14);
+  color: var(--text2);
+}
+
+.issue-label-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.issue-label {
+  display: inline-flex;
+  align-items: center;
+  border-radius: 999px;
+  padding: 4px 10px;
+  border: 1px solid color-mix(in srgb, var(--issue-label) 50%, transparent);
+  background: color-mix(in srgb, var(--issue-label) 16%, rgba(255,255,255,0.02));
+  color: var(--text);
+  font-size: 12px;
+}
+
+.issue-label-muted {
+  --issue-label: #6b7280;
+  color: var(--text3);
+}
+
 /* Scrollbar */
 ::-webkit-scrollbar { width: 6px; }
 ::-webkit-scrollbar-track { background: transparent; }

@@ -69,6 +69,10 @@
           <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="16 18 22 12 16 6"/><polyline points="8 6 2 12 8 18"/></svg>
           Raw Config
         </a></li>
+        <li><a href="#" class="nav-item" data-tab="issues">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 12h6"/><path d="M9 16h4"/><path d="M5 3h9l5 5v13a1 1 0 0 1-1 1H5a1 1 0 0 1-1-1V4a1 1 0 0 1 1-1z"/><path d="M14 3v5h5"/></svg>
+          GitHub Issues
+        </a></li>
       </ul>
     </nav>
 
@@ -215,6 +219,33 @@
               </div>
             </form>
           </div>
+        </div>
+      </div>
+
+      <!-- GitHub Issues Tab -->
+      <div id="tab-issues" class="tab-content">
+        <div class="page-header">
+          <div>
+            <h1>GitHub Issues</h1>
+            <p class="subtitle">Latest issues for the repository configured as <code>origin</code></p>
+          </div>
+          <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
+            <div class="issues-filter-group">
+              <button class="btn btn-ghost btn-sm active" data-issues-filter="open" onclick="setIssuesFilter('open')">Open</button>
+              <button class="btn btn-ghost btn-sm" data-issues-filter="closed" onclick="setIssuesFilter('closed')">Closed</button>
+              <button class="btn btn-ghost btn-sm" data-issues-filter="all" onclick="setIssuesFilter('all')">All</button>
+            </div>
+            <a id="issues-repo-link" class="btn btn-primary btn-sm" href="#" target="_blank" rel="noreferrer">Open Repo Issues</a>
+          </div>
+        </div>
+        <div id="issues-summary" class="issues-summary"></div>
+        <div class="table-wrap">
+          <table class="data-table issues-table">
+            <thead>
+              <tr><th>Issue</th><th>Status</th><th>Labels</th></tr>
+            </thead>
+            <tbody id="issues-body"></tbody>
+          </table>
         </div>
       </div>
 
