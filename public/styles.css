@@ -3163,3 +3163,24 @@ body {
 .toggle-group .btn-toggle:first-child { border-radius: 4px 0 0 4px; }
 .toggle-group .btn-toggle:last-child { border-radius: 0 4px 4px 0; }
 .toggle-group .btn-toggle.active { background: var(--primary); color: white; border-color: var(--primary); }
+
+/* ─── Claude Tasks tab ────────────────────────────────────────────────────── */
+.claude-tasks-list { display: flex; flex-direction: column; gap: 1rem; }
+.claude-tasks-group-header {
+  font-size: 0.85rem; text-transform: capitalize; cursor: pointer;
+  display: flex; align-items: center; gap: 0.5rem; padding: 0.3rem 0;
+}
+.claude-tasks-count { font-size: 0.75rem; color: var(--text-muted); }
+.claude-tasks-collapsed .claude-tasks-group-body { display: none; }
+.claude-task-card {
+  border: 1px solid var(--border); border-radius: 6px; padding: 0.5rem 0.8rem; margin-bottom: 0.3rem;
+}
+.claude-task-card summary { cursor: pointer; display: flex; align-items: center; gap: 0.5rem; font-size: 0.85rem; }
+.claude-task-subject { font-weight: 500; flex: 1; }
+.claude-task-owner { font-size: 0.75rem; color: var(--text-muted); }
+.claude-task-detail { padding-top: 0.5rem; font-size: 0.83rem; }
+.claude-task-detail p { margin: 0.3rem 0; }
+.claude-task-active { color: var(--text-muted); }
+.claude-task-status-in_progress { background: var(--warning-bg, #fef3c7); color: var(--warning-text, #92400e); }
+.claude-task-status-pending { background: var(--info-bg, #dbeafe); color: var(--info-text, #1e40af); }
+.claude-task-status-completed { background: var(--success-bg, #d1fae5); color: var(--success-text, #065f46); }
