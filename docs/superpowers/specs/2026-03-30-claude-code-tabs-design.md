@@ -207,7 +207,7 @@ Scans `~/.claude/file-history/` (timestamped file snapshots per project) and `~/
   - Line numbers on both sides.
   - Plain HTML/CSS table with two `<td>` columns, rows aligned by line, colored backgrounds.
   - No third-party diff viewer component.
-- **Rollback button** per diff. Confirmation modal: "This will restore the backup version. A safety backup of the current file will be created first. Continue?" Then calls rollback endpoint, shows toast.
+- **Rollback deferred.** File-history stores content by hash, not by original file path. Since the hash-to-path mapping is internal to Claude Code and not reversible, rollback requires knowing which file a hash refers to. This may be added later if Claude Code exposes that mapping. For now, the tab is a read-only version history browser with diffs.
 
 ## 7. Agent Context Drawer Enhancement
 
