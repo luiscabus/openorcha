@@ -163,4 +163,37 @@ router.get('/history/:sessionId', (req, res) => {
   }
 });
 
+// ─── Tasks ───────────────────────────────────────────────────────────────────
+const { listAllTasks, getSessionTasks, promoteTask } = require('../lib/claudeTasks');
+
+router.get('/tasks', (req, res) => {
+  try {
+    const tasks = listAllTasks(CLAUDE_DIR, {
+      status: req.query.status,
+      project: req.query.project,
+    });
+    res.json({ tasks });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+router.get('/tasks/:sessionId', (req, res) => {
+  try {
+    const tasks = getSessionTasks(CLAUDE_DIR, req.params.sessionId);
+    res.json({ tasks });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+router.post('/tasks/:sessionId/:taskId/promote', (req, res) => {
+  try {
+    const todo = promoteTask(CLAUDE_DIR, req.params.sessionId, req.params.taskId);
+    res.json(todo);
+  } catch (err) {
+    res.status(400).json({ error: err.message });
+  }
+});
+
 module.exports = router;
