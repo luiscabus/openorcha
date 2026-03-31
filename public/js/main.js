@@ -69,6 +69,12 @@ import {
 } from './tabs/agents.js';
 import { loadClaudeSettings, loadClaudeProjectSettings, saveClaudeSettings } from './tabs/claudeSettings.js';
 import {
+  loadClaudeHistory,
+  setClaudeHistoryView,
+  loadClaudeSessionDetail,
+  populateClaudeHistoryProjects,
+} from './tabs/claudeHistory.js';
+import {
   loadClaudeMemory,
   filterClaudeMemoryProjects,
   loadClaudeMemoryProject,
@@ -239,6 +245,11 @@ window.saveClaudeMemoryFile = saveClaudeMemoryFile;
 window.saveClaudeMemoryEntry = saveClaudeMemoryEntry;
 window.deleteClaudeMemory = deleteClaudeMemory;
 
+// Claude Code: History
+window.loadClaudeHistory = loadClaudeHistory;
+window.setClaudeHistoryView = setClaudeHistoryView;
+window.loadClaudeSessionDetail = loadClaudeSessionDetail;
+
 // ─── Navigation ───────────────────────────────────────────────────────────────
 
 function loadTab(tab) {
@@ -262,6 +273,7 @@ function loadTab(tab) {
   else if (tab === 'kanban') loadKanban();
   else if (tab === 'claude-settings') loadClaudeSettings();
   else if (tab === 'claude-memory') loadClaudeMemory();
+  else if (tab === 'claude-history') { populateClaudeHistoryProjects(); loadClaudeHistory(); }
 }
 
 function syncNavState(activeLink) {
