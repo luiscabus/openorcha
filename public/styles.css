@@ -3139,3 +3139,27 @@ body {
 .claude-memory-entry-file { font-size: 0.7rem; color: var(--text-muted); font-family: monospace; }
 .claude-memory-entry-actions { display: flex; gap: 0.5rem; margin-top: 0.5rem; }
 .claude-memory-new-form { display: flex; flex-direction: column; gap: 0.5rem; margin-top: 0.5rem; padding: 0.8rem; border: 1px solid var(--border); border-radius: 6px; }
+
+/* ─── Claude History tab ──────────────────────────────────────────────────── */
+.claude-history-list { display: flex; flex-direction: column; gap: 0.25rem; }
+.claude-history-entry {
+  display: flex; align-items: center; gap: 0.6rem; padding: 0.5rem 0.8rem;
+  border-bottom: 1px solid var(--border); font-size: 0.85rem;
+}
+.claude-history-time { color: var(--text-muted); font-size: 0.75rem; white-space: nowrap; min-width: 140px; }
+.claude-history-display { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.claude-history-session-link { font-size: 0.75rem; white-space: nowrap; }
+.claude-history-session-card {
+  padding: 0.8rem; border: 1px solid var(--border); border-radius: 6px; cursor: pointer; margin-bottom: 0.5rem;
+}
+.claude-history-session-card:hover { background: var(--bg-hover); }
+.claude-history-session-header { display: flex; align-items: center; gap: 0.6rem; font-size: 0.85rem; }
+.claude-history-msg-count { color: var(--text-muted); font-size: 0.78rem; }
+.claude-history-conversation { display: flex; flex-direction: column; gap: 0.5rem; }
+.claude-history-msg { padding: 0.6rem 0.8rem; border-radius: 6px; background: var(--bg-secondary); font-size: 0.85rem; }
+.claude-history-msg .claude-history-time { display: block; margin-bottom: 0.3rem; }
+.toggle-group { display: flex; gap: 0; }
+.toggle-group .btn-toggle { border-radius: 0; border: 1px solid var(--border); }
+.toggle-group .btn-toggle:first-child { border-radius: 4px 0 0 4px; }
+.toggle-group .btn-toggle:last-child { border-radius: 0 4px 4px 0; }
+.toggle-group .btn-toggle.active { background: var(--primary); color: white; border-color: var(--primary); }
