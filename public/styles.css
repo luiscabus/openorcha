@@ -3096,3 +3096,46 @@ body {
   border-top: 1px solid var(--border);
   margin-top: 0.5rem;
 }
+
+/* ─── Claude Memory tab ───────────────────────────────────────────────────── */
+.claude-memory-layout {
+  display: grid;
+  grid-template-columns: 280px 1fr;
+  gap: 1rem;
+  height: calc(100vh - 140px);
+}
+.claude-memory-projects {
+  overflow-y: auto;
+  border-right: 1px solid var(--border);
+  padding-right: 1rem;
+}
+.claude-memory-project-item {
+  padding: 0.6rem 0.8rem;
+  border-radius: 6px;
+  cursor: pointer;
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+}
+.claude-memory-project-item:hover { background: var(--bg-hover); }
+.claude-memory-project-item.active { background: var(--bg-active); }
+.claude-memory-project-path { font-size: 0.82rem; word-break: break-all; }
+.claude-memory-project-meta { display: flex; gap: 0.4rem; flex-wrap: wrap; }
+.claude-memory-detail { overflow-y: auto; padding-bottom: 2rem; }
+.claude-memory-block { margin-bottom: 1.5rem; }
+.claude-memory-block h3 { margin-bottom: 0.5rem; font-size: 0.95rem; }
+.claude-memory-type-group { margin-top: 1rem; }
+.claude-memory-type-label {
+  font-size: 0.75rem;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--text-muted);
+  margin-bottom: 0.4rem;
+}
+.claude-memory-entry { margin-bottom: 0.5rem; border: 1px solid var(--border); border-radius: 6px; padding: 0.5rem 0.8rem; }
+.claude-memory-entry summary { cursor: pointer; display: flex; align-items: center; gap: 0.5rem; font-size: 0.85rem; }
+.claude-memory-entry-name { font-weight: 500; }
+.claude-memory-entry-desc { color: var(--text-muted); font-size: 0.78rem; flex: 1; }
+.claude-memory-entry-file { font-size: 0.7rem; color: var(--text-muted); font-family: monospace; }
+.claude-memory-entry-actions { display: flex; gap: 0.5rem; margin-top: 0.5rem; }
+.claude-memory-new-form { display: flex; flex-direction: column; gap: 0.5rem; margin-top: 0.5rem; padding: 0.8rem; border: 1px solid var(--border); border-radius: 6px; }
