@@ -121,4 +121,46 @@ router.delete('/memory/:project/file/:filename', (req, res) => {
   }
 });
 
+// ─── History ─────────────────────────────────────────────────────────────────
+const { parseHistory, getSessions, getSessionDetail } = require('../lib/claudeHistory');
+
+router.get('/history/activity', (req, res) => {
+  try {
+    const fp = path.join(CLAUDE_DIR, 'history.jsonl');
+    const entries = parseHistory(fp, {
+      project: req.query.project,
+      search: req.query.search,
+      limit: parseInt(req.query.limit) || 100,
+      offset: parseInt(req.query.offset) || 0,
+    });
+    res.json({ entries });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+router.get('/history/sessions', (req, res) => {
+  try {
+    const sessions = getSessions(CLAUDE_DIR, {
+      project: req.query.project,
+      search: req.query.search,
+      limit: parseInt(req.query.limit) || 50,
+      offset: parseInt(req.query.offset) || 0,
+    });
+    res.json({ sessions });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+router.get('/history/:sessionId', (req, res) => {
+  try {
+    const fp = path.join(CLAUDE_DIR, 'history.jsonl');
+    const entries = getSessionDetail(fp, req.params.sessionId);
+    res.json({ entries });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
 module.exports = router;
