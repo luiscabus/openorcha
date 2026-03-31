@@ -196,4 +196,27 @@ router.post('/tasks/:sessionId/:taskId/promote', (req, res) => {
   }
 });
 
+// ─── File Diffs ──────────────────────────────────────────────────────────────
+const { listFileChanges, getVersionDiff } = require('../lib/claudeDiffs');
+
+router.get('/diffs', (req, res) => {
+  try {
+    const changes = listFileChanges(CLAUDE_DIR, { project: req.query.project });
+    res.json({ changes });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+router.get('/diffs/:sessionId/:hash', (req, res) => {
+  try {
+    const from = parseInt(req.query.from) || 0;
+    const to = parseInt(req.query.to) || 1;
+    const result = getVersionDiff(CLAUDE_DIR, req.params.sessionId, req.params.hash, from, to);
+    res.json(result);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
 module.exports = router;
