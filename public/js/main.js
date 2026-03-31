@@ -69,6 +69,11 @@ import {
 } from './tabs/agents.js';
 import { loadClaudeSettings, loadClaudeProjectSettings, saveClaudeSettings } from './tabs/claudeSettings.js';
 import {
+  loadClaudeDiffs,
+  loadDiffOnExpand,
+  reloadDiff,
+} from './tabs/claudeDiffs.js';
+import {
   loadClaudeTasks,
   promoteClaudeTask,
   toggleClaudeTasksAutoRefresh,
@@ -261,6 +266,11 @@ window.loadClaudeTasks = loadClaudeTasks;
 window.promoteClaudeTask = promoteClaudeTask;
 window.toggleClaudeTasksAutoRefresh = toggleClaudeTasksAutoRefresh;
 
+// Claude Code: File Diffs
+window.loadClaudeDiffs = loadClaudeDiffs;
+window.loadDiffOnExpand = loadDiffOnExpand;
+window.reloadDiff = reloadDiff;
+
 // ─── Navigation ───────────────────────────────────────────────────────────────
 
 function loadTab(tab) {
@@ -289,6 +299,7 @@ function loadTab(tab) {
   else if (tab === 'claude-memory') loadClaudeMemory();
   else if (tab === 'claude-history') { populateClaudeHistoryProjects(); loadClaudeHistory(); }
   else if (tab === 'claude-tasks') loadClaudeTasks();
+  else if (tab === 'claude-diffs') loadClaudeDiffs();
 }
 
 function syncNavState(activeLink) {
