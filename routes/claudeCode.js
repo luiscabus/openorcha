@@ -57,4 +57,68 @@ router.put('/settings/:project/local', (req, res) => {
   }
 });
 
+// ─── Memory ──────────────────────────────────────────────────────────────────
+const { listProjects, getProjectMemory, writeClaudeMd, writeMemoryMd, writeMemoryFile, createMemoryFile, deleteMemoryFile } = require('../lib/claudeMemory');
+
+router.get('/memory', (req, res) => {
+  try {
+    res.json({ projects: listProjects(CLAUDE_DIR) });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+router.get('/memory/:project', (req, res) => {
+  try {
+    res.json(getProjectMemory(CLAUDE_DIR, req.params.project));
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+router.put('/memory/:project/claude-md', (req, res) => {
+  try {
+    writeClaudeMd(CLAUDE_DIR, req.params.project, req.body.content);
+    res.json({ ok: true });
+  } catch (err) {
+    res.status(400).json({ error: err.message });
+  }
+});
+
+router.put('/memory/:project/memory-md', (req, res) => {
+  try {
+    writeMemoryMd(CLAUDE_DIR, req.params.project, req.body.content);
+    res.json({ ok: true });
+  } catch (err) {
+    res.status(400).json({ error: err.message });
+  }
+});
+
+router.post('/memory/:project/file', (req, res) => {
+  try {
+    const filename = createMemoryFile(CLAUDE_DIR, req.params.project, req.body);
+    res.json({ ok: true, filename });
+  } catch (err) {
+    res.status(400).json({ error: err.message });
+  }
+});
+
+router.put('/memory/:project/file/:filename', (req, res) => {
+  try {
+    writeMemoryFile(CLAUDE_DIR, req.params.project, req.params.filename, req.body.content);
+    res.json({ ok: true });
+  } catch (err) {
+    res.status(400).json({ error: err.message });
+  }
+});
+
+router.delete('/memory/:project/file/:filename', (req, res) => {
+  try {
+    deleteMemoryFile(CLAUDE_DIR, req.params.project, req.params.filename);
+    res.json({ ok: true });
+  } catch (err) {
+    res.status(400).json({ error: err.message });
+  }
+});
+
 module.exports = router;
