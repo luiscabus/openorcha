@@ -3205,3 +3205,7 @@ body {
 .claude-diff-del td { background: rgba(239, 68, 68, 0.12); }
 .claude-diff-add td { background: rgba(34, 197, 94, 0.12); }
 .claude-diff-hunk-header td { background: var(--bg-secondary); color: var(--text-muted); font-size: 0.72rem; padding: 0.2rem 0.5rem; }
+
+.ctx-section-footer { padding: 0.4rem 0 0; text-align: right; }
+.ctx-section-footer a { font-size: 0.75rem; color: var(--accent); text-decoration: none; }
+.ctx-section-footer a:hover { text-decoration: underline; }

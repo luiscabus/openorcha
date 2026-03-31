@@ -7,7 +7,7 @@ const { AGENT_DEFS, listAllRecentSessions } = require('../lib/agentParsers');
 const { getSessionResolver } = require('../lib/sessionResolvers');
 const { buildProcTable, findAncestorApp, getCwdMap } = require('../lib/processTree');
 const { getCachedSession, setCachedSession } = require('../lib/sessionCache');
-const { readJsonSafe, readTextSafe, getGitInfo, getClaudeContext, getCodexContext, getGeminiContext } = require('../lib/agentContext');
+const { readJsonSafe, readTextSafe, getGitInfo, getClaudeContext, getCodexContext, getGeminiContext, getClaudeDrawerExtras } = require('../lib/agentContext');
 const {
   shellEscape,
   uniqueTmuxSessionName,
@@ -411,6 +411,11 @@ router.get('/:pid/context', (req, res) => {
           }
         }
       }
+    }
+
+    if (def.id === 'claude') {
+      const extras = getClaudeDrawerExtras(cwd);
+      sections.push(...extras);
     }
 
     res.json({ agentId: def.id, agentName: def.name, cwd, sections });

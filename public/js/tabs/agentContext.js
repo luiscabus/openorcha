@@ -216,6 +216,13 @@ function renderContextSection(section, agentId, cwd) {
       <span class="ctx-item-label">${escHtml(item.label)}</span>
       <span class="ctx-item-value">${escHtml(item.value)}</span>
     </div>`).join('')}</div>`;
+    if (section.drawerExtra) {
+      const tabMap = { tasks: 'claude-tasks', diffs: 'claude-diffs', history: 'claude-history' };
+      const tabName = tabMap[section.drawerExtra] || '';
+      if (tabName) {
+        bodyHtml += `<div class="ctx-section-footer"><a href="#" onclick="event.preventDefault();document.querySelector('[data-tab=${tabName}]').click()">View all in tab →</a></div>`;
+      }
+    }
   } else {
     return '';
   }
