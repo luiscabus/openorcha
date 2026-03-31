@@ -3209,3 +3209,13 @@ body {
 .ctx-section-footer { padding: 0.4rem 0 0; text-align: right; }
 .ctx-section-footer a { font-size: 0.75rem; color: var(--accent); text-decoration: none; }
 .ctx-section-footer a:hover { text-decoration: underline; }
+
+/* ─── Claude Settings tab ─────────────────────────────────────────────────── */
+.claude-settings-layout { display: flex; flex-direction: column; gap: 2rem; }
+.claude-settings-section h3 { margin-bottom: 0.5rem; font-size: 0.95rem; }
+.claude-settings-section h4 { margin-bottom: 0.3rem; font-size: 0.85rem; color: var(--text-muted); }
+.settings-path { font-size: 0.72rem; font-family: monospace; color: var(--text-muted); margin-left: 0.5rem; }
+.claude-settings-project-editors { display: grid; grid-template-columns: 1fr 1fr; gap: 1rem; margin-top: 0.5rem; }
+
+/* ─── Shared auto-refresh ─────────────────────────────────────────────────── */
+.auto-refresh-toggle { display: flex; align-items: center; gap: 0.3rem; font-size: 0.82rem; cursor: pointer; }
