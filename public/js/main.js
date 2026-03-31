@@ -67,6 +67,7 @@ import {
   toggleContextBlock,
   toggleMcpServer,
 } from './tabs/agents.js';
+import { loadClaudeSettings, loadClaudeProjectSettings, saveClaudeSettings } from './tabs/claudeSettings.js';
 import {
   loadTodos,
   loadKanban,
@@ -213,6 +214,11 @@ window.handleKanbanStatusDragLeave = handleKanbanStatusDragLeave;
 window.handleKanbanStatusDrop = handleKanbanStatusDrop;
 window.setTodoFilter = setTodoFilter;
 
+// Claude Code: Settings
+window.loadClaudeSettings = loadClaudeSettings;
+window.loadClaudeProjectSettings = loadClaudeProjectSettings;
+window.saveClaudeSettings = saveClaudeSettings;
+
 // ─── Navigation ───────────────────────────────────────────────────────────────
 
 function loadTab(tab) {
@@ -234,6 +240,7 @@ function loadTab(tab) {
   else if (tab === 'agent-presets') loadAgentPresets();
   else if (tab === 'todo') loadTodos();
   else if (tab === 'kanban') loadKanban();
+  else if (tab === 'claude-settings') loadClaudeSettings();
 }
 
 function syncNavState(activeLink) {
