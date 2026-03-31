@@ -69,6 +69,12 @@ import {
 } from './tabs/agents.js';
 import { loadClaudeSettings, loadClaudeProjectSettings, saveClaudeSettings } from './tabs/claudeSettings.js';
 import {
+  loadClaudeTasks,
+  promoteClaudeTask,
+  toggleClaudeTasksAutoRefresh,
+  clearClaudeTasksAutoRefresh,
+} from './tabs/claudeTasks.js';
+import {
   loadClaudeHistory,
   setClaudeHistoryView,
   loadClaudeSessionDetail,
@@ -250,12 +256,20 @@ window.loadClaudeHistory = loadClaudeHistory;
 window.setClaudeHistoryView = setClaudeHistoryView;
 window.loadClaudeSessionDetail = loadClaudeSessionDetail;
 
+// Claude Code: Tasks
+window.loadClaudeTasks = loadClaudeTasks;
+window.promoteClaudeTask = promoteClaudeTask;
+window.toggleClaudeTasksAutoRefresh = toggleClaudeTasksAutoRefresh;
+
 // ─── Navigation ───────────────────────────────────────────────────────────────
 
 function loadTab(tab) {
   // Clear agents auto-refresh when leaving the agents tab
   if (tab !== 'agents') {
     clearAgentAutoRefresh();
+  }
+  if (tab !== 'claude-tasks') {
+    clearClaudeTasksAutoRefresh();
   }
 
   if (tab === 'hosts') loadHosts();
@@ -274,6 +288,7 @@ function loadTab(tab) {
   else if (tab === 'claude-settings') loadClaudeSettings();
   else if (tab === 'claude-memory') loadClaudeMemory();
   else if (tab === 'claude-history') { populateClaudeHistoryProjects(); loadClaudeHistory(); }
+  else if (tab === 'claude-tasks') loadClaudeTasks();
 }
 
 function syncNavState(activeLink) {
