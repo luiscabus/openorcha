@@ -3083,3 +3083,16 @@ body {
     grid-template-columns: 1fr;
   }
 }
+
+/* ─── Claude Code sidebar section divider ─────────────────────────────────── */
+.nav-section-divider {
+  padding: 1.2rem 1rem 0.4rem;
+  font-size: 0.65rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--text-muted);
+  pointer-events: none;
+  border-top: 1px solid var(--border);
+  margin-top: 0.5rem;
+}

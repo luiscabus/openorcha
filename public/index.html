@@ -73,6 +73,27 @@
           <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 12h6"/><path d="M9 16h4"/><path d="M5 3h9l5 5v13a1 1 0 0 1-1 1H5a1 1 0 0 1-1-1V4a1 1 0 0 1 1-1z"/><path d="M14 3v5h5"/></svg>
           GitHub Issues
         </a></li>
+        <li class="nav-section-divider">Claude Code</li>
+        <li><a href="#" class="nav-item" data-tab="claude-memory">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 2a7 7 0 0 0-7 7c0 3 1.5 5 3 6.5V20a2 2 0 0 0 2 2h4a2 2 0 0 0 2-2v-4.5c1.5-1.5 3-3.5 3-6.5a7 7 0 0 0-7-7z"/><line x1="10" y1="22" x2="14" y2="22"/></svg>
+          Memory
+        </a></li>
+        <li><a href="#" class="nav-item" data-tab="claude-history">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
+          History
+        </a></li>
+        <li><a href="#" class="nav-item" data-tab="claude-tasks">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 11l3 3L22 4"/><path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"/></svg>
+          Tasks
+        </a></li>
+        <li><a href="#" class="nav-item" data-tab="claude-settings">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>
+          Settings
+        </a></li>
+        <li><a href="#" class="nav-item" data-tab="claude-diffs">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 3v18M3 12h18"/></svg>
+          File Diffs
+        </a></li>
       </ul>
     </nav>
 
@@ -391,6 +412,97 @@
           <textarea id="raw-config-editor" class="code-editor" spellcheck="false"></textarea>
         </div>
       </div>
+
+    <!-- Claude Code: Memory -->
+    <div id="tab-claude-memory" class="tab-content">
+      <div class="page-header">
+        <h2>Project Memory</h2>
+        <div class="page-actions">
+          <input type="text" id="claude-memory-search" class="search-input" placeholder="Filter projects…" oninput="filterClaudeMemoryProjects()">
+        </div>
+      </div>
+      <div class="claude-memory-layout">
+        <div id="claude-memory-projects" class="claude-memory-projects"></div>
+        <div id="claude-memory-detail" class="claude-memory-detail">
+          <div class="drawer-empty">Select a project to view its memory.</div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Claude Code: History -->
+    <div id="tab-claude-history" class="tab-content">
+      <div class="page-header">
+        <h2>Session History</h2>
+        <div class="page-actions">
+          <select id="claude-history-project-filter" onchange="loadClaudeHistory()"><option value="">All projects</option></select>
+          <input type="text" id="claude-history-search" class="search-input" placeholder="Search…" oninput="loadClaudeHistory()">
+          <div class="toggle-group">
+            <button class="btn btn-sm btn-toggle active" id="claude-history-view-activity" onclick="setClaudeHistoryView('activity')">Activity</button>
+            <button class="btn btn-sm btn-toggle" id="claude-history-view-sessions" onclick="setClaudeHistoryView('sessions')">Sessions</button>
+          </div>
+        </div>
+      </div>
+      <div id="claude-history-list" class="claude-history-list"></div>
+    </div>
+
+    <!-- Claude Code: Tasks -->
+    <div id="tab-claude-tasks" class="tab-content">
+      <div class="page-header">
+        <h2>Claude Tasks</h2>
+        <div class="page-actions">
+          <select id="claude-tasks-status-filter" onchange="loadClaudeTasks()">
+            <option value="">All statuses</option>
+            <option value="in_progress">In Progress</option>
+            <option value="pending">Pending</option>
+            <option value="completed">Completed</option>
+          </select>
+          <select id="claude-tasks-project-filter" onchange="loadClaudeTasks()"><option value="">All projects</option></select>
+          <label class="auto-refresh-toggle"><input type="checkbox" id="claude-tasks-auto-refresh" onchange="toggleClaudeTasksAutoRefresh()"> Auto-refresh</label>
+        </div>
+      </div>
+      <div id="claude-tasks-list" class="claude-tasks-list"></div>
+    </div>
+
+    <!-- Claude Code: Settings -->
+    <div id="tab-claude-settings" class="tab-content">
+      <div class="page-header">
+        <h2>Claude Settings</h2>
+      </div>
+      <div class="claude-settings-layout">
+        <div class="claude-settings-section">
+          <h3>Global Settings <span class="settings-path">~/.claude/settings.json</span></h3>
+          <textarea id="claude-settings-global" class="config-editor" rows="15"></textarea>
+          <button class="btn btn-primary" onclick="saveClaudeSettings('global')">Save Global Settings</button>
+        </div>
+        <div class="claude-settings-section">
+          <h3>Project Settings</h3>
+          <select id="claude-settings-project" onchange="loadClaudeProjectSettings()"><option value="">Select project…</option></select>
+          <div class="claude-settings-project-editors">
+            <div>
+              <h4>settings.json</h4>
+              <textarea id="claude-settings-project-main" class="config-editor" rows="12"></textarea>
+              <button class="btn btn-primary" onclick="saveClaudeSettings('project')">Save</button>
+            </div>
+            <div>
+              <h4>settings.local.json</h4>
+              <textarea id="claude-settings-project-local" class="config-editor" rows="12"></textarea>
+              <button class="btn btn-primary" onclick="saveClaudeSettings('project-local')">Save</button>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Claude Code: File Diffs -->
+    <div id="tab-claude-diffs" class="tab-content">
+      <div class="page-header">
+        <h2>File Diffs</h2>
+        <div class="page-actions">
+          <select id="claude-diffs-project-filter" onchange="loadClaudeDiffs()"><option value="">All projects</option></select>
+        </div>
+      </div>
+      <div id="claude-diffs-list" class="claude-diffs-list"></div>
+    </div>
     </main>
   </div>
 
