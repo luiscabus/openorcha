@@ -3184,3 +3184,24 @@ body {
 .claude-task-status-in_progress { background: var(--warning-bg, #fef3c7); color: var(--warning-text, #92400e); }
 .claude-task-status-pending { background: var(--info-bg, #dbeafe); color: var(--info-text, #1e40af); }
 .claude-task-status-completed { background: var(--success-bg, #d1fae5); color: var(--success-text, #065f46); }
+
+/* ─── Claude File Diffs tab ───────────────────────────────────────────────── */
+.claude-diffs-list { display: flex; flex-direction: column; gap: 0.5rem; }
+.claude-diff-card { border: 1px solid var(--border); border-radius: 6px; padding: 0.5rem 0.8rem; }
+.claude-diff-card summary { cursor: pointer; display: flex; align-items: center; gap: 0.6rem; font-size: 0.85rem; }
+.claude-diff-hash { font-family: monospace; font-size: 0.8rem; color: var(--primary); min-width: 70px; }
+.claude-diff-versions { font-size: 0.75rem; color: var(--text-muted); white-space: nowrap; }
+.claude-diff-preview { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--text-muted); font-size: 0.78rem; font-family: monospace; }
+.claude-diff-time { font-size: 0.72rem; color: var(--text-muted); white-space: nowrap; }
+.claude-diff-body { margin-top: 0.8rem; }
+.claude-diff-version-controls { display: flex; gap: 1rem; margin-bottom: 0.5rem; font-size: 0.82rem; }
+.claude-diff-version-controls select { font-size: 0.82rem; padding: 0.2rem 0.4rem; }
+.claude-diff-table { width: 100%; border-collapse: collapse; font-family: monospace; font-size: 0.78rem; table-layout: fixed; }
+.claude-diff-table th { text-align: left; padding: 0.3rem 0.5rem; background: var(--bg-secondary); font-size: 0.72rem; }
+.claude-diff-table td { padding: 0 0.5rem; white-space: pre-wrap; word-break: break-all; vertical-align: top; border-bottom: 1px solid var(--border-light, rgba(128,128,128,0.1)); }
+.claude-diff-ln { width: 40px; color: var(--text-muted); text-align: right; user-select: none; font-size: 0.72rem; }
+.claude-diff-table th:nth-child(2), .claude-diff-table td:nth-child(2) { width: calc(50% - 40px); }
+.claude-diff-table th:nth-child(4), .claude-diff-table td:nth-child(4) { width: calc(50% - 40px); }
+.claude-diff-del td { background: rgba(239, 68, 68, 0.12); }
+.claude-diff-add td { background: rgba(34, 197, 94, 0.12); }
+.claude-diff-hunk-header td { background: var(--bg-secondary); color: var(--text-muted); font-size: 0.72rem; padding: 0.2rem 0.5rem; }
