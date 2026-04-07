@@ -2812,21 +2812,37 @@ body {
   flex: 1;
   min-height: 0;
   min-width: 0;
+  display: flex;
   outline: none;
   cursor: text;
   background: transparent;
   overflow: hidden;
+  padding: 12px 14px 14px;
+  box-sizing: border-box;
 }
 
 .drawer-live-terminal.is-focused {
   box-shadow: inset 0 0 0 1px rgba(142,197,255,0.18);
 }
 
+.drawer-live-frame {
+  position: relative;
+  flex: 1;
+  min-height: 0;
+  min-width: 0;
+  border: 1px solid rgba(148,163,184,0.14);
+  border-radius: 14px;
+  background:
+    linear-gradient(180deg, rgba(8,19,31,0.98) 0%, rgba(5,11,18,1) 100%);
+  box-shadow:
+    inset 0 1px 0 rgba(255,255,255,0.03),
+    0 12px 30px rgba(0,0,0,0.18);
+  overflow: hidden;
+}
+
 .drawer-live-shell {
-  width: 100%;
-  height: 100%;
-  padding: 10px 12px 12px;
-  box-sizing: border-box;
+  position: absolute;
+  inset: 12px;
   overflow: hidden;
 }
 
@@ -2841,6 +2857,7 @@ body {
 }
 
 .drawer-live-shell .xterm-viewport {
+  overscroll-behavior: contain;
   scrollbar-color: rgba(142,197,255,0.65) transparent;
 }
 
@@ -2860,6 +2877,25 @@ body {
   background: rgba(4,10,18,0.74);
   font-size: 13px;
   backdrop-filter: blur(2px);
+}
+
+@media (max-width: 720px) {
+  .drawer-live-bar {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+
+  .drawer-live-meta {
+    text-align: left;
+  }
+
+  .drawer-live-terminal {
+    padding: 10px 10px 12px;
+  }
+
+  .drawer-live-shell {
+    inset: 10px;
+  }
 }
 
 .drawer-terminal {

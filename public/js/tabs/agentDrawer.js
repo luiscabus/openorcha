@@ -24,6 +24,7 @@ let messagesPollTimer = null;
 let drawerRenderedMessagesPid = null;
 let drawerRenderedMessageKeys = [];
 let drawerSessionFile = null;
+const DRAWER_LAST_PRIMARY_VIEW_KEY = 'drawerLastPrimaryView';
 
 function setCurrentPid(pid) {
   drawerCurrentPid = pid;
@@ -38,6 +39,22 @@ export function getDrawerCurrentPid() {
 
 function getDrawerDraftKey(pid, agentId, cwd) {
   return `${agentId || ''}::${cwd || ''}::${pid || ''}`;
+}
+
+function readLastPrimaryDrawerView() {
+  const value = window.localStorage.getItem(DRAWER_LAST_PRIMARY_VIEW_KEY);
+  return value === 'live' ? 'live' : 'messages';
+}
+
+function writeLastPrimaryDrawerView(view) {
+  if (view !== 'messages' && view !== 'live') return;
+  window.localStorage.setItem(DRAWER_LAST_PRIMARY_VIEW_KEY, view);
+}
+
+function getPreferredDrawerOpenView() {
+  const preferred = readLastPrimaryDrawerView();
+  if (preferred === 'live' && drawerTmuxSession) return 'live';
+  return 'messages';
 }
 
 function bindDrawerDraftTracking(key) {
@@ -143,7 +160,7 @@ export async function openAgentMessages(pid, agentId, agentName, cwd) {
   if (enterCb) enterCb.checked = localStorage.getItem('enterToSend') !== 'false';
   updateDrawerSendVisibility();
 
-  switchDrawerView('messages');
+  switchDrawerView(getPreferredDrawerOpenView());
 
   clearInterval(promptPollTimer);
   clearInterval(messagesPollTimer);
@@ -282,6 +299,7 @@ export async function clickPromptOption(targetIdx, isNumbered, currentIdx) {
 
 export function switchDrawerView(view) {
   drawerView = view;
+  writeLastPrimaryDrawerView(view);
   clearInterval(terminalRefreshTimer);
   terminalRefreshTimer = null;
 
