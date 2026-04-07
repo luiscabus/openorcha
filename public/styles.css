@@ -1750,7 +1750,7 @@ body {
 }
 
 .drawer {
-  width: min(680px, 96vw);
+  width: min(760px, 96vw);
   height: 100vh;
   background: var(--bg);
   border-left: 1px solid var(--border);
@@ -2744,6 +2744,122 @@ body {
 .git-empty {
   color: var(--text3);
   font-size: 12px;
+}
+
+.drawer-live {
+  flex: 1;
+  min-height: 0;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  background:
+    radial-gradient(circle at top left, rgba(96,165,250,0.10), transparent 28%),
+    linear-gradient(180deg, rgba(8,19,31,0.92) 0%, rgba(5,11,18,0.98) 100%);
+}
+
+.drawer-live-bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 12px 16px;
+  border-bottom: 1px solid rgba(148,163,184,0.14);
+  background: rgba(6,12,20,0.62);
+  flex-shrink: 0;
+}
+
+.drawer-live-title-wrap {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
+
+.drawer-live-label {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 42px;
+  padding: 3px 8px;
+  border-radius: 999px;
+  background: rgba(34,197,94,0.14);
+  border: 1px solid rgba(34,197,94,0.22);
+  color: #86efac;
+  font-size: 10px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+}
+
+.drawer-live-title {
+  color: #f8fafc;
+  font-size: 13px;
+  font-weight: 700;
+  letter-spacing: 0.01em;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.drawer-live-meta {
+  color: rgba(226,232,240,0.72);
+  font-size: 11px;
+  text-align: right;
+}
+
+.drawer-live-terminal {
+  position: relative;
+  flex: 1;
+  min-height: 0;
+  min-width: 0;
+  outline: none;
+  cursor: text;
+  background: transparent;
+  overflow: hidden;
+}
+
+.drawer-live-terminal.is-focused {
+  box-shadow: inset 0 0 0 1px rgba(142,197,255,0.18);
+}
+
+.drawer-live-shell {
+  width: 100%;
+  height: 100%;
+  padding: 10px 12px 12px;
+  box-sizing: border-box;
+  overflow: hidden;
+}
+
+.drawer-live-shell .xterm {
+  width: 100%;
+  height: 100%;
+}
+
+.drawer-live-shell .xterm-screen {
+  width: 100%;
+  height: 100%;
+}
+
+.drawer-live-shell .xterm-viewport {
+  scrollbar-color: rgba(142,197,255,0.65) transparent;
+}
+
+.drawer-live-shell .xterm-screen canvas {
+  border-radius: 8px;
+}
+
+.drawer-live-overlay {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 24px;
+  text-align: center;
+  color: rgba(226,232,240,0.88);
+  background: rgba(4,10,18,0.74);
+  font-size: 13px;
+  backdrop-filter: blur(2px);
 }
 
 .drawer-terminal {

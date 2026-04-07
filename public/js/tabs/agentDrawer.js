@@ -4,6 +4,11 @@ import {
   agentInitiativeKey, writeLastOpenedAgentKey, setDrawerCurrentPid,
 } from './agentShared.js';
 import { fetchAndRenderContext } from './agentContext.js';
+import {
+  activateDrawerLiveTerminal,
+  deactivateDrawerLiveTerminal,
+  refreshDrawerLiveTerminal,
+} from './drawerLiveTerminal.js';
 
 // ─── Drawer State ─────────────────────────────────────────────────────────────
 
@@ -88,11 +93,18 @@ function appendHtml(container, html) {
 
 function updateDrawerSendVisibility() {
   const inTerminal = drawerView === 'terminal';
+  const inLive = drawerView === 'live';
   const inContext = drawerView === 'context';
   const inGit = drawerView === 'git';
-  document.getElementById('drawer-send-area').style.display = (drawerHasMux && !inContext && !inGit) ? 'flex' : 'none';
+  document.getElementById('drawer-send-area').style.display = (drawerHasMux && !inContext && !inGit && !inLive) ? 'flex' : 'none';
   document.getElementById('drawer-quickkeys').style.display = (drawerHasMux && inTerminal) ? 'flex' : 'none';
-  document.getElementById('drawer-no-mux').style.display = (!drawerHasMux && !inTerminal && !inContext && !inGit) ? 'flex' : 'none';
+  document.getElementById('drawer-no-mux').style.display = (!drawerHasMux && !inTerminal && !inContext && !inGit && !inLive) ? 'flex' : 'none';
+}
+
+function updateDrawerTmuxTabVisibility() {
+  const liveTab = document.getElementById('drawer-tab-live');
+  if (!liveTab) return;
+  liveTab.style.display = drawerTmuxSession ? '' : 'none';
 }
 
 // ─── Open / Close ─────────────────────────────────────────────────────────────
@@ -120,6 +132,7 @@ export async function openAgentMessages(pid, agentId, agentName, cwd) {
   document.getElementById('drawer-messages').innerHTML = `<div class="drawer-loading">Loading conversation…</div>`;
 
   drawerHasMux = !!mux;
+  updateDrawerTmuxTabVisibility();
   const attachBtn = document.getElementById('drawer-attach-btn');
   if (attachBtn) attachBtn.style.display = drawerTmuxSession ? '' : 'none';
   const sendInput = document.getElementById('drawer-send-input');
@@ -152,6 +165,12 @@ export async function openAgentMessages(pid, agentId, agentName, cwd) {
 }
 
 export function openTmuxTerminal(sessionName) {
+  clearInterval(terminalRefreshTimer);
+  clearInterval(promptPollTimer);
+  clearInterval(messagesPollTimer);
+  terminalRefreshTimer = null;
+  promptPollTimer = null;
+  messagesPollTimer = null;
   setCurrentPid(null);
   drawerTmuxSession = sessionName;
   drawerHasMux = true;
@@ -172,17 +191,19 @@ export function openTmuxTerminal(sessionName) {
   sendInput.style.height = 'auto';
   const attachBtn = document.getElementById('drawer-attach-btn');
   if (attachBtn) attachBtn.style.display = drawerTmuxSession ? '' : 'none';
+  updateDrawerTmuxTabVisibility();
   updateDrawerSendVisibility();
 
-  switchDrawerView('terminal');
   document.getElementById('messages-drawer').style.display = 'flex';
-  setTimeout(() => sendInput.focus(), 0);
+  switchDrawerView('live');
+  setTimeout(() => document.getElementById('drawer-live-terminal')?.focus(), 0);
 }
 
 export function closeMessagesDrawer() {
   const input = document.getElementById('drawer-send-input');
   input.oninput = null;
   document.getElementById('messages-drawer').style.display = 'none';
+  deactivateDrawerLiveTerminal();
   setCurrentPid(null);
   drawerTmuxSession = null;
   drawerDraftKey = null;
@@ -191,6 +212,7 @@ export function closeMessagesDrawer() {
   drawerSessionFile = null;
   const attachBtn = document.getElementById('drawer-attach-btn');
   if (attachBtn) attachBtn.style.display = 'none';
+  updateDrawerTmuxTabVisibility();
   clearInterval(terminalRefreshTimer);
   clearInterval(promptPollTimer);
   clearInterval(messagesPollTimer);
@@ -271,15 +293,19 @@ export function switchDrawerView(view) {
   const metaBar = document.getElementById('drawer-session-meta');
 
   document.getElementById('drawer-tab-messages').classList.toggle('active', view === 'messages');
+  document.getElementById('drawer-tab-live').classList.toggle('active', view === 'live');
   document.getElementById('drawer-tab-terminal').classList.toggle('active', view === 'terminal');
   document.getElementById('drawer-tab-git').classList.toggle('active', view === 'git');
   document.getElementById('drawer-tab-context').classList.toggle('active', view === 'context');
   updateDrawerSendVisibility();
 
   msgs.style.display = 'none';
+  const live = document.getElementById('drawer-live');
   term.style.display = 'none';
   git.style.display = 'none';
   ctx.style.display  = 'none';
+  live.style.display = 'none';
+  deactivateDrawerLiveTerminal();
 
   const sendInput = document.getElementById('drawer-send-input');
   if (view === 'messages') {
@@ -296,6 +322,22 @@ export function switchDrawerView(view) {
     }
     if (drawerHasMux) {
       setTimeout(() => sendInput.focus(), 0);
+    }
+  } else if (view === 'live') {
+    live.style.display = 'flex';
+    if (metaBar) metaBar.style.display = 'none';
+    refreshBtn.onclick = () => refreshDrawerLiveTerminal();
+    sendInput.placeholder = 'Live tmux input is captured directly in the canvas…';
+    clearInterval(messagesPollTimer);
+    messagesPollTimer = null;
+    if (!drawerCurrentPid) {
+      clearInterval(promptPollTimer);
+      promptPollTimer = null;
+    }
+    activateDrawerLiveTerminal({ pid: drawerCurrentPid, sessionName: drawerTmuxSession });
+    if (!promptPollTimer && drawerHasMux && drawerCurrentPid) {
+      checkForPrompt(drawerCurrentPid);
+      promptPollTimer = setInterval(() => checkForPrompt(drawerCurrentPid), 2500);
     }
   } else if (view === 'terminal') {
     term.style.display = 'block';
@@ -538,8 +580,9 @@ function renderSessionMeta(meta) {
 }
 
 export async function refreshDrawer() {
-  if (!drawerCurrentPid) return;
-  if (drawerView === 'terminal') await fetchAndRenderTerminal(drawerCurrentPid);
+  if (drawerView === 'live') await refreshDrawerLiveTerminal();
+  else if (!drawerCurrentPid) return;
+  else if (drawerView === 'terminal') await fetchAndRenderTerminal(drawerCurrentPid);
   else if (drawerView === 'git') await fetchAndRenderGit(drawerCurrentPid);
   else if (drawerView === 'context') await fetchAndRenderContext(drawerCurrentPid);
   else await fetchAndRenderMessages(drawerCurrentPid);

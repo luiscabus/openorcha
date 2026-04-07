@@ -15,6 +15,7 @@ const {
   buildTmuxPaneMap,
   buildScreenMap,
   detectMultiplexer,
+  getTmuxTargetForPid,
   tmuxSessionNameFromMux,
   captureMuxText,
   captureAgentPaneText,
@@ -73,6 +74,56 @@ const AGENT_RESUME_FLAG = {
   claude: (sessionId) => `--resume ${sessionId}`,
   codex:  (sessionId) => `resume ${sessionId}`,
 };
+
+function captureTmuxSnapshot(target) {
+  const metaRaw = execSync(
+    `tmux display-message -p -t ${shellEscape(target)} '#{session_name}\t#{window_index}\t#{pane_index}\t#{pane_width}\t#{pane_height}\t#{cursor_x}\t#{cursor_y}' 2>/dev/null`,
+    { encoding: 'utf8', timeout: 3000 },
+  ).trim();
+  const [sessionName = '', windowIndex = '0', paneIndex = '0', paneWidth = '0', paneHeight = '0', cursorX = '0', cursorY = '0'] = metaRaw.split('\t');
+  const content = execSync(
+    `tmux capture-pane -e -J -p -t ${shellEscape(target)} -S -2000 2>/dev/null`,
+    { encoding: 'utf8', timeout: 3000 },
+  );
+
+  return {
+    sessionName,
+    target,
+    windowIndex: parseInt(windowIndex, 10) || 0,
+    paneIndex: parseInt(paneIndex, 10) || 0,
+    paneWidth: parseInt(paneWidth, 10) || 0,
+    paneHeight: parseInt(paneHeight, 10) || 0,
+    cursorX: parseInt(cursorX, 10) || 0,
+    cursorY: parseInt(cursorY, 10) || 0,
+    content,
+  };
+}
+
+function sendMuxInput(target, muxType, { message, noEnter = false, paste = false }) {
+  if (muxType === 'tmux') {
+    if (paste) {
+      execSync(`tmux set-buffer -- ${shellEscape(message)}`, { timeout: 3000 });
+      execSync(`tmux paste-buffer -t ${shellEscape(target)} -d`, { timeout: 3000 });
+      return;
+    }
+
+    if (noEnter) {
+      execSync(`tmux send-keys -t ${shellEscape(target)} ${shellEscape(message)}`, { timeout: 3000 });
+      return;
+    }
+
+    execSync(`tmux set-buffer -- ${shellEscape(message)}`, { timeout: 3000 });
+    execSync(`tmux paste-buffer -t ${shellEscape(target)} -d`, { timeout: 3000 });
+    execSync('sleep 0.15');
+    execSync(`tmux send-keys -t ${shellEscape(target)} Enter`, { timeout: 3000 });
+    return;
+  }
+
+  if (muxType === 'screen') {
+    const payload = noEnter ? message : message + '\n';
+    execSync(`screen -S ${shellEscape(target)} -X stuff ${shellEscape(payload)}`, { timeout: 3000 });
+  }
+}
 
 // ─── Routes ──────────────────────────────────────────────────────────────────
 
@@ -354,7 +405,7 @@ router.post('/launch', (req, res) => {
 router.get('/tmux-terminal/:session', (req, res) => {
   try {
     const session = req.params.session;
-    const content = execSync(`tmux capture-pane -t ${shellEscape(session)} -p -S -200 2>/dev/null`, { encoding: 'utf8', timeout: 3000 });
+    const content = execSync(`tmux capture-pane -t ${shellEscape(session)} -J -p -S -200 2>/dev/null`, { encoding: 'utf8', timeout: 3000 });
     res.json({ content });
   } catch (e) {
     res.status(500).json({ error: e.message });
@@ -364,18 +415,20 @@ router.get('/tmux-terminal/:session', (req, res) => {
 router.post('/tmux-terminal/:session/send', (req, res) => {
   try {
     const session = req.params.session;
-    const { message, noEnter } = req.body;
+    const { message, noEnter, paste } = req.body;
     if (!message) return res.status(400).json({ error: 'Message is required' });
 
-    if (noEnter) {
-      execSync(`tmux send-keys -t ${shellEscape(session)} ${shellEscape(message)}`, { timeout: 3000 });
-    } else {
-      execSync(`tmux set-buffer -- ${shellEscape(message)}`, { timeout: 3000 });
-      execSync(`tmux paste-buffer -t ${shellEscape(session)} -d`, { timeout: 3000 });
-      execSync('sleep 0.15');
-      execSync(`tmux send-keys -t ${shellEscape(session)} Enter`, { timeout: 3000 });
-    }
+    sendMuxInput(session, 'tmux', { message, noEnter, paste });
     res.json({ ok: true });
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
+router.get('/tmux-terminal/:session/snapshot', (req, res) => {
+  try {
+    const session = req.params.session;
+    res.json(captureTmuxSnapshot(session));
   } catch (e) {
     res.status(500).json({ error: e.message });
   }
@@ -518,7 +571,7 @@ router.get('/:pid/terminal', (req, res) => {
 
     let content = '';
     if (mux.type === 'tmux') {
-      content = execSync(`tmux capture-pane -t ${shellEscape(mux.target)} -p -S -200 2>/dev/null`, { encoding: 'utf8', timeout: 3000 });
+      content = execSync(`tmux capture-pane -t ${shellEscape(mux.target)} -J -p -S -200 2>/dev/null`, { encoding: 'utf8', timeout: 3000 });
     } else if (mux.type === 'screen') {
       const tmpFile = `/tmp/screen-dump-${pid}`;
       execSync(`screen -S ${shellEscape(mux.session)} -X hardcopy ${shellEscape(tmpFile)}`, { timeout: 3000 });
@@ -532,16 +585,28 @@ router.get('/:pid/terminal', (req, res) => {
   }
 });
 
+router.get('/:pid/terminal-snapshot', (req, res) => {
+  try {
+    const { pid } = req.params;
+    const target = getTmuxTargetForPid(pid);
+    if (!target) return res.status(400).json({ error: 'Agent is not running inside tmux' });
+    res.json(captureTmuxSnapshot(target));
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
 router.post('/:pid/send', (req, res) => {
   try {
     // Support both JSON { message: "..." } and plain text body
     const contentType = req.headers['content-type'] || '';
-    let message, noEnter;
+    let message, noEnter, paste;
     if (contentType.includes('text/plain')) {
       message = typeof req.body === 'string' ? req.body : String(req.body);
       noEnter = false;
+      paste = false;
     } else {
-      ({ message, noEnter } = req.body);
+      ({ message, noEnter, paste } = req.body);
     }
     if (!message || !message.trim()) return res.status(400).json({ error: 'Message is required' });
 
@@ -552,21 +617,7 @@ router.post('/:pid/send', (req, res) => {
     const tty = procs[pid]?.tty;
     const mux = detectMultiplexer(pid, tty, procs, buildTmuxPaneMap(), buildScreenMap());
     if (!mux) return res.status(400).json({ error: 'Agent is not running inside tmux or screen — sending not supported' });
-    if (mux.type === 'tmux') {
-      if (noEnter) {
-        execSync(`tmux send-keys -t ${shellEscape(mux.target)} ${shellEscape(message)}`, { timeout: 3000 });
-      } else {
-        // Pasting text is more reliable for CLIs like Codex than send-keys text + Enter.
-        execSync(`tmux set-buffer -- ${shellEscape(message)}`, { timeout: 3000 });
-        execSync(`tmux paste-buffer -t ${shellEscape(mux.target)} -d`, { timeout: 3000 });
-        // Small delay so the pasted text is fully processed before Enter
-        execSync('sleep 0.15');
-        execSync(`tmux send-keys -t ${shellEscape(mux.target)} Enter`, { timeout: 3000 });
-      }
-    } else if (mux.type === 'screen') {
-      const payload = noEnter ? message : message + '\n';
-      execSync(`screen -S ${shellEscape(mux.session)} -X stuff ${shellEscape(payload)}`, { timeout: 3000 });
-    }
+    sendMuxInput(mux.type === 'tmux' ? mux.target : mux.session, mux.type, { message, noEnter, paste });
     res.json({ ok: true });
   } catch (e) {
     res.status(500).json({ error: e.message });

@@ -4,6 +4,7 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>OpenOrcha</title>
+  <link rel="stylesheet" href="/vendor/xterm/css/xterm.css" />
   <link rel="stylesheet" href="styles.css" />
 </head>
 <body>
@@ -721,6 +722,7 @@
       <div class="drawer-toolbar">
         <div class="drawer-view-toggle">
           <button id="drawer-tab-messages" class="drawer-tab active" onclick="switchDrawerView('messages')">Messages</button>
+          <button id="drawer-tab-live" class="drawer-tab" onclick="switchDrawerView('live')" style="display:none">Live</button>
           <button id="drawer-tab-terminal" class="drawer-tab" onclick="switchDrawerView('terminal')">Terminal</button>
           <button id="drawer-tab-git" class="drawer-tab" onclick="switchDrawerView('git')">Git</button>
           <button id="drawer-tab-context" class="drawer-tab" onclick="switchDrawerView('context')">Context</button>
@@ -728,6 +730,19 @@
       </div>
       <div id="drawer-session-meta" class="drawer-session-meta" style="display:none"></div>
       <div id="drawer-messages" class="drawer-messages"></div>
+      <div id="drawer-live" class="drawer-live" style="display:none">
+        <div class="drawer-live-bar">
+          <div class="drawer-live-title-wrap">
+            <span class="drawer-live-label">tmux</span>
+            <span id="drawer-live-title" class="drawer-live-title">tmux</span>
+          </div>
+          <div id="drawer-live-meta" class="drawer-live-meta"></div>
+        </div>
+        <div id="drawer-live-terminal" class="drawer-live-terminal" tabindex="0">
+          <div id="drawer-live-shell" class="drawer-live-shell"></div>
+          <div id="drawer-live-overlay" class="drawer-live-overlay" style="display:none"></div>
+        </div>
+      </div>
       <div id="drawer-terminal" class="drawer-terminal" style="display:none"></div>
       <div id="drawer-git" class="drawer-git" style="display:none"></div>
       <div id="drawer-context" class="drawer-context" style="display:none"></div>
