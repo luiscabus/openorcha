@@ -609,6 +609,11 @@ export async function refreshDrawer() {
 // ─── Send / Input ─────────────────────────────────────────────────────────────
 
 export function handleSendKeydown(e) {
+  if (drawerView === 'live') {
+    e.preventDefault();
+    return;
+  }
+
   const textarea = e.target;
   const enterToSend = document.getElementById('drawer-enter-to-send').checked;
 
@@ -626,6 +631,11 @@ export function handleSendKeydown(e) {
 }
 
 export async function sendAgentMessage() {
+  if (drawerView === 'live') {
+    document.getElementById('drawer-live-terminal')?.focus();
+    return;
+  }
+
   const input = document.getElementById('drawer-send-input');
   const message = input.value.trim();
   const draftKey = drawerDraftKey;

@@ -17,6 +17,7 @@ class DrawerLiveTerminal {
     this.active = false;
     this.connected = false;
     this.handleResize = this.handleResize.bind(this);
+    this.handlePaste = this.handlePaste.bind(this);
     this.fitTimer = null;
   }
 
@@ -77,6 +78,7 @@ class DrawerLiveTerminal {
     });
 
     this.root.addEventListener('mousedown', () => this.term.focus());
+    this.root.addEventListener('paste', this.handlePaste, { capture: true });
 
     if (typeof ResizeObserver !== 'undefined') {
       this.resizeObserver = new ResizeObserver(this.handleResize);
@@ -124,6 +126,17 @@ class DrawerLiveTerminal {
   handleResize() {
     if (!this.active) return;
     this.scheduleFit();
+  }
+
+  handlePaste(event) {
+    if (!this.active) return;
+    event.preventDefault();
+    event.stopPropagation();
+    const text = event.clipboardData?.getData('text/plain') || '';
+    if (!text) return;
+    this.term.focus();
+    if (!this.connected || !this.socket || this.socket.readyState !== WebSocket.OPEN) return;
+    this.socket.send(JSON.stringify({ type: 'input', data: text }));
   }
 
   isVisible() {
