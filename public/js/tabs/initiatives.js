@@ -65,6 +65,7 @@ function renderList(container) {
         <span>${escHtml(stage?.name || '—')}</span>
         <span class="initiative-progress"><span style="width:${Math.round((done / i.stages.length) * 100)}%"></span></span>
         <span>${done}/${i.stages.length}</span>
+        ${i.liveWorkers ? `<span class="initiative-worker-count" title="agents working in parallel">${i.liveWorkers}×</span>` : ''}
       </div>
       <div class="initiative-item-path">${escHtml(tildefy(i.cwd))}</div>
     </div>`;
@@ -93,8 +94,8 @@ function renderDetail() {
     return;
   }
 
-  const live = i.live
-    ? `<span class="initiative-live initiative-live-${escAttr(i.live.status)}">agent ${escHtml(i.live.status)} · pid ${escHtml(i.live.pid)}</span>`
+  const live = i.liveWorkers
+    ? `<span class="initiative-live initiative-live-${escAttr(i.live.status)}">${i.liveWorkers} agent${i.liveWorkers === 1 ? '' : 's'} working</span>`
     : '<span class="initiative-live initiative-live-none">no live agent</span>';
 
   el.innerHTML = `
@@ -112,6 +113,7 @@ function renderDetail() {
         ${i.status === 'running'
           ? `<button class="btn btn-ghost btn-sm" onclick="pauseInitiative('${escAttr(i.id)}')">Pause</button>`
           : `<button class="btn btn-primary btn-sm" onclick="startInitiative('${escAttr(i.id)}')">${i.run ? 'Resume' : 'Start'}</button>`}
+        <button class="btn btn-ghost btn-sm" onclick="openSplitStage('${escAttr(i.id)}')">Split stage</button>
         <button class="btn btn-ghost btn-sm" onclick="runInitiativeCheck('${escAttr(i.id)}')">Run check</button>
         <button class="btn btn-ghost btn-sm" onclick="advanceInitiative('${escAttr(i.id)}')">Skip stage</button>
         <button class="btn btn-ghost btn-sm" onclick="deleteInitiative('${escAttr(i.id)}')">Delete</button>
@@ -121,6 +123,7 @@ function renderDetail() {
     ${i.goal ? `<p class="initiative-goal">${escHtml(i.goal)}</p>` : ''}
 
     ${renderGates(i)}
+    ${renderWorkers(i)}
     ${renderStages(i)}
     ${renderStats(i)}
 
@@ -161,18 +164,49 @@ function renderGates(i) {
   </div>`;
 }
 
+function renderWorkers(i) {
+  const workers = (i.workers || []).filter(w => w.status !== 'gone' && w.status !== 'done');
+  if (!workers.length) return '';
+  return `<div class="initiative-workers">
+    <div class="initiative-workers-head">Workers <span>${workers.length} of ${i.maxParallel} slots</span></div>
+    ${workers.map(w => `<div class="initiative-worker">
+      <span class="initiative-worker-dot initiative-worker-${escAttr(w.live ? w.live.status : 'starting')}"></span>
+      <span class="initiative-worker-name">${escHtml(w.name)}</span>
+      ${w.worktree ? `<span class="initiative-worker-branch" title="${escAttr(w.worktree.path)}">${escHtml(w.worktree.branch)}</span>` : ''}
+      <span class="initiative-worker-status${w.live ? '' : ' initiative-worker-stale'}">${escHtml(w.live ? w.live.status : (w.status === 'working' ? 'no agent' : w.status))}</span>
+      ${w.live ? `<span class="initiative-worker-pid">pid ${escHtml(w.live.pid)}</span>` : ''}
+    </div>`).join('')}
+  </div>`;
+}
+
+function renderTasks(stage) {
+  const tasks = stage.tasks || [];
+  if (!tasks.length) return '';
+  return `<div class="initiative-tasks">
+    ${tasks.map(t => `<div class="initiative-task initiative-task-${escAttr(t.status)}">
+      <span class="initiative-task-dot"></span>
+      <span class="initiative-task-name">${escHtml(t.name)}</span>
+      ${t.branch ? `<span class="initiative-worker-branch">${escHtml(t.branch)}</span>` : ''}
+      <span class="initiative-task-status">${escHtml(t.status)}</span>
+    </div>`).join('')}
+  </div>`;
+}
+
 function renderStages(i) {
   return `<div class="initiative-stages">
     ${i.stages.map((s, idx) => {
       const state = idx === i.stageIndex && !['done', 'skipped'].includes(s.status) ? 'active' : s.status;
+      const parallel = (s.tasks || []).length;
       return `<div class="initiative-stage initiative-stage-${escAttr(state)}">
         <div class="initiative-stage-dot"></div>
         <div class="initiative-stage-body">
-          <div class="initiative-stage-name">${escHtml(s.name)}${s.nudges ? `<span class="initiative-stage-nudges">${s.nudges} nudge${s.nudges === 1 ? '' : 's'}</span>` : ''}</div>
+          <div class="initiative-stage-name">${escHtml(s.name)}${parallel ? `<span class="initiative-stage-parallel">${parallel} in parallel</span>` : ''}${s.nudges ? `<span class="initiative-stage-nudges">${s.nudges} nudge${s.nudges === 1 ? '' : 's'}</span>` : ''}</div>
           <div class="initiative-stage-instruction">${escHtml(s.instruction)}</div>
+          ${renderTasks(s)}
         </div>
       </div>`;
     }).join('')}
+    ${i.integration?.branches?.length ? `<div class="initiative-integration">Parallel branches ready to merge: ${i.integration.branches.map(b => `<code>${escHtml(b)}</code>`).join(' ')}</div>` : ''}
   </div>`;
 }
 
@@ -287,6 +321,33 @@ export async function sendInitiativeMessage(event, id) {
   input.value = '';
   try {
     await api('POST', `/api/initiatives/${id}/message`, { message });
+    loadInitiatives();
+  } catch (err) { toast(err.message, 'error'); }
+}
+
+export async function openSplitStage(id) {
+  const i = initiatives.find(x => x.id === id);
+  const stage = i?.currentStage;
+  if (!stage) return;
+  const raw = window.prompt(
+    `Split "${stage.name}" into parallel tasks — one per line.\n`
+    + 'Each gets its own agent and its own git worktree.\n'
+    + 'Use "name: instruction" to say what each one should do.',
+    (stage.tasks || []).map(t => (t.instruction ? `${t.name}: ${t.instruction}` : t.name)).join('\n'),
+  );
+  if (raw === null) return;
+
+  const tasks = raw.split('\n').map(line => line.trim()).filter(Boolean).map(line => {
+    const idx = line.indexOf(':');
+    return idx === -1
+      ? { name: line, instruction: '' }
+      : { name: line.slice(0, idx).trim(), instruction: line.slice(idx + 1).trim() };
+  });
+  if (!tasks.length) return;
+
+  try {
+    await api('POST', `/api/initiatives/${id}/split`, { stageId: stage.id, tasks });
+    toast(`${stage.name} split into ${tasks.length} parallel task${tasks.length === 1 ? '' : 's'}`);
     loadInitiatives();
   } catch (err) { toast(err.message, 'error'); }
 }

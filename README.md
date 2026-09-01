@@ -60,6 +60,31 @@ Implement → Verify → Commit → Push & draft PR**. Each stage carries its ow
 instruction, check and nudge budget, and the run advances only when the check
 passes.
 
+### Working in parallel
+
+The supervisor runs work on two axes at once.
+
+**Across initiatives** — every initiative has its own workers, and lanes are
+ticked concurrently. A lane waiting at a gate never holds up the others, and a
+judgement call is made off the tick, so a slow decision in one lane cannot
+freeze the rest.
+
+**Inside one initiative** — press *Split stage* and a stage fans out into
+parallel tasks, one agent each. Each parallel worker gets **its own git
+worktree and branch**, because two agents in one working tree fight over the
+branch and the index. The stage completes only when every task's check passes,
+and the branches are then handed to the next stage to merge.
+
+Fan-out is bounded twice over: `maxParallel` per initiative (default 3) and
+`OPENORCHA_MAX_AGENTS` across the machine (default 6). Workers start one per
+tick so a ramp-up never blocks the server, a worker that dies is restarted
+twice before it becomes your problem, and writing history while sitting on
+`master` is refused whatever the profile says.
+
+Finished worktrees are never removed behind your back. `POST
+/api/initiatives/:id/worktrees/prune` removes only the ones whose worker is
+done and whose tree is clean; the branch always survives.
+
 ### Where to look
 
 - **AI Agents → Initiatives** — create initiatives, watch stages advance, answer

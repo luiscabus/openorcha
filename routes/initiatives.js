@@ -5,6 +5,7 @@ const fs = require('fs');
 const store = require('../lib/initiativeStore');
 const supervisor = require('../lib/initiativeSupervisor');
 const { runCheck, repoSnapshot } = require('../lib/initiativeChecks');
+const { removeWorktree } = require('../lib/initiativeWorktrees');
 const { PROFILES } = require('../lib/initiativePolicy');
 
 const router = express.Router();
@@ -13,16 +14,27 @@ function expandCwd(cwd) {
   return String(cwd || '').trim().replace(/^~(?=\/|$)/, os.homedir());
 }
 
-function withLive(initiative) {
-  const agent = supervisor.findAgent(initiative);
-  let live = null;
-  if (agent) {
-    const { status } = supervisor.inferStatus(agent);
-    live = { pid: agent.pid, status, cwd: agent.cwd, tmux: agent.mux?.target || null };
-  }
+function withLive(initiative, snapshot = supervisor.takeSnapshot()) {
+  // Every worker gets its own live row: a fanned-out stage runs several agents
+  // at once and the UI has to show which of them is actually moving.
+  const workers = (initiative.workers || []).map(worker => {
+    const agent = worker.status === 'gone' || worker.status === 'done'
+      ? null
+      : supervisor.agentForSession(worker.sessionName, snapshot);
+    let live = null;
+    if (agent) {
+      const { status } = supervisor.inferStatus(agent);
+      live = { pid: agent.pid, status, tmux: agent.mux?.target || null };
+    }
+    return { ...worker, live };
+  });
+
+  const first = workers.find(w => w.live);
   return {
     ...initiative,
-    live,
+    workers,
+    live: first ? { ...first.live, cwd: first.cwd, worker: first.name } : null,
+    liveWorkers: workers.filter(w => w.live).length,
     openGates: store.openGates(initiative),
     currentStage: store.currentStage(initiative),
   };
@@ -32,8 +44,9 @@ function withLive(initiative) {
 
 router.get('/', (req, res) => {
   try {
+    const snapshot = supervisor.takeSnapshot();
     res.json({
-      initiatives: store.list().map(withLive),
+      initiatives: store.list().map(i => withLive(i, snapshot)),
       profiles: Object.keys(PROFILES),
       supervisor: supervisor.status(),
     });
@@ -147,6 +160,62 @@ router.post('/:id/advance', (req, res) => {
   if (!initiative) return res.status(404).json({ error: 'Initiative not found' });
   const next = store.advanceStage(initiative, 'advanced by you');
   res.json({ initiative: withLive(store.save(initiative)), next: next?.name || null });
+});
+
+// ─── Parallel work ───────────────────────────────────────────────────────────
+
+router.post('/:id/split', (req, res) => {
+  const initiative = store.get(req.params.id);
+  if (!initiative) return res.status(404).json({ error: 'Initiative not found' });
+
+  const tasks = Array.isArray(req.body?.tasks) ? req.body.tasks : [];
+  if (!tasks.length) return res.status(400).json({ error: 'tasks are required' });
+  if (tasks.length > 8) return res.status(400).json({ error: 'at most 8 parallel tasks' });
+  if (tasks.some(t => !String(t?.name || '').trim())) return res.status(400).json({ error: 'every task needs a name' });
+
+  const stageId = req.body?.stageId || store.currentStage(initiative)?.id;
+  const stage = store.setStageTasks(initiative, stageId, tasks.map(t => ({
+    name: String(t.name).trim(),
+    instruction: String(t.instruction || '').trim(),
+    check: t.check || null,
+  })));
+  if (!stage) return res.status(400).json({ error: 'Stage not found' });
+
+  res.json({ initiative: withLive(store.save(initiative)) });
+});
+
+router.post('/:id/worktrees/prune', (req, res) => {
+  const initiative = store.get(req.params.id);
+  if (!initiative) return res.status(404).json({ error: 'Initiative not found' });
+
+  // Only worktrees whose worker has finished, and never one with uncommitted
+  // work in it — the branch survives either way.
+  const removed = [];
+  const kept = [];
+  const missing = [];
+  for (const worker of initiative.workers || []) {
+    if (!worker.worktree || !['done', 'gone'].includes(worker.status)) continue;
+
+    // Someone removed it by hand: drop the stale pointer, keep the branch.
+    if (!fs.existsSync(worker.worktree.path)) {
+      missing.push(worker.worktree.path);
+      worker.worktree = null;
+      continue;
+    }
+
+    const dirty = runCheck({ type: 'git-dirty' }, worker.worktree.path);
+    if (dirty.passed === true) {
+      kept.push({ path: worker.worktree.path, why: 'uncommitted changes' });
+      continue;
+    }
+    if (removeWorktree(initiative.cwd, worker.worktree.path)) {
+      removed.push(worker.worktree.path);
+      store.addEvent(initiative, 'worktree-removed', `${worker.name} — ${worker.worktree.branch} kept, worktree removed`);
+    } else {
+      kept.push({ path: worker.worktree.path, why: 'git could not remove it' });
+    }
+  }
+  res.json({ removed, kept, missing, initiative: withLive(store.save(initiative)) });
 });
 
 // ─── Gates ───────────────────────────────────────────────────────────────────
