@@ -1,6 +1,8 @@
 import { api, toast, escHtml, escAttr } from '../utils.js';
 
 let initiatives = [];
+let templates = [];
+let selectedTemplate = 'ticket-to-pr';
 let selectedId = null;
 let refreshTimer = null;
 
@@ -20,6 +22,7 @@ export async function loadInitiatives() {
   try {
     const data = await api('GET', '/api/initiatives');
     initiatives = data.initiatives || [];
+    templates = data.templates || templates;
     if (!initiatives.some(i => i.id === selectedId)) {
       selectedId = initiatives.find(i => i.status === 'blocked')?.id || initiatives[0]?.id || null;
     }
@@ -107,6 +110,7 @@ function renderDetail() {
           ${live}
           <span class="initiative-detail-path">${escHtml(tildefy(i.cwd))}</span>
           <span class="badge badge-sm">${escHtml(i.profile)}</span>
+          ${i.template ? `<span class="badge badge-sm">${escHtml(i.template)}</span>` : ''}
         </div>
       </div>
       <div class="initiative-detail-actions">
@@ -354,14 +358,49 @@ export async function openSplitStage(id) {
 
 // ─── Create ──────────────────────────────────────────────────────────────────
 
-export function openNewInitiativeModal() {
+export async function openNewInitiativeModal() {
   document.getElementById('new-initiative-modal').style.display = 'flex';
+  if (!templates.length) {
+    try { templates = (await api('GET', '/api/initiatives/templates')).templates || []; } catch {}
+  }
+  renderTemplatePicker();
   document.getElementById('new-initiative-name').focus();
+}
+
+function renderTemplatePicker() {
+  const el = document.getElementById('new-initiative-templates');
+  if (!el) return;
+  el.innerHTML = templates.map(t => `<button type="button"
+      class="template-card${t.id === selectedTemplate ? ' is-selected' : ''}"
+      onclick="pickInitiativeTemplate('${escAttr(t.id)}')">
+    <div class="template-card-name">${escHtml(t.name)}</div>
+    <div class="template-card-summary">${escHtml(t.summary)}</div>
+    <div class="template-card-stages">${t.stages.map(s => escHtml(s.name)).join(' → ')}</div>
+    <div class="template-card-meta">
+      <span>${escHtml(t.profile)}</span>
+      <span>up to ${t.maxParallel} in parallel</span>
+    </div>
+  </button>`).join('');
+
+  const chosen = templates.find(t => t.id === selectedTemplate);
+  const hint = document.getElementById('new-initiative-when');
+  if (hint) hint.textContent = chosen?.when || '';
+  const profile = document.getElementById('new-initiative-profile');
+  if (profile && chosen) profile.value = chosen.profile;
+  const parallel = document.getElementById('new-initiative-parallel');
+  if (parallel && chosen) parallel.value = chosen.maxParallel;
+}
+
+export function pickInitiativeTemplate(id) {
+  selectedTemplate = id;
+  renderTemplatePicker();
 }
 
 export async function createInitiative(event) {
   event.preventDefault();
   const body = {
+    template: selectedTemplate,
+    maxParallel: parseInt(document.getElementById('new-initiative-parallel').value, 10) || 3,
     name: document.getElementById('new-initiative-name').value.trim(),
     goal: document.getElementById('new-initiative-goal').value.trim(),
     cwd: document.getElementById('new-initiative-cwd').value.trim(),

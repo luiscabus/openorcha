@@ -7,6 +7,7 @@ const supervisor = require('../lib/initiativeSupervisor');
 const { runCheck, repoSnapshot } = require('../lib/initiativeChecks');
 const { removeWorktree } = require('../lib/initiativeWorktrees');
 const { PROFILES } = require('../lib/initiativePolicy');
+const templates = require('../lib/initiativeTemplates');
 
 const router = express.Router();
 
@@ -48,6 +49,7 @@ router.get('/', (req, res) => {
     res.json({
       initiatives: store.list().map(i => withLive(i, snapshot)),
       profiles: Object.keys(PROFILES),
+      templates: templates.list(),
       supervisor: supervisor.status(),
     });
   } catch (e) {
@@ -65,6 +67,10 @@ router.post('/', (req, res) => {
   } catch (e) {
     res.status(400).json({ error: e.message });
   }
+});
+
+router.get('/templates', (req, res) => {
+  res.json({ templates: templates.list() });
 });
 
 router.get('/digest', (req, res) => {

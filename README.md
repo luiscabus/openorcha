@@ -60,6 +60,32 @@ Implement → Verify → Commit → Push & draft PR**. Each stage carries its ow
 instruction, check and nudge budget, and the run advances only when the check
 passes.
 
+### Templates — picking the right shape
+
+The stage pipeline is not one shape. Sessions in this workflow fall into a few
+recognisable kinds, and each wants different stages, a different autonomy
+profile, and a different place to fan out:
+
+| Template | For | Autonomy | Fans out on |
+|---|---|---|---|
+| **PR review** | Reviewing a PR, or working the comments on your own | `ship` | one agent per PR |
+| **Spec review → tickets** | Validating a plan against the code, then slicing it | `standard` | one agent per repo/area |
+| **Ticket → PR** | Building understood work and shipping it | `ship` | one agent per independent piece |
+| **PoC / spike** | Answering "is this feasible" | `standard` | one agent per approach |
+| **Discovery** | Understanding how something works, no code changes | `conservative` | one agent per subsystem |
+
+Templates live in `data/initiative-templates/` as JSON — edit them, or drop in
+your own; they show up in the New Initiative picker automatically. `Ticket → PR`
+is also the built-in default pipeline, so there is one definition of it.
+
+### When *not* to make an initiative
+
+Most sessions should stay plain `claude` sessions. An initiative is worth the
+setup when the work has a definition of done and will outlive your attention —
+it needs stages, gates, and someone to keep it moving while you are away. A
+question, a broken container, an env fix, or a five-minute change does not:
+just launch an agent from the AI Agents tab and talk to it.
+
 ### Working in parallel
 
 The supervisor runs work on two axes at once.

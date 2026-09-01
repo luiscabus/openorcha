@@ -3873,3 +3873,65 @@ body {
 }
 
 .initiative-worker-stale { color: var(--danger); }
+
+/* Template picker */
+
+.template-picker {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(160px, 1fr));
+  gap: 8px;
+}
+
+.template-card {
+  text-align: left;
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 9px 10px;
+  color: var(--text);
+  cursor: pointer;
+  font: inherit;
+  transition: border-color .12s, background .12s;
+}
+
+.template-card:hover { background: var(--bg3); }
+.template-card.is-selected { border-color: var(--accent); background: var(--bg3); }
+
+.template-card-name { font-size: 12px; font-weight: 600; }
+.template-card-summary { font-size: 11px; color: var(--text2); margin-top: 3px; line-height: 1.35; }
+
+.template-card-stages {
+  font-size: 10px;
+  color: var(--text3);
+  margin-top: 6px;
+  line-height: 1.35;
+}
+
+.template-card-meta {
+  display: flex;
+  gap: 8px;
+  margin-top: 6px;
+  font-size: 10px;
+  color: var(--text3);
+}
+
+.template-when {
+  font-size: 11px;
+  color: var(--text2);
+  margin-top: 8px;
+  min-height: 15px;
+}
+
+.initiative-form-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1.4fr) 90px 90px;
+  gap: 8px;
+  align-items: end;
+}
+
+.initiative-form-grid select,
+.initiative-form-grid input { width: 100%; min-width: 0; }
+
+@media (max-width: 620px) {
+  .initiative-form-grid { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); }
+}

@@ -932,6 +932,11 @@
       </div>
       <form class="launch-agent-form" onsubmit="createInitiative(event)">
         <div class="form-group">
+          <label>What kind of work is this?</label>
+          <div id="new-initiative-templates" class="template-picker"></div>
+          <div id="new-initiative-when" class="template-when"></div>
+        </div>
+        <div class="form-group">
           <label>Name</label>
           <input type="text" id="new-initiative-name" placeholder="GA4 fetch backfill" required />
         </div>
@@ -943,7 +948,7 @@
           <label>Project Directory</label>
           <input type="text" id="new-initiative-cwd" placeholder="~/projects/myapp" required />
         </div>
-        <div class="preset-form-grid">
+        <div class="initiative-form-grid">
           <div class="form-group">
             <label>Agent</label>
             <select id="new-initiative-agent">
@@ -961,6 +966,10 @@
               <option value="standard">Standard — commits, nothing leaves the machine</option>
               <option value="conservative">Conservative — every commit is a checkpoint</option>
             </select>
+          </div>
+          <div class="form-group">
+            <label>Parallel workers</label>
+            <input type="number" id="new-initiative-parallel" value="3" min="1" max="8" />
           </div>
           <div class="form-group">
             <label>Auto-decide after (min)</label>

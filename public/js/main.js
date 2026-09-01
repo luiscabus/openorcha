@@ -85,6 +85,7 @@ import {
   createInitiative,
   openInitiativeDigest,
   openSplitStage,
+  pickInitiativeTemplate,
 } from './tabs/initiatives.js';
 import { loadClaudeSettings, loadClaudeProjectSettings, saveClaudeSettings } from './tabs/claudeSettings.js';
 import {
@@ -291,6 +292,7 @@ window.openNewInitiativeModal = openNewInitiativeModal;
 window.createInitiative = createInitiative;
 window.openInitiativeDigest = openInitiativeDigest;
 window.openSplitStage = openSplitStage;
+window.pickInitiativeTemplate = pickInitiativeTemplate;
 
 // Claude Code: History
 window.loadClaudeHistory = loadClaudeHistory;
