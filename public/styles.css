@@ -3235,3 +3235,139 @@ body {
     grid-template-columns: 1fr;
   }
 }
+
+/* ─── Claude Code sidebar section divider ─────────────────────────────────── */
+.nav-section-divider {
+  padding: 1.2rem 1rem 0.4rem;
+  font-size: 0.65rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--text-muted);
+  pointer-events: none;
+  border-top: 1px solid var(--border);
+  margin-top: 0.5rem;
+}
+
+/* ─── Claude Memory tab ───────────────────────────────────────────────────── */
+.claude-memory-layout {
+  display: grid;
+  grid-template-columns: 280px 1fr;
+  gap: 1rem;
+  height: calc(100vh - 140px);
+}
+.claude-memory-projects {
+  overflow-y: auto;
+  border-right: 1px solid var(--border);
+  padding-right: 1rem;
+}
+.claude-memory-project-item {
+  padding: 0.6rem 0.8rem;
+  border-radius: 6px;
+  cursor: pointer;
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+}
+.claude-memory-project-item:hover { background: var(--bg-hover); }
+.claude-memory-project-item.active { background: var(--bg-active); }
+.claude-memory-project-path { font-size: 0.82rem; word-break: break-all; }
+.claude-memory-project-meta { display: flex; gap: 0.4rem; flex-wrap: wrap; }
+.claude-memory-detail { overflow-y: auto; padding-bottom: 2rem; }
+.claude-memory-block { margin-bottom: 1.5rem; }
+.claude-memory-block h3 { margin-bottom: 0.5rem; font-size: 0.95rem; }
+.claude-memory-type-group { margin-top: 1rem; }
+.claude-memory-type-label {
+  font-size: 0.75rem;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--text-muted);
+  margin-bottom: 0.4rem;
+}
+.claude-memory-entry { margin-bottom: 0.5rem; border: 1px solid var(--border); border-radius: 6px; padding: 0.5rem 0.8rem; }
+.claude-memory-entry summary { cursor: pointer; display: flex; align-items: center; gap: 0.5rem; font-size: 0.85rem; }
+.claude-memory-entry-name { font-weight: 500; }
+.claude-memory-entry-desc { color: var(--text-muted); font-size: 0.78rem; flex: 1; }
+.claude-memory-entry-file { font-size: 0.7rem; color: var(--text-muted); font-family: monospace; }
+.claude-memory-entry-actions { display: flex; gap: 0.5rem; margin-top: 0.5rem; }
+.claude-memory-new-form { display: flex; flex-direction: column; gap: 0.5rem; margin-top: 0.5rem; padding: 0.8rem; border: 1px solid var(--border); border-radius: 6px; }
+
+/* ─── Claude History tab ──────────────────────────────────────────────────── */
+.claude-history-list { display: flex; flex-direction: column; gap: 0.25rem; }
+.claude-history-entry {
+  display: flex; align-items: center; gap: 0.6rem; padding: 0.5rem 0.8rem;
+  border-bottom: 1px solid var(--border); font-size: 0.85rem;
+}
+.claude-history-time { color: var(--text-muted); font-size: 0.75rem; white-space: nowrap; min-width: 140px; }
+.claude-history-display { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.claude-history-session-link { font-size: 0.75rem; white-space: nowrap; }
+.claude-history-session-card {
+  padding: 0.8rem; border: 1px solid var(--border); border-radius: 6px; cursor: pointer; margin-bottom: 0.5rem;
+}
+.claude-history-session-card:hover { background: var(--bg-hover); }
+.claude-history-session-header { display: flex; align-items: center; gap: 0.6rem; font-size: 0.85rem; }
+.claude-history-msg-count { color: var(--text-muted); font-size: 0.78rem; }
+.claude-history-conversation { display: flex; flex-direction: column; gap: 0.5rem; }
+.claude-history-msg { padding: 0.6rem 0.8rem; border-radius: 6px; background: var(--bg-secondary); font-size: 0.85rem; }
+.claude-history-msg .claude-history-time { display: block; margin-bottom: 0.3rem; }
+.toggle-group { display: flex; gap: 0; }
+.toggle-group .btn-toggle { border-radius: 0; border: 1px solid var(--border); }
+.toggle-group .btn-toggle:first-child { border-radius: 4px 0 0 4px; }
+.toggle-group .btn-toggle:last-child { border-radius: 0 4px 4px 0; }
+.toggle-group .btn-toggle.active { background: var(--primary); color: white; border-color: var(--primary); }
+
+/* ─── Claude Tasks tab ────────────────────────────────────────────────────── */
+.claude-tasks-list { display: flex; flex-direction: column; gap: 1rem; }
+.claude-tasks-group-header {
+  font-size: 0.85rem; text-transform: capitalize; cursor: pointer;
+  display: flex; align-items: center; gap: 0.5rem; padding: 0.3rem 0;
+}
+.claude-tasks-count { font-size: 0.75rem; color: var(--text-muted); }
+.claude-tasks-collapsed .claude-tasks-group-body { display: none; }
+.claude-task-card {
+  border: 1px solid var(--border); border-radius: 6px; padding: 0.5rem 0.8rem; margin-bottom: 0.3rem;
+}
+.claude-task-card summary { cursor: pointer; display: flex; align-items: center; gap: 0.5rem; font-size: 0.85rem; }
+.claude-task-subject { font-weight: 500; flex: 1; }
+.claude-task-owner { font-size: 0.75rem; color: var(--text-muted); }
+.claude-task-detail { padding-top: 0.5rem; font-size: 0.83rem; }
+.claude-task-detail p { margin: 0.3rem 0; }
+.claude-task-active { color: var(--text-muted); }
+.claude-task-status-in_progress { background: var(--warning-bg, #fef3c7); color: var(--warning-text, #92400e); }
+.claude-task-status-pending { background: var(--info-bg, #dbeafe); color: var(--info-text, #1e40af); }
+.claude-task-status-completed { background: var(--success-bg, #d1fae5); color: var(--success-text, #065f46); }
+
+/* ─── Claude File Diffs tab ───────────────────────────────────────────────── */
+.claude-diffs-list { display: flex; flex-direction: column; gap: 0.5rem; }
+.claude-diff-card { border: 1px solid var(--border); border-radius: 6px; padding: 0.5rem 0.8rem; }
+.claude-diff-card summary { cursor: pointer; display: flex; align-items: center; gap: 0.6rem; font-size: 0.85rem; }
+.claude-diff-hash { font-family: monospace; font-size: 0.8rem; color: var(--primary); min-width: 70px; }
+.claude-diff-versions { font-size: 0.75rem; color: var(--text-muted); white-space: nowrap; }
+.claude-diff-preview { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--text-muted); font-size: 0.78rem; font-family: monospace; }
+.claude-diff-time { font-size: 0.72rem; color: var(--text-muted); white-space: nowrap; }
+.claude-diff-body { margin-top: 0.8rem; }
+.claude-diff-version-controls { display: flex; gap: 1rem; margin-bottom: 0.5rem; font-size: 0.82rem; }
+.claude-diff-version-controls select { font-size: 0.82rem; padding: 0.2rem 0.4rem; }
+.claude-diff-table { width: 100%; border-collapse: collapse; font-family: monospace; font-size: 0.78rem; table-layout: fixed; }
+.claude-diff-table th { text-align: left; padding: 0.3rem 0.5rem; background: var(--bg-secondary); font-size: 0.72rem; }
+.claude-diff-table td { padding: 0 0.5rem; white-space: pre-wrap; word-break: break-all; vertical-align: top; border-bottom: 1px solid var(--border-light, rgba(128,128,128,0.1)); }
+.claude-diff-ln { width: 40px; color: var(--text-muted); text-align: right; user-select: none; font-size: 0.72rem; }
+.claude-diff-table th:nth-child(2), .claude-diff-table td:nth-child(2) { width: calc(50% - 40px); }
+.claude-diff-table th:nth-child(4), .claude-diff-table td:nth-child(4) { width: calc(50% - 40px); }
+.claude-diff-del td { background: rgba(239, 68, 68, 0.12); }
+.claude-diff-add td { background: rgba(34, 197, 94, 0.12); }
+.claude-diff-hunk-header td { background: var(--bg-secondary); color: var(--text-muted); font-size: 0.72rem; padding: 0.2rem 0.5rem; }
+
+.ctx-section-footer { padding: 0.4rem 0 0; text-align: right; }
+.ctx-section-footer a { font-size: 0.75rem; color: var(--accent); text-decoration: none; }
+.ctx-section-footer a:hover { text-decoration: underline; }
+
+/* ─── Claude Settings tab ─────────────────────────────────────────────────── */
+.claude-settings-layout { display: flex; flex-direction: column; gap: 2rem; }
+.claude-settings-section h3 { margin-bottom: 0.5rem; font-size: 0.95rem; }
+.claude-settings-section h4 { margin-bottom: 0.3rem; font-size: 0.85rem; color: var(--text-muted); }
+.settings-path { font-size: 0.72rem; font-family: monospace; color: var(--text-muted); margin-left: 0.5rem; }
+.claude-settings-project-editors { display: grid; grid-template-columns: 1fr 1fr; gap: 1rem; margin-top: 0.5rem; }
+
+/* ─── Shared auto-refresh ─────────────────────────────────────────────────── */
+.auto-refresh-toggle { display: flex; align-items: center; gap: 0.3rem; font-size: 0.82rem; cursor: pointer; }

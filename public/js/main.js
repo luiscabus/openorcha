@@ -67,6 +67,34 @@ import {
   toggleContextBlock,
   toggleMcpServer,
 } from './tabs/agents.js';
+import { loadClaudeSettings, loadClaudeProjectSettings, saveClaudeSettings } from './tabs/claudeSettings.js';
+import {
+  loadClaudeDiffs,
+  loadDiffOnExpand,
+  reloadDiff,
+} from './tabs/claudeDiffs.js';
+import {
+  loadClaudeTasks,
+  promoteClaudeTask,
+  toggleClaudeTasksAutoRefresh,
+  clearClaudeTasksAutoRefresh,
+} from './tabs/claudeTasks.js';
+import {
+  loadClaudeHistory,
+  setClaudeHistoryView,
+  loadClaudeSessionDetail,
+  populateClaudeHistoryProjects,
+} from './tabs/claudeHistory.js';
+import {
+  loadClaudeMemory,
+  filterClaudeMemoryProjects,
+  loadClaudeMemoryProject,
+  openNewMemoryForm,
+  createClaudeMemory,
+  saveClaudeMemoryFile,
+  saveClaudeMemoryEntry,
+  deleteClaudeMemory,
+} from './tabs/claudeMemory.js';
 import {
   loadTodos,
   loadKanban,
@@ -213,12 +241,45 @@ window.handleKanbanStatusDragLeave = handleKanbanStatusDragLeave;
 window.handleKanbanStatusDrop = handleKanbanStatusDrop;
 window.setTodoFilter = setTodoFilter;
 
+// Claude Code: Settings
+window.loadClaudeSettings = loadClaudeSettings;
+window.loadClaudeProjectSettings = loadClaudeProjectSettings;
+window.saveClaudeSettings = saveClaudeSettings;
+
+// Claude Code: Memory
+window.loadClaudeMemory = loadClaudeMemory;
+window.filterClaudeMemoryProjects = filterClaudeMemoryProjects;
+window.loadClaudeMemoryProject = loadClaudeMemoryProject;
+window.openNewMemoryForm = openNewMemoryForm;
+window.createClaudeMemory = createClaudeMemory;
+window.saveClaudeMemoryFile = saveClaudeMemoryFile;
+window.saveClaudeMemoryEntry = saveClaudeMemoryEntry;
+window.deleteClaudeMemory = deleteClaudeMemory;
+
+// Claude Code: History
+window.loadClaudeHistory = loadClaudeHistory;
+window.setClaudeHistoryView = setClaudeHistoryView;
+window.loadClaudeSessionDetail = loadClaudeSessionDetail;
+
+// Claude Code: Tasks
+window.loadClaudeTasks = loadClaudeTasks;
+window.promoteClaudeTask = promoteClaudeTask;
+window.toggleClaudeTasksAutoRefresh = toggleClaudeTasksAutoRefresh;
+
+// Claude Code: File Diffs
+window.loadClaudeDiffs = loadClaudeDiffs;
+window.loadDiffOnExpand = loadDiffOnExpand;
+window.reloadDiff = reloadDiff;
+
 // ─── Navigation ───────────────────────────────────────────────────────────────
 
 function loadTab(tab) {
   // Clear agents auto-refresh when leaving the agents tab
   if (tab !== 'agents') {
     clearAgentAutoRefresh();
+  }
+  if (tab !== 'claude-tasks') {
+    clearClaudeTasksAutoRefresh();
   }
 
   if (tab === 'hosts') loadHosts();
@@ -234,6 +295,11 @@ function loadTab(tab) {
   else if (tab === 'agent-presets') loadAgentPresets();
   else if (tab === 'todo') loadTodos();
   else if (tab === 'kanban') loadKanban();
+  else if (tab === 'claude-settings') loadClaudeSettings();
+  else if (tab === 'claude-memory') loadClaudeMemory();
+  else if (tab === 'claude-history') { populateClaudeHistoryProjects(); loadClaudeHistory(); }
+  else if (tab === 'claude-tasks') loadClaudeTasks();
+  else if (tab === 'claude-diffs') loadClaudeDiffs();
 }
 
 function syncNavState(activeLink) {
