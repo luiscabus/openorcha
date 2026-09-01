@@ -8,6 +8,7 @@ const { runCheck, repoSnapshot } = require('../lib/initiativeChecks');
 const { removeWorktree } = require('../lib/initiativeWorktrees');
 const { PROFILES } = require('../lib/initiativePolicy');
 const templates = require('../lib/initiativeTemplates');
+const framing = require('../lib/initiativeFraming');
 
 const router = express.Router();
 
@@ -73,6 +74,70 @@ router.get('/templates', (req, res) => {
   res.json({ templates: templates.list() });
 });
 
+// ─── Definition of done ──────────────────────────────────────────────────────
+
+// Ask for a proposed definition of done before an initiative exists. This is
+// the one interactive pass: you settle "done" here, so the run does not have to
+// keep asking you later.
+router.post('/frame', async (req, res) => {
+  try {
+    const cwd = expandCwd(req.body?.cwd);
+    const goal = String(req.body?.goal || '').trim();
+    if (!goal) return res.status(400).json({ error: 'goal is required' });
+    if (!cwd || !fs.existsSync(cwd)) return res.status(400).json({ error: 'a real project directory is required' });
+
+    const proposal = await framing.frame({
+      goal,
+      cwd,
+      template: req.body?.template,
+      spec: req.body?.spec,
+      ticket: req.body?.ticket,
+    });
+    if (!proposal) return res.status(502).json({ error: 'Could not work out a definition of done — write it by hand and press Create.' });
+    res.json({ proposal });
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
+router.put('/:id/acceptance', (req, res) => {
+  const initiative = store.get(req.params.id);
+  if (!initiative) return res.status(404).json({ error: 'Initiative not found' });
+  const criteria = Array.isArray(req.body?.criteria) ? req.body.criteria : [];
+  store.setAcceptance(initiative, criteria);
+  res.json({ initiative: withLive(store.save(initiative)) });
+});
+
+// Run every checkable criterion now and report where the run really stands.
+router.post('/:id/acceptance/check', (req, res) => {
+  const initiative = store.get(req.params.id);
+  if (!initiative) return res.status(404).json({ error: 'Initiative not found' });
+
+  const results = [];
+  for (const criterion of initiative.acceptance || []) {
+    if (criterion.check?.type === 'human') {
+      results.push({ id: criterion.id, text: criterion.text, passed: null, detail: criterion.check.detail || 'your call' });
+      continue;
+    }
+    const result = runCheck(criterion.check, initiative.cwd);
+    if (result.passed === true) store.setCriterionStatus(initiative, criterion.id, 'met', result.detail);
+    else if (criterion.status === 'met') store.setCriterionStatus(initiative, criterion.id, 'unmet', result.detail);
+    else criterion.detail = result.detail;
+    results.push({ id: criterion.id, text: criterion.text, passed: result.passed, detail: result.detail });
+  }
+  res.json({ results, initiative: withLive(store.save(initiative)) });
+});
+
+router.post('/:id/acceptance/:criterionId', (req, res) => {
+  const initiative = store.get(req.params.id);
+  if (!initiative) return res.status(404).json({ error: 'Initiative not found' });
+  const status = req.body?.status;
+  if (!['met', 'unmet', 'waived'].includes(status)) return res.status(400).json({ error: 'status must be met, unmet or waived' });
+  const criterion = store.setCriterionStatus(initiative, req.params.criterionId, status, req.body?.detail || 'set by you');
+  if (!criterion) return res.status(404).json({ error: 'Criterion not found' });
+  res.json({ initiative: withLive(store.save(initiative)) });
+});
+
 router.get('/digest', (req, res) => {
   try {
     res.json(supervisor.buildDigest(req.query.since));
@@ -104,8 +169,37 @@ router.patch('/:id', (req, res) => {
   }
 });
 
+// Remove: the initiative record goes; what it produced does not. Agents are
+// killed by default so nothing keeps running for a thing that no longer exists,
+// and worktrees are only removed when asked and only when clean.
 router.delete('/:id', (req, res) => {
-  res.json({ ok: store.remove(req.params.id) });
+  const initiative = store.get(req.params.id);
+  if (!initiative) return res.json({ ok: store.remove(req.params.id) });
+
+  const keepAgents = req.query.keepAgents === 'true';
+  const stopped = keepAgents ? [] : supervisor.stopWorkers(initiative, { kill: true });
+
+  const removedWorktrees = [];
+  const keptWorktrees = [];
+  if (req.query.pruneWorktrees === 'true') {
+    for (const worker of initiative.workers || []) {
+      if (!worker.worktree || !fs.existsSync(worker.worktree.path)) continue;
+      const dirty = runCheck({ type: 'git-dirty' }, worker.worktree.path);
+      if (dirty.passed === true) {
+        keptWorktrees.push({ path: worker.worktree.path, why: 'uncommitted changes' });
+        continue;
+      }
+      if (removeWorktree(initiative.cwd, worker.worktree.path)) removedWorktrees.push(worker.worktree.path);
+    }
+  }
+
+  res.json({
+    ok: store.remove(req.params.id),
+    stopped,
+    removedWorktrees,
+    keptWorktrees,
+    branchesKept: (initiative.workers || []).map(w => w.worktree?.branch).filter(Boolean),
+  });
 });
 
 // ─── Run control ─────────────────────────────────────────────────────────────
@@ -128,12 +222,30 @@ router.post('/:id/start', (req, res) => {
   res.json({ initiative: withLive(saved) });
 });
 
+// Pause: stop supervising, leave the agents alive so you can take one over.
 router.post('/:id/pause', (req, res) => {
   const initiative = store.get(req.params.id);
   if (!initiative) return res.status(404).json({ error: 'Initiative not found' });
   initiative.status = 'paused';
-  store.addEvent(initiative, 'paused', 'Paused by you');
+  store.addEvent(initiative, 'paused', 'Paused by you — agents left running');
   res.json({ initiative: withLive(store.save(initiative)) });
+});
+
+// Stop: end the run and kill the agents it started. The work on disk and the
+// branches stay exactly where they are.
+router.post('/:id/stop', (req, res) => {
+  const initiative = store.get(req.params.id);
+  if (!initiative) return res.status(404).json({ error: 'Initiative not found' });
+
+  const stopped = supervisor.stopWorkers(initiative, { kill: req.body?.keepAgents !== true });
+  initiative.status = 'cancelled';
+  for (const gate of store.openGates(initiative)) {
+    store.resolveGate(initiative, gate.id, 'run stopped', 'user');
+  }
+  store.addEvent(initiative, 'cancelled', stopped.length
+    ? `Stopped by you — killed ${stopped.length} agent session(s): ${stopped.join(', ')}`
+    : 'Stopped by you');
+  res.json({ stopped, initiative: withLive(store.save(initiative)) });
 });
 
 router.post('/:id/message', (req, res) => {

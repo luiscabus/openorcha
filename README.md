@@ -60,6 +60,44 @@ Implement → Verify → Commit → Push & draft PR**. Each stage carries its ow
 instruction, check and nudge budget, and the run advances only when the check
 passes.
 
+### Defining done before the work starts
+
+A run is only as autonomous as its definition of done. With nothing to check
+against, the supervisor falls back on judgement calls and gates — which is the
+very thing that pulls you back in. So an initiative can carry **acceptance
+criteria**, each with the check that settles it:
+
+```
+✓ The autosave test suite passes            npm test
+✓ Findings cover the risks and open questions   docs/findings.md contains "Risks", "Open questions"
+· The branch is pushed                      branch is pushed
+· Each item exists as a real Jira ticket     your call
+```
+
+Press **Work out what done means** when creating an initiative and one pass
+reads the project and proposes them, along with the open questions worth
+settling first — the ones whose answers would change what "done" means. It
+takes about a minute, runs without tools (the project context it needs is in
+the prompt), and everything it proposes is editable before you accept it.
+
+Criteria that no machine can settle are marked as needing you, rather than
+dressed up as automatic. At the end of the run the supervisor measures rather
+than asks: unmet checkable criteria send the agent back to close the gap, and
+only the human ones become a single sign-off.
+
+### Stopping and removing
+
+- **Pause** — stop supervising, leave the agents running so you can take one
+  over by hand.
+- **Stop** — end the run and kill the agent sessions it started. Commits,
+  branches and worktrees are untouched.
+- **Remove** — delete the initiative record. Its agents are killed, commits and
+  branches always survive, and worktrees are only removed if you ask and only
+  when they are clean.
+
+Set `OPENORCHA_NO_LAUNCH=1` to stop the supervisor starting agents at all —
+what the test suite uses, and useful for a dry run.
+
 ### Templates — picking the right shape
 
 The stage pipeline is not one shape. Sessions in this workflow fall into a few

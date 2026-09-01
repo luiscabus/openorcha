@@ -3935,3 +3935,109 @@ body {
 @media (max-width: 620px) {
   .initiative-form-grid { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); }
 }
+
+.initiative-status-cancelled { background: rgba(136, 153, 170, .15); color: var(--text3); }
+
+/* Definition of done */
+
+.initiative-dod {
+  margin-top: 14px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--bg);
+  padding: 10px 12px;
+}
+
+.initiative-dod-empty p { font-size: 11px; color: var(--text2); margin: 6px 0 8px; }
+
+.initiative-dod-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: .05em;
+  color: var(--text3);
+  font-weight: 700;
+  margin-bottom: 8px;
+}
+
+.initiative-dod-head span { color: var(--text2); }
+.initiative-dod-head .btn { margin-left: auto; text-transform: none; letter-spacing: 0; }
+
+.initiative-criterion { display: flex; gap: 9px; padding: 5px 0; align-items: flex-start; }
+
+.initiative-criterion-box {
+  width: 15px;
+  height: 15px;
+  margin-top: 2px;
+  flex-shrink: 0;
+  border-radius: 4px;
+  border: 1px solid var(--border);
+  background: var(--bg2);
+  color: var(--bg);
+  font-size: 10px;
+  line-height: 1;
+  cursor: pointer;
+}
+
+.initiative-criterion-met .initiative-criterion-box { background: var(--success); border-color: var(--success); }
+.initiative-criterion-waived .initiative-criterion-box { color: var(--text3); }
+.initiative-criterion-met .initiative-criterion-text { color: var(--text2); }
+
+.initiative-criterion-text { font-size: 12px; }
+
+.initiative-criterion-check {
+  font-size: 11px;
+  color: var(--text3);
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+  margin-top: 2px;
+}
+
+.initiative-criterion-check code {
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  background: var(--bg3);
+  border-radius: 4px;
+  padding: 0 5px;
+}
+
+.initiative-criterion-human { color: var(--warning); }
+.initiative-criterion-detail { color: var(--text3); }
+
+/* Proposal in the create modal */
+
+.dod-proposal { margin-top: 8px; }
+
+.dod-proposal-summary {
+  font-size: 12px;
+  color: var(--text2);
+  margin-bottom: 8px;
+  border-left: 2px solid var(--accent);
+  padding-left: 8px;
+}
+
+.dod-proposal-item {
+  display: flex;
+  gap: 8px;
+  align-items: flex-start;
+  padding: 4px 0;
+  cursor: pointer;
+  font-weight: 400;
+}
+
+.dod-proposal-text { font-size: 12px; display: block; }
+.dod-proposal-check { font-size: 11px; color: var(--text3); display: block; }
+
+.dod-proposal-questions {
+  margin-top: 10px;
+  font-size: 11px;
+  color: var(--text2);
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 7px 9px;
+}
+
+.dod-proposal-error { font-size: 12px; color: var(--danger); }

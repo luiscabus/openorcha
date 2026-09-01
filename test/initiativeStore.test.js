@@ -6,6 +6,8 @@ const path = require('path');
 
 const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'openorcha-initiatives-test-'));
 process.env.OPENORCHA_INITIATIVES_DIR = dir;
+// Never start a real agent from a test run.
+process.env.OPENORCHA_NO_LAUNCH = '1';
 
 const store = require('../lib/initiativeStore');
 

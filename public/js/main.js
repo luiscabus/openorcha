@@ -75,6 +75,7 @@ import {
   selectInitiative,
   startInitiative,
   pauseInitiative,
+  stopInitiative,
   advanceInitiative,
   runInitiativeCheck,
   deleteInitiative,
@@ -86,6 +87,10 @@ import {
   openInitiativeDigest,
   openSplitStage,
   pickInitiativeTemplate,
+  frameNewInitiative,
+  frameInitiative,
+  checkAcceptance,
+  toggleCriterion,
 } from './tabs/initiatives.js';
 import { loadClaudeSettings, loadClaudeProjectSettings, saveClaudeSettings } from './tabs/claudeSettings.js';
 import {
@@ -282,6 +287,7 @@ window.openInitiativeFromLane = openInitiativeFromLane;
 window.selectInitiative = selectInitiative;
 window.startInitiative = startInitiative;
 window.pauseInitiative = pauseInitiative;
+window.stopInitiative = stopInitiative;
 window.advanceInitiative = advanceInitiative;
 window.runInitiativeCheck = runInitiativeCheck;
 window.deleteInitiative = deleteInitiative;
@@ -293,6 +299,10 @@ window.createInitiative = createInitiative;
 window.openInitiativeDigest = openInitiativeDigest;
 window.openSplitStage = openSplitStage;
 window.pickInitiativeTemplate = pickInitiativeTemplate;
+window.frameNewInitiative = frameNewInitiative;
+window.frameInitiative = frameInitiative;
+window.checkAcceptance = checkAcceptance;
+window.toggleCriterion = toggleCriterion;
 
 // Claude Code: History
 window.loadClaudeHistory = loadClaudeHistory;

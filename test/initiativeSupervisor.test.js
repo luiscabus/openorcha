@@ -6,6 +6,8 @@ const path = require('path');
 
 const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'openorcha-supervisor-test-'));
 process.env.OPENORCHA_INITIATIVES_DIR = dir;
+// Never start a real agent from a test run.
+process.env.OPENORCHA_NO_LAUNCH = '1';
 
 const store = require('../lib/initiativeStore');
 const supervisor = require('../lib/initiativeSupervisor');
@@ -304,3 +306,27 @@ test('a non-git directory falls back instead of failing', () => {
     fs.rmSync(plain, { recursive: true, force: true });
   }
 });
+
+test('a test run never starts a real agent', async () => {
+  assert.equal(process.env.OPENORCHA_NO_LAUNCH, '1', 'the guard must be set before the supervisor is loaded');
+
+  const initiative = store.create({ name: 'Would launch', cwd: dir, notifyOnGate: false });
+  initiative.status = 'running';
+  store.save(initiative);
+
+  const before = tmuxSessions();
+  await supervisor.tickOne(store.get(initiative.id));
+  assert.deepEqual(tmuxSessions(), before, 'tick must not create tmux sessions under the guard');
+
+  const after = store.get(initiative.id);
+  assert.equal(after.workers.length, 0);
+  assert.ok(after.events.some(e => e.type === 'warning' && /Launch suppressed/.test(e.detail)));
+});
+
+function tmuxSessions() {
+  try {
+    return execSync('tmux ls 2>/dev/null || true', { encoding: 'utf8' }).split('\n').filter(Boolean).sort();
+  } catch {
+    return [];
+  }
+}
