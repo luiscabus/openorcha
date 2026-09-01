@@ -23,6 +23,7 @@ const {
   parsePermissionPrompt,
 } = require('../lib/multiplexer');
 const { router: presetsRouter, loadPresets } = require('./agentPresets');
+const { AGENT_COMMANDS, AGENT_RESUME_FLAG, launchAgent } = require('../lib/agentLauncher');
 
 const router = express.Router();
 
@@ -58,22 +59,6 @@ function findAgentHistorySessionId(agent, paneText = '') {
 
 // ─── Constants ───────────────────────────────────────────────────────────────
 
-const AGENT_COMMANDS = {
-  claude:   'claude',
-  codex:    'codex',
-  gemini:   'gemini',
-  opencode: 'opencode',
-  aider:    'aider',
-};
-
-const AGENT_SKIP_PERMISSIONS_FLAG = {
-  claude: '--dangerously-skip-permissions',
-};
-
-const AGENT_RESUME_FLAG = {
-  claude: (sessionId) => `--resume ${sessionId}`,
-  codex:  (sessionId) => `resume ${sessionId}`,
-};
 
 function captureTmuxSnapshot(target) {
   const metaRaw = execSync(
@@ -341,60 +326,10 @@ router.post('/launch', (req, res) => {
       }
     }
 
-    const isTerminal = agentId === 'terminal';
-    let cmd = isTerminal ? null : AGENT_COMMANDS[agentId];
-    if (!isTerminal && !cmd) return res.status(400).json({ error: `Unknown agent: ${agentId}` });
-    if (!cwd || !cwd.trim()) cwd = os.homedir();
-
-    cwd = cwd.trim().replace(/^~(?=\/|$)/, os.homedir());
-    if (!fs.existsSync(cwd)) return res.status(400).json({ error: `Directory does not exist: ${cwd}` });
-
-    // Auto-generate session name if not provided
-    if (!sessionName || !sessionName.trim()) {
-      sessionName = `${agentId}-${path.basename(cwd)}`;
-    }
-    sessionName = sessionName.trim().replace(/[^a-zA-Z0-9_.\-]/g, '-');
-    sessionName = uniqueTmuxSessionName(sessionName);
-
-    if (!isTerminal) {
-      if (skipPermissions && AGENT_SKIP_PERMISSIONS_FLAG[agentId]) {
-        cmd = `${cmd} ${AGENT_SKIP_PERMISSIONS_FLAG[agentId]}`;
-      }
-
-      // Append resume flag if resuming a previous session
-      if (resumeSessionId && AGENT_RESUME_FLAG[agentId]) {
-        cmd = `${cmd} ${AGENT_RESUME_FLAG[agentId](resumeSessionId)}`;
-      }
-
-      // Append preset flags
-      if (presetFlags) {
-        cmd = `${cmd} ${presetFlags}`;
-      }
-    }
-
-    // Use a login shell so the user's PATH (~/.zshrc, nvm, homebrew, etc.) is sourced
-    const userShell = resolveUserShell();
-
-    execSync(`tmux new-session -d -s ${shellEscape(sessionName)} -c ${shellEscape(cwd)} ${shellEscape(userShell)} -l`, { timeout: 5000 });
-    // For terminal-only sessions, just leave the shell open; otherwise send the agent command
-    if (!isTerminal) {
-      // Wait for shell prompt to be ready (handles oh-my-zsh updates, slow init, etc.)
-      const maxWait = 10000;
-      const start = Date.now();
-      while (Date.now() - start < maxWait) {
-        execSync('sleep 0.5');
-        try {
-          const pane = execSync(`tmux capture-pane -t ${shellEscape(sessionName)} -p 2>/dev/null`, { encoding: 'utf8', timeout: 2000 });
-          const lines = pane.split('\n').filter(l => l.trim());
-          const last = lines[lines.length - 1]?.trim() || '';
-          // Shell prompt indicators: ends with $, %, >, ❯, ➜, or #
-          if (/[$%>❯➜#]\s*$/.test(last)) break;
-        } catch {}
-      }
-      execSync(`tmux send-keys -t ${shellEscape(sessionName)} ${shellEscape(cmd)} Enter`, { timeout: 5000 });
-    }
-
-    res.json({ ok: true, sessionName });
+    const { sessionName: started } = launchAgent({
+      agentId, cwd, sessionName, skipPermissions, resumeSessionId, presetFlags,
+    });
+    res.json({ ok: true, sessionName: started });
   } catch (e) {
     res.status(500).json({ error: e.message });
   }

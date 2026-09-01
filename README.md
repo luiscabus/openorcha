@@ -20,6 +20,54 @@ OpenOrcha makes multi-agent work easier to manage. Instead of juggling terminal 
 - Inspect agent context and git state for the current project
 - Manage SSH config, keys, and `known_hosts`
 - Browse terminal, `tmux`, and optional `screen` sessions
+- Run **supervised initiatives**: long work an agent carries through on its own
+
+## Initiatives
+
+An initiative is a piece of work that outlives the agent running it. You describe
+the goal, point it at a directory, press Start, and a supervisor in the server
+keeps the agent moving so you are not the thing standing between it and progress.
+
+On each tick the supervisor looks at the agent and decides what to do — rules
+first, a short LLM judgement call only when no rule fits:
+
+- **Permission prompts** matching the initiative's autonomy profile are approved
+  automatically. Anything outward-facing or destructive is never auto-approved.
+- **Offers** ("Want me to run the tests?") get answered instead of waited on —
+  the agent is told to take the reversible option and note the assumption.
+- **"Done" claims are verified**, not believed: each stage has a check the
+  supervisor runs itself (`git status`, commits ahead, a PR exists, or your own
+  verify command). A claim that fails its check is pushed back.
+- **Failures** get one self-repair attempt before they cost you anything.
+- **Real decisions** — irreversible, outward-facing, or product judgement — are
+  parked as a gate with the question and its context, and the supervisor moves
+  on to another initiative instead of idling. You get a macOS notification, and
+  a low-stakes gate with a safe default is taken automatically if you don't
+  answer within the initiative's timeout.
+
+### Autonomy profiles
+
+| Profile | Automatic | Always a gate |
+|---|---|---|
+| `conservative` | read, edit, run tests | every commit |
+| `standard` | the above, plus branches and commits | anything leaving the machine |
+| `ship` | the above, plus `git push` and draft PRs | non-draft PRs, PR comments, Jira writes, merges, force pushes, pushes to master |
+
+### Stages
+
+The default pipeline follows the usual shape of this work: **Plan → Branch →
+Implement → Verify → Commit → Push & draft PR**. Each stage carries its own
+instruction, check and nudge budget, and the run advances only when the check
+passes.
+
+### Where to look
+
+- **AI Agents → Initiatives** — create initiatives, watch stages advance, answer
+  gates, and read the digest of what moved while you were away.
+- **AI Agents** — supervised initiatives appear as lanes alongside your ad-hoc
+  ones, showing run state and any decision waiting on you.
+
+Initiatives are stored as JSON under `data/initiatives/` and are not tracked by git.
 
 ## Requirements
 

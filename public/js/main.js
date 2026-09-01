@@ -66,7 +66,25 @@ import {
   openTmuxTerminal,
   toggleContextBlock,
   toggleMcpServer,
+  openInitiativeFromLane,
 } from './tabs/agents.js';
+import {
+  loadInitiatives,
+  startInitiativesAutoRefresh,
+  clearInitiativesAutoRefresh,
+  selectInitiative,
+  startInitiative,
+  pauseInitiative,
+  advanceInitiative,
+  runInitiativeCheck,
+  deleteInitiative,
+  answerGate,
+  answerGateFree,
+  sendInitiativeMessage,
+  openNewInitiativeModal,
+  createInitiative,
+  openInitiativeDigest,
+} from './tabs/initiatives.js';
 import { loadClaudeSettings, loadClaudeProjectSettings, saveClaudeSettings } from './tabs/claudeSettings.js';
 import {
   loadClaudeDiffs,
@@ -256,6 +274,22 @@ window.saveClaudeMemoryFile = saveClaudeMemoryFile;
 window.saveClaudeMemoryEntry = saveClaudeMemoryEntry;
 window.deleteClaudeMemory = deleteClaudeMemory;
 
+// Initiatives
+window.loadInitiatives = loadInitiatives;
+window.openInitiativeFromLane = openInitiativeFromLane;
+window.selectInitiative = selectInitiative;
+window.startInitiative = startInitiative;
+window.pauseInitiative = pauseInitiative;
+window.advanceInitiative = advanceInitiative;
+window.runInitiativeCheck = runInitiativeCheck;
+window.deleteInitiative = deleteInitiative;
+window.answerGate = answerGate;
+window.answerGateFree = answerGateFree;
+window.sendInitiativeMessage = sendInitiativeMessage;
+window.openNewInitiativeModal = openNewInitiativeModal;
+window.createInitiative = createInitiative;
+window.openInitiativeDigest = openInitiativeDigest;
+
 // Claude Code: History
 window.loadClaudeHistory = loadClaudeHistory;
 window.setClaudeHistoryView = setClaudeHistoryView;
@@ -281,6 +315,9 @@ function loadTab(tab) {
   if (tab !== 'claude-tasks') {
     clearClaudeTasksAutoRefresh();
   }
+  if (tab !== 'initiatives') {
+    clearInitiativesAutoRefresh();
+  }
 
   if (tab === 'hosts') loadHosts();
   else if (tab === 'keys') loadKeys();
@@ -291,6 +328,10 @@ function loadTab(tab) {
   else if (tab === 'agents') {
     loadAgents();
     toggleAgentAutoRefresh();
+  }
+  else if (tab === 'initiatives') {
+    loadInitiatives();
+    startInitiativesAutoRefresh();
   }
   else if (tab === 'agent-presets') loadAgentPresets();
   else if (tab === 'todo') loadTodos();

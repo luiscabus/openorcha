@@ -14,3 +14,4 @@ dist/
 tmp/
 *.tmp
 data/agent-presets/
+data/initiatives/

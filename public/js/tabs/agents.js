@@ -91,6 +91,22 @@ function isInitiativeCollapsed(state, initiativeId, agentsCount) {
   return !initiativeId && agentsCount === 0;
 }
 
+// Server-backed initiatives (the supervised ones) show up as lanes here too,
+// so the live view and the Initiatives tab describe the same work.
+async function fetchServerInitiatives() {
+  try {
+    const { initiatives } = await api('GET', '/api/initiatives');
+    return initiatives || [];
+  } catch {
+    return [];
+  }
+}
+
+function tmuxSessionOf(agent) {
+  const target = agent.multiplexer?.target || '';
+  return target ? target.split(':')[0] : null;
+}
+
 // ─── Agent Card Rendering ─────────────────────────────────────────────────────
 
 function renderAgentLane(agent, initiativeName = '') {
@@ -148,18 +164,28 @@ function renderInitiativeLane(initiative, agents, collapsed = false) {
         <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="9" cy="6" r="1"/><circle cx="15" cy="6" r="1"/><circle cx="9" cy="12" r="1"/><circle cx="15" cy="12" r="1"/><circle cx="9" cy="18" r="1"/><circle cx="15" cy="18" r="1"/></svg>
       </button>`
     : '';
+
+  // A supervised initiative is owned by the Initiatives tab: it shows its run
+  // state here and is managed there, so the two views never disagree.
+  const server = initiative?.server || null;
+  const supervisedBadges = server
+    ? `<span class="initiative-status initiative-status-${escAttr(server.status)}">${escHtml(server.status)}</span>
+       ${server.currentStage ? `<span class="initiative-lane-stage">${escHtml(server.currentStage.name)}</span>` : ''}
+       ${(server.openGates || []).length ? `<span class="initiative-gate-count">${(server.openGates || []).length}</span>` : ''}`
+    : '';
   return `<section class="initiative-lane${collapsed ? ' is-collapsed' : ''}" data-initiative-id="${escAttr(initiativeId)}" ondragover="window.handleAgentInitiativeDragOver(event, '${escAttr(initiativeId)}')" ondragleave="window.handleAgentInitiativeDragLeave(event)" ondrop="window.handleAgentInitiativeDrop(event, '${escAttr(initiativeId)}')">
     <div class="initiative-lane-header">
       <button class="initiative-lane-toggle" onclick="window.toggleInitiativeCollapse('${escAttr(initiativeId)}');event.stopPropagation()" title="${collapsed ? 'Expand lane' : 'Collapse lane'}">
         <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="9 18 15 12 9 6"/></svg>
       </button>
       <div class="initiative-lane-heading">
-        <div class="initiative-lane-title">${escHtml(initiativeName)}</div>
-        <div class="initiative-lane-meta">${agents.length} agent${agents.length === 1 ? '' : 's'}</div>
+        <div class="initiative-lane-title">${escHtml(initiativeName)}${supervisedBadges}</div>
+        <div class="initiative-lane-meta">${agents.length} agent${agents.length === 1 ? '' : 's'}${server ? ' · supervised' : ''}</div>
       </div>
       <div class="initiative-lane-actions">
-      ${reorderHandle}
-      ${initiativeId ? `<button class="btn btn-ghost btn-sm btn-icon initiative-delete-btn" onclick="window.deleteAgentInitiative('${escAttr(initiativeId)}')" title="Delete initiative">
+      ${server ? `<button class="btn btn-ghost btn-sm" onclick="window.openInitiativeFromLane('${escAttr(initiativeId)}');event.stopPropagation()" title="Open in the Initiatives tab">Open</button>` : ''}
+      ${server ? '' : reorderHandle}
+      ${initiativeId && !server ? `<button class="btn btn-ghost btn-sm btn-icon initiative-delete-btn" onclick="window.deleteAgentInitiative('${escAttr(initiativeId)}')" title="Delete initiative">
         <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 6h18"/><path d="M8 6V4h8v2"/><path d="M19 6l-1 14H6L5 6"/><path d="M10 11v6"/><path d="M14 11v6"/></svg>
       </button>` : ''}
       </div>
@@ -169,6 +195,13 @@ function renderInitiativeLane(initiative, agents, collapsed = false) {
       ${agents.length ? agents.map(agent => renderAgentLane(agent, initiativeId ? initiativeName : '')).join('') : '<div class="initiative-empty">No agents in this initiative.</div>'}
     </div>
   </section>`;
+}
+
+// Jump from a supervised lane to that initiative in the Initiatives tab.
+export function openInitiativeFromLane(initiativeId) {
+  const link = document.querySelector('.nav-item[data-tab="initiatives"]');
+  if (link) link.click();
+  setTimeout(() => window.selectInitiative?.(initiativeId), 60);
 }
 
 // ─── Session History Dropdown ─────────────────────────────────────────────────
@@ -444,6 +477,7 @@ export async function loadAgents() {
 
   try {
     const { agents } = await api('GET', '/api/agents');
+    const serverInitiatives = await fetchServerInitiatives();
     const hiddenNonInteractiveCount = agents.filter(agent => !agent.multiplexer).length;
     updateNonInteractiveToggle(hiddenNonInteractiveCount);
     const visibleAgents = showNonInteractiveAgents ? agents : agents.filter(agent => agent.multiplexer);
@@ -469,19 +503,36 @@ export async function loadAgents() {
     window._visibleAgents = visibleAgents;
     for (const a of agents) window._agentMux[a.pid] = a.multiplexer || null;
 
+    // Server-backed initiatives own their lane; an agent launched by the
+    // supervisor lands in it automatically, without anyone dragging it there.
+    const serverLanes = serverInitiatives.map(initiative => ({
+      id: initiative.id,
+      name: initiative.name,
+      server: initiative,
+      agents: visibleAgents.filter(agent =>
+        tmuxSessionOf(agent) === initiative.run?.sessionName
+        || initiativeState.assignments[agentInitiativeKey(agent)] === initiative.id),
+    }));
+
+    const claimed = new Set(serverLanes.flatMap(lane => lane.agents.map(agentInitiativeKey)));
+
     const lanes = [
       {
         id: '',
         name: 'Unassigned',
-        agents: visibleAgents.filter(agent => !initiativeState.assignments[agentInitiativeKey(agent)]),
+        agents: visibleAgents.filter(agent =>
+          !claimed.has(agentInitiativeKey(agent)) && !initiativeState.assignments[agentInitiativeKey(agent)]),
       },
+      ...serverLanes,
       ...initiativeState.initiatives.map(initiative => ({
         ...initiative,
-        agents: visibleAgents.filter(agent => initiativeState.assignments[agentInitiativeKey(agent)] === initiative.id),
+        agents: visibleAgents.filter(agent =>
+          !claimed.has(agentInitiativeKey(agent))
+          && initiativeState.assignments[agentInitiativeKey(agent)] === initiative.id),
       })),
     ];
 
-    if (!visibleAgents.length && !initiativeState.initiatives.length) {
+    if (!visibleAgents.length && !initiativeState.initiatives.length && !serverInitiatives.length) {
       list.innerHTML = `<div class="empty-state" style="grid-column:1/-1">
         <svg width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M12 2a4 4 0 0 1 4 4v1h1a2 2 0 0 1 2 2v2a2 2 0 0 1-2 2h-1v1a4 4 0 0 1-8 0v-1H7a2 2 0 0 1-2-2V9a2 2 0 0 1 2-2h1V6a4 4 0 0 1 4-4z"/></svg>
         <p>${agents.length ? 'Only non-interactive sessions are running' : 'No AI agent sessions running'}</p>
@@ -491,7 +542,7 @@ export async function loadAgents() {
     }
 
     list.innerHTML = lanes.map(lane => renderInitiativeLane(
-      lane.id ? { id: lane.id, name: lane.name } : null,
+      lane.id ? { id: lane.id, name: lane.name, server: lane.server || null } : null,
       lane.agents,
       isInitiativeCollapsed(initiativeState, lane.id, lane.agents.length),
     )).join('');
