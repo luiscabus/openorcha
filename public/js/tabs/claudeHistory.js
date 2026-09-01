@@ -20,14 +20,14 @@ export async function loadClaudeHistory() {
       const params = new URLSearchParams();
       if (project) params.set('project', project);
       if (search) params.set('search', search);
-      params.set('limit', '100');
+      params.set('limit', '200');
       const data = await api('GET', `/api/claude/history/activity?${params}`);
       renderActivityFeed(container, data.entries || []);
     } else {
       const params = new URLSearchParams();
       if (project) params.set('project', project);
       if (search) params.set('search', search);
-      params.set('limit', '50');
+      params.set('limit', '200');
       const data = await api('GET', `/api/claude/history/sessions?${params}`);
       renderSessionList(container, data.sessions || []);
     }
