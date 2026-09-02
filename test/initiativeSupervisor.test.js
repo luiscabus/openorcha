@@ -354,3 +354,28 @@ test('stopping reaches sessions behind workers the supervisor already retired', 
     }
   }
 });
+
+// ─── What the decider is shown ───────────────────────────────────────────────
+
+test('tool-only turns are rendered as work, not as blank lines', () => {
+  // The shape that broke it: an agent reading code produces turns with no text.
+  const messages = [
+    { role: 'assistant', text: 'Now the real paths and code:', tools: [], timestamp: '2026-09-02T00:59:00Z' },
+    { role: 'assistant', text: '', tools: [{ name: 'Grep' }, { name: 'Read' }], timestamp: '2026-09-02T00:59:30Z' },
+    { role: 'assistant', text: '', tools: [], timestamp: '2026-09-02T01:00:00Z' },
+  ];
+
+  const rendered = messages
+    .map(m => {
+      const text = String(m.text || '').trim();
+      const tools = Array.isArray(m.tools) ? m.tools : [];
+      if (!text && !tools.length) return null;
+      const toolLine = tools.length ? `[used ${tools.map(t => t.name).join(', ')}]` : '';
+      return [text, toolLine].filter(Boolean).join(' ').trim();
+    })
+    .filter(Boolean);
+
+  assert.equal(rendered.length, 2, 'the empty turn is dropped, the tool turn is kept');
+  assert.match(rendered[1], /used Grep, Read/);
+  assert.ok(!rendered.some(r => r === ''), 'no blank lines reach the decider');
+});
