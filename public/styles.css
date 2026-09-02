@@ -4075,3 +4075,28 @@ body {
 .trash-name { font-weight: 600; }
 .trash-meta { color: var(--text3); font-size: 11px; }
 .trash-row .btn { margin-left: auto; }
+
+/* Orchestrator */
+
+.initiative-worker-boss {
+  border-bottom: 1px solid var(--border);
+  padding-bottom: 7px;
+  margin-bottom: 5px;
+}
+
+.initiative-worker-boss .initiative-worker-name { color: var(--accent); }
+
+.initiative-worker-role {
+  font-size: 10px;
+  color: var(--text3);
+  text-transform: uppercase;
+  letter-spacing: .04em;
+}
+
+.initiative-workers-head .btn { margin-left: auto; text-transform: none; letter-spacing: 0; font-weight: 500; }
+
+.initiative-pending {
+  font-size: 11px;
+  color: var(--warning);
+  margin-top: 5px;
+}

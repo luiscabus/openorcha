@@ -85,6 +85,15 @@ dressed up as automatic. At the end of the run the supervisor measures rather
 than asks: unmet checkable criteria send the agent back to close the gap, and
 only the human ones become a single sign-off.
 
+### The first launch in a new directory
+
+Claude Code asks *"Is this a project you created or one you trust?"* the first
+time it runs in a directory, and the highlighted answer is **No, exit**. That
+matters here because parallel workers each get a fresh worktree, which is a
+fresh directory: anything typed at that prompt shuts the agent down. The
+supervisor recognises it, never briefs into it, and parks it as a gate for you —
+it will not trust a directory on your behalf, and never on a timeout.
+
 ### If no agents show up
 
 The AI Agents tab and the supervisor share one detection path: `ps`, matched
@@ -134,6 +143,22 @@ setup when the work has a definition of done and will outlive your attention —
 it needs stages, gates, and someone to keep it moving while you are away. A
 question, a broken container, an env fix, or a five-minute change does not:
 just launch an agent from the AI Agents tab and talk to it.
+
+### The orchestrator
+
+A run can have a standing agent of its own: it holds the goal, the plan and the
+history across stages and workers, decides what happens next when the rules do
+not cover it, and is who you talk to when you message the initiative.
+
+It has **no hands**. It cannot launch, kill or message anything — it answers,
+and the supervisor carries the answer out. That keeps one actuator in the
+system, and means the orchestrator needs no API access, no shell and no extra
+permissions. When a run has one, the supervisor asks it for judgement calls
+instead of making a one-shot `claude -p` call, so you are not paying for both.
+
+It is off by default — one more standing session per initiative, and most runs
+do not need someone to talk to. Turn it on when creating an initiative, or with
+*Add orchestrator* on an existing one.
 
 ### Working in parallel
 

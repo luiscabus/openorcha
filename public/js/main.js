@@ -92,6 +92,7 @@ import {
   checkAcceptance,
   toggleCriterion,
   restoreInitiative,
+  toggleOrchestrator,
 } from './tabs/initiatives.js';
 import { loadClaudeSettings, loadClaudeProjectSettings, saveClaudeSettings } from './tabs/claudeSettings.js';
 import {
@@ -305,6 +306,7 @@ window.frameInitiative = frameInitiative;
 window.checkAcceptance = checkAcceptance;
 window.toggleCriterion = toggleCriterion;
 window.restoreInitiative = restoreInitiative;
+window.toggleOrchestrator = toggleOrchestrator;
 
 // Claude Code: History
 window.loadClaudeHistory = loadClaudeHistory;

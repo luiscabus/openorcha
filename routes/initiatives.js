@@ -277,8 +277,11 @@ router.post('/:id/message', (req, res) => {
 
   try {
     const snapshot = supervisor.takeSnapshot();
-    const workerId = req.body?.workerId || null;
-    const agent = supervisor.findAgent(initiative, snapshot, { workerId });
+    // Default addressee is the orchestrator: it owns the run and knows what
+    // has happened. Name a workerId to talk to one worker directly.
+    const workerId = req.body?.workerId || store.orchestrator(initiative)?.id || null;
+    const agent = supervisor.findAgent(initiative, snapshot, { workerId })
+      || supervisor.findAgent(initiative, snapshot);
 
     if (!agent) {
       const queued = store.queueMessage(initiative, message);
@@ -326,6 +329,32 @@ router.post('/:id/advance', (req, res) => {
   if (!initiative) return res.status(404).json({ error: 'Initiative not found' });
   const next = store.advanceStage(initiative, 'advanced by you');
   res.json({ initiative: withLive(store.save(initiative)), next: next?.name || null });
+});
+
+// ─── Orchestrator ────────────────────────────────────────────────────────────
+
+router.post('/:id/orchestrator', (req, res) => {
+  const initiative = store.get(req.params.id);
+  if (!initiative) return res.status(404).json({ error: 'Initiative not found' });
+
+  const enabled = req.body?.enabled !== false;
+  initiative.useOrchestrator = enabled;
+
+  if (!enabled) {
+    const existing = store.orchestrator(initiative);
+    if (existing) {
+      supervisor.stopWorkers({ ...initiative, workers: [existing] }, { kill: true });
+      const w = initiative.workers.find(x => x.id === existing.id);
+      if (w) { w.status = 'gone'; w.finishedAt = new Date().toISOString(); }
+    }
+    store.addEvent(initiative, 'orchestrator-off', 'Orchestrator turned off');
+  } else {
+    store.addEvent(initiative, 'orchestrator-on', 'Orchestrator turned on — it starts on the next tick');
+  }
+
+  const saved = store.save(initiative);
+  if (enabled && saved.status === 'running') supervisor.tick().catch(() => {});
+  res.json({ initiative: withLive(saved) });
 });
 
 // ─── Parallel work ───────────────────────────────────────────────────────────

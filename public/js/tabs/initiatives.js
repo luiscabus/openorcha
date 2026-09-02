@@ -167,9 +167,10 @@ function renderDetail() {
     ${renderStats(i)}
 
     <form class="initiative-say" onsubmit="sendInitiativeMessage(event, '${escAttr(i.id)}')">
-      <input type="text" id="initiative-say-input" placeholder="Say something to this agent…" />
+      <input type="text" id="initiative-say-input" placeholder="${escAttr(sayPlaceholder(i))}" />
       <button type="submit" class="btn btn-ghost btn-sm">Send</button>
     </form>
+    ${(i.pendingMessages || []).length ? `<div class="initiative-pending">${(i.pendingMessages || []).length} message(s) waiting for the next agent</div>` : ''}
 
     <h4 class="initiative-section-title">Activity</h4>
     <div class="initiative-timeline">
@@ -250,10 +251,27 @@ function describeCheck(check) {
 }
 
 function renderWorkers(i) {
-  const workers = (i.workers || []).filter(w => w.status !== 'gone' && w.status !== 'done');
-  if (!workers.length) return '';
+  const all = (i.workers || []).filter(w => w.status !== 'gone' && w.status !== 'done');
+  const boss = all.find(w => w.role === 'orchestrator');
+  const workers = all.filter(w => w.role !== 'orchestrator');
+
+  const bossRow = boss
+    ? `<div class="initiative-worker initiative-worker-boss">
+        <span class="initiative-worker-dot initiative-worker-${escAttr(boss.live ? boss.live.status : 'starting')}"></span>
+        <span class="initiative-worker-name">${escHtml(boss.name)}</span>
+        <span class="initiative-worker-role">owns this run · answers you</span>
+        <span class="initiative-worker-status${boss.live ? '' : ' initiative-worker-stale'}">${escHtml(boss.live ? boss.live.status : 'no agent')}</span>
+      </div>`
+    : '';
+
+  if (!all.length) return '';
   return `<div class="initiative-workers">
-    <div class="initiative-workers-head">Workers <span>${workers.length} of ${i.maxParallel} slots</span></div>
+    <div class="initiative-workers-head">
+      ${boss ? 'Orchestrator & workers' : 'Workers'}
+      <span>${workers.length} of ${i.maxParallel} slots</span>
+      <button class="btn btn-ghost btn-sm" onclick="toggleOrchestrator('${escAttr(i.id)}', ${boss ? 'false' : 'true'})">${boss ? 'Turn off orchestrator' : 'Add orchestrator'}</button>
+    </div>
+    ${bossRow}
     ${workers.map(w => `<div class="initiative-worker">
       <span class="initiative-worker-dot initiative-worker-${escAttr(w.live ? w.live.status : 'starting')}"></span>
       <span class="initiative-worker-name">${escHtml(w.name)}</span>
@@ -293,6 +311,13 @@ function renderStages(i) {
     }).join('')}
     ${i.integration?.branches?.length ? `<div class="initiative-integration">Parallel branches ready to merge: ${i.integration.branches.map(b => `<code>${escHtml(b)}</code>`).join(' ')}</div>` : ''}
   </div>`;
+}
+
+function sayPlaceholder(i) {
+  const boss = (i.workers || []).find(w => w.role === 'orchestrator' && w.status !== 'gone');
+  if (boss) return 'Ask the orchestrator…';
+  if (i.liveWorkers) return 'Say something to the working agent…';
+  return 'Leave a message for the next agent…';
 }
 
 function renderStats(i) {
@@ -438,7 +463,8 @@ export async function sendInitiativeMessage(event, id) {
   if (!message) return;
   input.value = '';
   try {
-    await api('POST', `/api/initiatives/${id}/message`, { message });
+    const data = await api('POST', `/api/initiatives/${id}/message`, { message });
+    toast(data.delivered ? `Sent to ${data.worker || 'the agent'}` : data.note, data.delivered ? 'success' : 'error');
     loadInitiatives();
   } catch (err) { toast(err.message, 'error'); }
 }
@@ -511,6 +537,19 @@ function confirmProposal(proposal) {
   return window.confirm(`${proposal.summary}\n\n${lines.join('\n')}${questions}\n\nUse this as the definition of done?`);
 }
 
+export async function toggleOrchestrator(id, enabled) {
+  if (enabled && !window.confirm(
+    'Start an orchestrator for this initiative?\n\n'
+    + 'It is one more standing agent: it owns the run, decides what happens next,\n'
+    + 'and is who you talk to. It never touches files or runs commands.',
+  )) return;
+  try {
+    await api('POST', `/api/initiatives/${id}/orchestrator`, { enabled });
+    toast(enabled ? 'Orchestrator starting…' : 'Orchestrator stopped');
+    loadInitiatives();
+  } catch (err) { toast(err.message, 'error'); }
+}
+
 // ─── Create ──────────────────────────────────────────────────────────────────
 
 export async function openNewInitiativeModal() {
@@ -556,6 +595,7 @@ export async function createInitiative(event) {
   const body = {
     template: selectedTemplate,
     maxParallel: parseInt(document.getElementById('new-initiative-parallel').value, 10) || 3,
+    useOrchestrator: document.getElementById('new-initiative-orchestrator').checked,
     name: document.getElementById('new-initiative-name').value.trim(),
     goal: document.getElementById('new-initiative-goal').value.trim(),
     cwd: document.getElementById('new-initiative-cwd').value.trim(),

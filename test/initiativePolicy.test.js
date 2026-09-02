@@ -6,6 +6,7 @@ const {
   classifyPrompt,
   classifyStop,
   extractCommand,
+  isTrustPrompt,
   decide,
 } = require('../lib/initiativePolicy');
 
@@ -225,4 +226,45 @@ test('a stage that has a check keeps nudging on offers, since the check can sett
   const checked = { name: 'Implement', check: { type: 'git-dirty' }, maxNudges: 6 };
   const d = decide({ status: 'idle', stage: checked, stopText: 'Want me to write the tests now?', checkPassed: false, nudges: 2 });
   assert.equal(d.action, 'nudge');
+});
+
+// ─── The workspace trust prompt ──────────────────────────────────────────────
+
+const TRUST_PANE = {
+  context: [
+    'Accessing workspace:',
+    '/Users/soci/soci/worktrees/SO-1/thing',
+    'Quick safety check: Is this a project you created or one you trust?',
+    "Claude Code'll be able to read, edit, and execute files here.",
+  ].join('\n'),
+  question: 'Quick safety check: Is this a project you created or one you trust? (Like your',
+  options: [{ label: 'No, exit', key: null }, { label: 'Yes, I trust this folder', key: null }],
+  selectedIdx: 0,
+  isNumbered: false,
+};
+
+test('the trust prompt is recognised and never answered automatically', () => {
+  assert.equal(isTrustPrompt(TRUST_PANE), true);
+  for (const profile of ['conservative', 'standard', 'ship']) {
+    const verdict = classifyPrompt(TRUST_PANE, profile);
+    assert.equal(verdict.action, 'gate', `must not auto-answer under ${profile}`);
+    assert.equal(verdict.kind, 'trust');
+  }
+});
+
+test('the trust gate reaches the operator with both options', () => {
+  const d = decide({ status: 'waiting_input', prompt: TRUST_PANE, stage: { name: 'Plan' }, profile: 'ship' });
+  assert.equal(d.action, 'gate');
+  assert.equal(d.kind, 'trust');
+  assert.deepEqual(d.options, ['No, exit', 'Yes, I trust this folder']);
+  assert.equal(d.defaultOption, null, 'trusting a directory must never happen on a timeout');
+});
+
+test('an ordinary permission prompt is not mistaken for a trust prompt', () => {
+  const ordinary = {
+    context: 'Bash(npm test)', question: 'Do you want to proceed?',
+    options: [{ label: 'Yes', key: '1' }, { label: 'No', key: '2' }], selectedIdx: 0, isNumbered: true,
+  };
+  assert.equal(isTrustPrompt(ordinary), false);
+  assert.equal(classifyPrompt(ordinary, 'ship').action, 'approve');
 });

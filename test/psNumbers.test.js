@@ -67,3 +67,27 @@ test('a real agent line is recognised as an agent in a comma locale', () => {
   const bin = path.basename(parsed.args.split(/\s+/)[0]);
   assert.ok(AGENT_DEFS.find(d => d.match(bin, parsed.args)), 'and be matched as Claude Code');
 });
+
+// The trust prompt lives in the same pane-parsing path, and missing it kills
+// agents: its highlighted option is "No, exit".
+test('the workspace trust prompt parses out of a real pane capture', () => {
+  const { parsePermissionPrompt } = require('../lib/multiplexer');
+  const pane = [
+    '────────────────────────────────────────────',
+    ' Accessing workspace:',
+    ' /Users/soci/soci/worktrees/SO-1/thing',
+    " Quick safety check: Is this a project you created or one you trust? (Like your",
+    ' own code, a well-known open source project, or work from your team).',
+    " Claude Code'll be able to read, edit, and execute files here.",
+    ' Security guide',
+    ' ❯ No, exit',
+    '   Yes, I trust this folder',
+    ' Enter to confirm · Esc to cancel',
+  ].join('\n');
+
+  const prompt = parsePermissionPrompt(pane);
+  assert.ok(prompt, 'the prompt must be detected at all');
+  assert.match(prompt.question, /Quick safety check/, 'the question, not an option label');
+  assert.deepEqual(prompt.options.map(o => o.label), ['No, exit', 'Yes, I trust this folder']);
+  assert.equal(prompt.options[prompt.selectedIdx].label, 'No, exit', 'which is what Enter would have picked');
+});
