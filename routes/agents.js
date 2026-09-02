@@ -93,7 +93,7 @@ function captureTmuxSnapshot(target) {
 router.get('/debug', (req, res) => {
   try {
     const keywords = Object.values(AGENT_COMMANDS).join('|');
-    const out = execSync(`ps -eo pid,tty,args 2>/dev/null | grep -iE '${keywords}' | grep -v grep`, { encoding: 'utf8' });
+    const out = execSync(`LC_ALL=C ps -eo pid,tty,args 2>/dev/null | grep -iE '${keywords}' | grep -v grep`, { encoding: 'utf8' });
     res.json({ lines: out.trim().split('\n') });
   } catch {
     res.json({ lines: [] });
@@ -102,7 +102,7 @@ router.get('/debug', (req, res) => {
 
 router.get('/', (req, res) => {
   try {
-    const out = execSync('ps -eo pid,pcpu,pmem,tty,etime,args 2>/dev/null', { encoding: 'utf8' });
+    const out = execSync('LC_ALL=C ps -eo pid,pcpu,pmem,tty,etime,args 2>/dev/null', { encoding: 'utf8' });
     const procs = buildProcTable();
     const matched = [];
 
@@ -187,7 +187,7 @@ router.get('/', (req, res) => {
 router.get('/:pid/messages', (req, res) => {
   try {
     const { pid } = req.params;
-    const psOut = execSync(`ps -p ${pid} -o args= 2>/dev/null`, { encoding: 'utf8' }).trim();
+    const psOut = execSync(`LC_ALL=C ps -p ${pid} -o args= 2>/dev/null`, { encoding: 'utf8' }).trim();
     if (!psOut) return res.status(404).json({ error: 'Process not found' });
 
     const bin = path.basename(psOut.split(/\s+/)[0]);
@@ -228,7 +228,7 @@ router.get('/:pid/messages', (req, res) => {
     // Get process info for session metadata
     let cpu = null, mem = null, etime = null;
     try {
-      const info = execSync(`ps -p ${pid} -o pcpu=,pmem=,etime= 2>/dev/null`, { encoding: 'utf8' }).trim();
+      const info = execSync(`LC_ALL=C ps -p ${pid} -o pcpu=,pmem=,etime= 2>/dev/null`, { encoding: 'utf8' }).trim();
       const stats = parsePsStats(info);
       if (stats) ({ cpu, mem, etime } = stats);
     } catch {}
@@ -351,7 +351,7 @@ router.get('/tmux-terminal/:session/snapshot', (req, res) => {
 router.get('/:pid/context', (req, res) => {
   try {
     const { pid } = req.params;
-    const psOut = execSync(`ps -p ${pid} -o args= 2>/dev/null`, { encoding: 'utf8' }).trim();
+    const psOut = execSync(`LC_ALL=C ps -p ${pid} -o args= 2>/dev/null`, { encoding: 'utf8' }).trim();
     if (!psOut) return res.status(404).json({ error: 'Process not found' });
 
     const bin = path.basename(psOut.split(/\s+/)[0]);
@@ -443,7 +443,7 @@ router.post('/:pid/mcp-toggle', (req, res) => {
 router.get('/:pid/git', (req, res) => {
   try {
     const { pid } = req.params;
-    const psOut = execSync(`ps -p ${pid} -o args= 2>/dev/null`, { encoding: 'utf8' }).trim();
+    const psOut = execSync(`LC_ALL=C ps -p ${pid} -o args= 2>/dev/null`, { encoding: 'utf8' }).trim();
     if (!psOut) return res.status(404).json({ error: 'Process not found' });
 
     const cwdMap = getCwdMap([pid]);
@@ -557,7 +557,7 @@ router.get('/:pid/wait', async (req, res) => {
   const checkIdle = () => {
     try {
       // Verify process still exists
-      const psOut = execSync(`ps -p ${pid} -o pcpu= 2>/dev/null`, { encoding: 'utf8' }).trim();
+      const psOut = execSync(`LC_ALL=C ps -p ${pid} -o pcpu= 2>/dev/null`, { encoding: 'utf8' }).trim();
       if (!psOut) return { done: true, reason: 'process_exited' };
 
       const cpu = psFloat(psOut);
@@ -597,7 +597,7 @@ router.get('/:pid/wait', async (req, res) => {
     if (result.done) {
       // Fetch latest messages to return
       try {
-        const psOut = execSync(`ps -p ${pid} -o args= 2>/dev/null`, { encoding: 'utf8' }).trim();
+        const psOut = execSync(`LC_ALL=C ps -p ${pid} -o args= 2>/dev/null`, { encoding: 'utf8' }).trim();
         const bin = path.basename(psOut.split(/\s+/)[0]);
         const def = AGENT_DEFS.find(d => d.match(bin, psOut));
         const cwdMap = getCwdMap([pid]);
@@ -635,7 +635,7 @@ router.post('/:pid/relaunch', (req, res) => {
     if (!pid || pid <= 1) return res.status(400).json({ error: 'Invalid PID' });
 
     // Gather info before killing
-    const psOut = execSync(`ps -p ${pid} -o args= 2>/dev/null`, { encoding: 'utf8' }).trim();
+    const psOut = execSync(`LC_ALL=C ps -p ${pid} -o args= 2>/dev/null`, { encoding: 'utf8' }).trim();
     if (!psOut) return res.status(404).json({ error: 'Process not found' });
 
     const bin = path.basename(psOut.split(/\s+/)[0]);

@@ -52,7 +52,7 @@ function findActiveTmuxSessions(sessionNames) {
           const pidsToCheck = [trimmedPanePid, ...children.split('\n')].filter(Boolean);
           for (const pid of pidsToCheck) {
             try {
-              const args = execSync(`ps -p ${pid} -o args= 2>/dev/null`, { encoding: 'utf8' }).trim().toLowerCase();
+              const args = execSync(`LC_ALL=C ps -p ${pid} -o args= 2>/dev/null`, { encoding: 'utf8' }).trim().toLowerCase();
               if (agentKeywords.some(k => args.includes(k))) {
                 activeSessions.add(name);
                 break;
@@ -102,7 +102,7 @@ router.get('/terminal-sessions', (req, res) => {
       let command = null;
       if (fg) {
         try {
-          command = execSync(`ps -p ${fg.pid} -o args= 2>/dev/null`, { encoding: 'utf8' }).trim();
+          command = execSync(`LC_ALL=C ps -p ${fg.pid} -o args= 2>/dev/null`, { encoding: 'utf8' }).trim();
         } catch {}
       }
 
@@ -174,7 +174,7 @@ router.post('/focus', (req, res) => {
 // Active outgoing SSH client processes
 router.get('/ssh', (req, res) => {
   try {
-    const output = execSync('ps aux 2>/dev/null', { encoding: 'utf8' });
+    const output = execSync('LC_ALL=C ps aux 2>/dev/null', { encoding: 'utf8' });
     const processes = output.split('\n')
       .filter(l => /\bssh\b/.test(l) && !l.includes('sshd') && !l.includes('grep') && !l.includes('node '))
       .map(line => {
