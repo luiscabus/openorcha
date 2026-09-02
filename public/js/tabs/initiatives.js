@@ -1,9 +1,13 @@
 import { api, toast, escHtml, escAttr } from '../utils.js';
+import { simpleMarkdown } from './agentShared.js';
 
 let initiatives = [];
 let templates = [];
 let selectedTemplate = 'ticket-to-pr';
 let pendingCriteria = null;
+let outcomeCache = {};
+let openTranscript = null;   // { workerId, messages, worker, total }
+let detailView = 'work';     // 'work' | 'plan' | 'activity'
 let selectedId = null;
 let refreshTimer = null;
 
@@ -28,6 +32,8 @@ export async function loadInitiatives() {
     if (!initiatives.some(i => i.id === selectedId)) {
       selectedId = initiatives.find(i => i.status === 'blocked')?.id || initiatives[0]?.id || null;
     }
+    // A refresh must not close a conversation you are reading.
+    if (Date.now() - (outcomeCache.__at || 0) > 20000) { outcomeCache = { __at: Date.now() }; }
     renderList(list);
     renderDetail();
     renderNeedsYou();
@@ -161,9 +167,19 @@ function renderDetail() {
     ${i.goal ? `<p class="initiative-goal">${escHtml(i.goal)}</p>` : ''}
 
     ${renderGates(i)}
-    ${renderAcceptance(i)}
-    ${renderWorkers(i)}
-    ${renderStages(i)}
+
+    <div class="initiative-view-switch">
+      <button class="btn btn-sm btn-toggle${detailView === 'work' ? ' active' : ''}" onclick="setInitiativeView('work')">What it has done</button>
+      <button class="btn btn-sm btn-toggle${detailView === 'plan' ? ' active' : ''}" onclick="setInitiativeView('plan')">Plan &amp; definition of done</button>
+      <button class="btn btn-sm btn-toggle${detailView === 'activity' ? ' active' : ''}" onclick="setInitiativeView('activity')">Supervisor activity</button>
+    </div>
+
+    ${detailView === 'plan' ? `${renderAcceptance(i)}${renderStages(i)}` : ''}
+    ${detailView === 'activity' ? `<div class="initiative-timeline">
+        ${[...(i.events || [])].reverse().slice(0, 80).map(renderEvent).join('') || '<div class="drawer-empty">Nothing yet.</div>'}
+      </div>` : ''}
+    ${detailView === 'work' ? `<div id="initiative-outcome">${renderOutcome(i)}</div>` : ''}
+
     ${renderStats(i)}
 
     <form class="initiative-say" onsubmit="sendInitiativeMessage(event, '${escAttr(i.id)}')">
@@ -172,11 +188,166 @@ function renderDetail() {
     </form>
     ${(i.pendingMessages || []).length ? `<div class="initiative-pending">${(i.pendingMessages || []).length} message(s) waiting for the next agent</div>` : ''}
 
-    <h4 class="initiative-section-title">Activity</h4>
-    <div class="initiative-timeline">
-      ${[...(i.events || [])].reverse().slice(0, 60).map(renderEvent).join('') || '<div class="drawer-empty">Nothing yet.</div>'}
-    </div>
   `;
+
+  if (detailView === 'work' && !outcomeCache[i.id]) loadOutcome(i.id);
+}
+
+export function setInitiativeView(view) {
+  detailView = view;
+  renderDetail();
+}
+
+async function loadOutcome(id) {
+  try {
+    const { outcome } = await api('GET', `/api/initiatives/${id}/outcome`);
+    outcomeCache[id] = outcome;
+    if (selectedId === id && detailView === 'work') {
+      const el = document.getElementById('initiative-outcome');
+      if (el) el.innerHTML = renderOutcome(initiatives.find(x => x.id === id));
+    }
+  } catch (err) {
+    const el = document.getElementById('initiative-outcome');
+    if (el) el.innerHTML = `<div class="drawer-empty" style="color:var(--danger)">${escHtml(err.message)}</div>`;
+  }
+}
+
+function renderOutcome(i) {
+  const o = outcomeCache[i.id];
+  if (!o) return '<div class="drawer-loading">Reading what the run has produced…</div>';
+
+  const commits = o.repos.flatMap(r => r.work.commits.map(c => ({ ...c, tree: r.label })));
+  const files = o.repos.flatMap(r => r.work.committed.map(f => ({ ...f, tree: r.label })));
+  const dirty = o.repos.flatMap(r => r.work.uncommitted.map(f => ({ ...f, tree: r.label })));
+
+  return `
+    <div class="outcome-tiles">
+      <div class="outcome-tile"><strong>${o.stagesDone.length}</strong><span>stages done</span></div>
+      <div class="outcome-tile"><strong>${o.criteriaMet}/${o.criteriaTotal}</strong><span>criteria met</span></div>
+      <div class="outcome-tile"><strong>${o.totals.commits}</strong><span>commits</span></div>
+      <div class="outcome-tile"><strong>${o.totals.files}</strong><span>files changed</span></div>
+      <div class="outcome-tile"><strong>${o.workers.reduce((n, w) => n + w.turns, 0)}</strong><span>agent turns</span></div>
+    </div>
+
+    ${o.prs.length ? `<div class="outcome-block">
+      <div class="outcome-head">Pull requests</div>
+      ${o.prs.map(pr => `<div class="outcome-row"><a href="${escAttr(pr.url)}" target="_blank" rel="noreferrer">#${pr.number}${pr.isDraft ? ' (draft)' : ''}</a> <span>${escHtml(pr.title || '')}</span></div>`).join('')}
+    </div>` : ''}
+
+    ${o.deliverables.length ? `<div class="outcome-block">
+      <div class="outcome-head">Deliverables the definition of done asks for</div>
+      ${o.deliverables.map(d => `<div class="outcome-row outcome-${d.exists ? 'present' : 'missing'}">
+        <code>${escHtml(d.path)}</code>
+        <span>${d.exists ? `${d.bytes} bytes` : 'not written yet'}</span>
+      </div>`).join('')}
+    </div>` : ''}
+
+    ${commits.length ? `<div class="outcome-block">
+      <div class="outcome-head">Commits from this run</div>
+      ${commits.slice(0, 12).map(c => `<div class="outcome-row"><code>${escHtml(c.sha)}</code> <span>${escHtml(c.subject)}</span> <em>${escHtml(c.when)}</em></div>`).join('')}
+      ${commits.length > 12 ? `<div class="outcome-more">…and ${commits.length - 12} more</div>` : ''}
+    </div>` : ''}
+
+    ${files.length ? `<div class="outcome-block">
+      <div class="outcome-head">Files it changed</div>
+      ${files.slice(0, 14).map(f => `<div class="outcome-row"><code>${escHtml(f.file)}</code> <span class="outcome-diffstat">+${f.added} −${f.removed}</span></div>`).join('')}
+      ${files.length > 14 ? `<div class="outcome-more">…and ${files.length - 14} more</div>` : ''}
+    </div>` : ''}
+
+    ${dirty.length ? `<div class="outcome-block">
+      <div class="outcome-head">Uncommitted, still in the working tree</div>
+      ${dirty.slice(0, 10).map(f => `<div class="outcome-row"><code>${escHtml(f.file)}</code> <span>${escHtml(f.state)}</span></div>`).join('')}
+    </div>` : ''}
+
+    <div class="outcome-block">
+      <div class="outcome-head">
+        Agents &amp; conversations
+        <button class="btn btn-ghost btn-sm" onclick="toggleOrchestrator('${escAttr(i.id)}', ${o.workers.some(w => w.role === 'orchestrator' && w.status !== 'gone') ? 'false' : 'true'})">${o.workers.some(w => w.role === 'orchestrator' && w.status !== 'gone') ? 'Turn off orchestrator' : 'Add orchestrator'}</button>
+      </div>
+      ${o.workers.length ? o.workers.map(w => `<div class="outcome-agent">
+        <div class="outcome-agent-head">
+          <span class="outcome-agent-name">${escHtml(w.name)}</span>
+          ${w.role === 'orchestrator' ? '<span class="initiative-worker-role">orchestrator</span>' : ''}
+          ${w.branch ? `<span class="initiative-worker-branch">${escHtml(w.branch)}</span>` : ''}
+          <span class="outcome-agent-meta">${w.turns} turns · ${w.toolCalls} tool calls · ${escHtml(liveLabel(i, w))}</span>
+          ${w.hasTranscript
+            ? `<button class="btn btn-ghost btn-sm" onclick="toggleTranscript('${escAttr(i.id)}','${escAttr(w.workerId)}')">${openTranscript?.workerId === w.workerId ? 'Hide' : 'Read'}</button>`
+            : '<span class="outcome-agent-meta">no transcript</span>'}
+        </div>
+        ${w.lastSaid ? `<div class="outcome-agent-last">${simpleMarkdown(w.lastSaid)}</div>` : ''}
+        ${openTranscript?.workerId === w.workerId ? renderTranscript() : ''}
+      </div>`).join('') : '<div class="drawer-empty">No agents have run yet.</div>'}
+    </div>`;
+}
+
+function liveLabel(i, w) {
+  const worker = (i.workers || []).find(x => x.id === w.workerId);
+  if (worker?.live) return worker.live.status;
+  return w.status === 'working' ? 'no agent' : w.status;
+}
+
+function renderTranscript() {
+  const t = openTranscript;
+  if (!t) return '';
+  if (!t.messages) return '<div class="drawer-loading">Loading the conversation…</div>';
+
+  // Consecutive turns that only ran tools are folded together: six separate
+  // "agent · Bash" blocks with nothing in them is not a conversation.
+  const blocks = [];
+  for (const m of t.messages) {
+    const toolOnly = !String(m.text || '').trim() && (m.tools || []).length;
+    const last = blocks[blocks.length - 1];
+    if (toolOnly && last?.kind === 'tools' && last.role === m.role) {
+      last.tools.push(...m.tools);
+      last.until = m.timestamp || last.until;
+      continue;
+    }
+    if (toolOnly) {
+      blocks.push({ kind: 'tools', role: m.role, tools: [...m.tools], at: m.timestamp, until: m.timestamp });
+      continue;
+    }
+    blocks.push({ kind: 'say', role: m.role, text: m.text, tools: m.tools || [], at: m.timestamp });
+  }
+
+  return `<div class="transcript">
+    <div class="transcript-head">${t.messages.length} of ${t.total} turns${t.worker?.live ? ' · live' : ''}</div>
+    ${blocks.map(b => b.kind === 'tools'
+      ? `<details class="transcript-work">
+          <summary>${escHtml(toolSummary(b.tools))}${b.at ? ` · ${escHtml(shortTime(b.at))}` : ''}</summary>
+          ${b.tools.slice(0, 40).map(x => `<div class="transcript-tool-row"><code>${escHtml(x.name)}</code><span>${escHtml(x.detail || '')}</span></div>`).join('')}
+        </details>`
+      : `<div class="transcript-turn transcript-${escAttr(b.role)}">
+          <div class="transcript-role">${b.role === 'assistant' ? 'agent' : 'sent to it'}${b.at ? ` · ${escHtml(shortTime(b.at))}` : ''}</div>
+          ${b.text ? `<div class="transcript-text">${simpleMarkdown(b.text.slice(0, 2500))}</div>` : ''}
+          ${b.tools.length ? `<div class="transcript-tools">${b.tools.map(x => `<code title="${escAttr(x.detail || '')}">${escHtml(x.name)}</code>`).join(' ')}</div>` : ''}
+        </div>`).join('')}
+  </div>`;
+}
+
+function toolSummary(tools) {
+  const counts = {};
+  for (const t of tools) counts[t.name] = (counts[t.name] || 0) + 1;
+  const parts = Object.entries(counts).map(([n, c]) => (c > 1 ? `${n} ×${c}` : n));
+  const first = tools.find(t => t.detail)?.detail;
+  return `worked: ${parts.join(', ')}${first ? ` — ${first.slice(0, 90)}` : ''}`;
+}
+
+export async function toggleTranscript(id, workerId) {
+  if (openTranscript?.workerId === workerId) {
+    openTranscript = null;
+    renderDetail();
+    return;
+  }
+  openTranscript = { workerId, messages: null };
+  renderDetail();
+  try {
+    const data = await api('GET', `/api/initiatives/${id}/transcript?workerId=${encodeURIComponent(workerId)}`);
+    openTranscript = { workerId, messages: data.messages, worker: data.worker, total: data.total };
+  } catch (err) {
+    openTranscript = { workerId, messages: [], total: 0 };
+    toast(err.message, 'error');
+  }
+  renderDetail();
 }
 
 function renderGates(i) {
@@ -267,8 +438,8 @@ function renderWorkers(i) {
   if (!all.length) return '';
   return `<div class="initiative-workers">
     <div class="initiative-workers-head">
-      ${boss ? 'Orchestrator & workers' : 'Workers'}
-      <span>${workers.length} of ${i.maxParallel} slots</span>
+      ${boss ? 'Orchestrator &amp; workers' : 'Workers'}
+      <span>&nbsp;${workers.length} of ${i.maxParallel} slots</span>
       <button class="btn btn-ghost btn-sm" onclick="toggleOrchestrator('${escAttr(i.id)}', ${boss ? 'false' : 'true'})">${boss ? 'Turn off orchestrator' : 'Add orchestrator'}</button>
     </div>
     ${bossRow}
@@ -304,7 +475,7 @@ function renderStages(i) {
         <div class="initiative-stage-dot"></div>
         <div class="initiative-stage-body">
           <div class="initiative-stage-name">${escHtml(s.name)}${parallel ? `<span class="initiative-stage-parallel">${parallel} in parallel</span>` : ''}${s.nudges ? `<span class="initiative-stage-nudges">${s.nudges} nudge${s.nudges === 1 ? '' : 's'}</span>` : ''}</div>
-          <div class="initiative-stage-instruction">${escHtml(s.instruction)}</div>
+          ${state === 'active' ? `<div class="initiative-stage-instruction">${escHtml(s.instruction)}</div>` : ''}
           ${renderTasks(s)}
         </div>
       </div>`;

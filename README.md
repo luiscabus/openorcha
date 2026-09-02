@@ -104,6 +104,27 @@ seeing none of its own workers, keeps concluding they died and relaunching them.
 `lib/psNumbers.js` parses both conventions; if you ever see an empty Agents tab
 with live sessions, start there.
 
+### Reading what a run has done
+
+Selecting an initiative opens on **What it has done**, not on the plan:
+
+- how far it got — stages, criteria met, commits, files changed, agent turns
+- the deliverables the definition of done asks for, and whether they exist yet
+- commits and changed files **scoped to this run**, from a baseline recorded when
+  it started. Without that, a checkout already sitting on someone else's feature
+  branch reports their work as the run's; a pull request is likewise only claimed
+  when the run made the branch or the commits on it.
+- every agent it used, with turn and tool-call counts, its last words, and its
+  full conversation readable in place
+
+A worker records which transcript is its own the first time the supervisor
+resolves it, so a finished agent's conversation is still readable after the
+session is gone. Consecutive tool-only turns fold into one line showing what
+the tools actually did — six "agent · Bash" blocks with nothing in them is not
+a conversation.
+
+*Plan & definition of done* and *Supervisor activity* are the other two views.
+
 ### Stopping and removing
 
 - **Pause** — stop supervising, leave the agents running so you can take one

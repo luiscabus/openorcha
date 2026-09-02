@@ -9,6 +9,7 @@ const { removeWorktree } = require('../lib/initiativeWorktrees');
 const { PROFILES } = require('../lib/initiativePolicy');
 const templates = require('../lib/initiativeTemplates');
 const framing = require('../lib/initiativeFraming');
+const outcome = require('../lib/initiativeOutcome');
 
 const router = express.Router();
 
@@ -329,6 +330,82 @@ router.post('/:id/advance', (req, res) => {
   if (!initiative) return res.status(404).json({ error: 'Initiative not found' });
   const next = store.advanceStage(initiative, 'advanced by you');
   res.json({ initiative: withLive(store.save(initiative)), next: next?.name || null });
+});
+
+// ─── What the run has produced ───────────────────────────────────────────────
+
+// How each worker's messages are read, wherever they came from: a remembered
+// transcript first, so a finished worker's conversation is still readable.
+function readWorkerMessages(initiative, worker, snapshot) {
+  const agent = worker.sessionName ? supervisor.agentForSession(worker.sessionName, snapshot) : null;
+  return supervisor.allMessages({
+    agentId: worker.agentId || initiative.agentId,
+    pid: agent?.pid || null,
+    args: agent?.args || '',
+    cwd: worker.cwd || initiative.cwd,
+    sessionFile: worker.sessionFile || null,
+  });
+}
+
+// What a tool call actually did, in one line. "Bash" six times tells you
+// nothing; the commands tell you what the agent was looking at.
+function describeToolCall(tool) {
+  if (typeof tool === 'string') return { name: tool, detail: '' };
+  const name = tool?.name || 'tool';
+  const input = tool?.input || {};
+  const detail = input.command
+    || input.file_path
+    || input.path
+    || input.pattern
+    || input.query
+    || (input.prompt ? String(input.prompt).slice(0, 120) : '')
+    || (input.description || '');
+  return { name, detail: String(detail || '').replace(/\s+/g, ' ').slice(0, 220) };
+}
+
+router.get('/:id/outcome', (req, res) => {
+  const initiative = store.get(req.params.id);
+  if (!initiative) return res.status(404).json({ error: 'Initiative not found' });
+  try {
+    const snapshot = supervisor.takeSnapshot();
+    res.json({ outcome: outcome.build(initiative, worker => readWorkerMessages(initiative, worker, snapshot)) });
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
+// One worker's conversation, so the run can be read without leaving the tab.
+router.get('/:id/transcript', (req, res) => {
+  const initiative = store.get(req.params.id);
+  if (!initiative) return res.status(404).json({ error: 'Initiative not found' });
+
+  const worker = (initiative.workers || []).find(w => w.id === req.query.workerId)
+    || (initiative.workers || [])[0];
+  if (!worker) return res.json({ worker: null, messages: [] });
+
+  try {
+    const snapshot = supervisor.takeSnapshot();
+    const limit = Math.min(parseInt(req.query.limit, 10) || 60, 300);
+    const all = readWorkerMessages(initiative, worker, snapshot);
+    const agent = worker.sessionName ? supervisor.agentForSession(worker.sessionName, snapshot) : null;
+
+    res.json({
+      worker: {
+        workerId: worker.id, name: worker.name, role: worker.role || 'worker',
+        status: worker.status, branch: worker.worktree?.branch || null,
+        live: !!agent, pid: agent?.pid || null,
+      },
+      total: all.length,
+      messages: all.slice(-limit).map(m => ({
+        role: m.role,
+        text: String(m.text || '').slice(0, 6000),
+        tools: (Array.isArray(m.tools) ? m.tools : []).slice(0, 12).map(describeToolCall),
+        timestamp: m.timestamp || null,
+      })),
+    });
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
 });
 
 // ─── Orchestrator ────────────────────────────────────────────────────────────

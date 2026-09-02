@@ -93,6 +93,8 @@ import {
   toggleCriterion,
   restoreInitiative,
   toggleOrchestrator,
+  setInitiativeView,
+  toggleTranscript,
 } from './tabs/initiatives.js';
 import { loadClaudeSettings, loadClaudeProjectSettings, saveClaudeSettings } from './tabs/claudeSettings.js';
 import {
@@ -307,6 +309,8 @@ window.checkAcceptance = checkAcceptance;
 window.toggleCriterion = toggleCriterion;
 window.restoreInitiative = restoreInitiative;
 window.toggleOrchestrator = toggleOrchestrator;
+window.setInitiativeView = setInitiativeView;
+window.toggleTranscript = toggleTranscript;
 
 // Claude Code: History
 window.loadClaudeHistory = loadClaudeHistory;
