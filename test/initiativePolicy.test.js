@@ -198,3 +198,31 @@ test('a stuck stage offers marking done rather than only skipping', () => {
   assert.ok(d.options.includes('Mark done and continue'));
   assert.ok(d.options.includes('Skip this stage'));
 });
+
+test('on a checkless stage, a repeated offer goes to judgement rather than another nudge', () => {
+  const checkless = { name: 'Read the ground truth', instruction: 'read it', check: null, maxNudges: 6 };
+  const offer = 'Want me to move on to the three open items?';
+  assert.equal(classifyStop(offer), 'question-offer');
+
+  const first = decide({ status: 'idle', stage: checkless, stopText: offer, checkPassed: null, nudges: 0 });
+  assert.equal(first.action, 'nudge', 'the first offer is cheap to answer');
+
+  const second = decide({ status: 'idle', stage: checkless, stopText: offer, checkPassed: null, nudges: 1 });
+  assert.equal(second.action, 'ask-llm', 'a repeated offer needs a decision about advancing, not another push');
+});
+
+test('"ready to take on X" reads as done, and with no check goes straight to judgement', () => {
+  // What the real agent actually said when it finished the ground-truth pass.
+  const said = 'Ready to take on the three open items whenever you want to move to that.';
+  assert.equal(classifyStop(said), 'reported-done');
+
+  const checkless = { name: 'Read the ground truth', check: null, maxNudges: 6 };
+  const d = decide({ status: 'idle', stage: checkless, stopText: said, checkPassed: null, nudges: 0 });
+  assert.equal(d.action, 'ask-llm', 'a completion claim with nothing to verify is exactly what judgement is for');
+});
+
+test('a stage that has a check keeps nudging on offers, since the check can settle it', () => {
+  const checked = { name: 'Implement', check: { type: 'git-dirty' }, maxNudges: 6 };
+  const d = decide({ status: 'idle', stage: checked, stopText: 'Want me to write the tests now?', checkPassed: false, nudges: 2 });
+  assert.equal(d.action, 'nudge');
+});
