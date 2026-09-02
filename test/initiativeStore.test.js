@@ -101,3 +101,89 @@ test('remove deletes the file and get returns null for unknown ids', () => {
   assert.equal(store.get(initiative.id), null);
   assert.equal(store.get('../../etc/passwd'), null);
 });
+
+// ─── Removal is reversible ───────────────────────────────────────────────────
+
+test('removing an initiative moves it to the trash, not oblivion', () => {
+  const initiative = make({ name: 'Spec review SO-92393', template: 'spec-to-tickets' });
+  assert.equal(store.remove(initiative.id), true);
+
+  assert.equal(store.get(initiative.id), null);
+  assert.equal(store.list().some(i => i.id === initiative.id), false);
+
+  const trash = store.listTrash();
+  const entry = trash.find(t => t.id === initiative.id);
+  assert.ok(entry, 'the removed initiative should be in the trash');
+  assert.equal(entry.name, 'Spec review SO-92393');
+  assert.ok(entry.deletedAt, 'it should record when it was removed');
+});
+
+test('a restored initiative comes back whole', () => {
+  const initiative = make({ name: 'Bring me back', goal: 'the goal survives' });
+  store.setAcceptance(initiative, [{ text: 'criterion survives', check: { type: 'human' } }]);
+  store.save(initiative);
+  store.remove(initiative.id);
+
+  const entry = store.listTrash().find(t => t.id === initiative.id);
+  const result = store.restore(entry.file);
+
+  assert.equal(result.initiative.id, initiative.id);
+  assert.equal(result.initiative.goal, 'the goal survives');
+  assert.equal(result.initiative.acceptance[0].text, 'criterion survives');
+  assert.ok(result.initiative.events.some(e => e.type === 'restored'));
+  assert.equal(store.listTrash().some(t => t.id === initiative.id), false, 'it leaves the trash on restore');
+});
+
+test('restoring never overwrites an initiative that exists again', () => {
+  const initiative = make({ name: 'Twice' });
+  store.remove(initiative.id);
+  const entry = store.listTrash().find(t => t.id === initiative.id);
+
+  store.restore(entry.file);
+  store.remove(initiative.id);
+  const second = store.listTrash().find(t => t.id === initiative.id);
+  store.restore(second.file);
+
+  // Now it exists; a stale trash entry for the same id must not clobber it.
+  const stale = store.save(store.normalize({ id: initiative.id, name: 'live version', cwd: dir }));
+  const fs2 = require('fs');
+  const fakeTrash = path.join(store.TRASH_DIR, `${initiative.id}.stale.json`);
+  fs2.mkdirSync(store.TRASH_DIR, { recursive: true });
+  fs2.writeFileSync(fakeTrash, JSON.stringify({ id: initiative.id, name: 'old version', cwd: dir }));
+
+  const result = store.restore(`${initiative.id}.stale.json`);
+  assert.equal(result.conflict, true);
+  assert.equal(store.get(initiative.id).name, 'live version', 'the live one is untouched');
+  assert.equal(stale.name, 'live version');
+});
+
+test('the trash rejects paths that try to escape it', () => {
+  assert.equal(store.restore('../../etc/passwd'), null);
+  assert.equal(store.restore('nope.json'), null);
+  assert.equal(store.purgeTrash('../../etc/passwd'), false);
+});
+
+test('a purged entry is really gone', () => {
+  const initiative = make({ name: 'Purge me' });
+  store.remove(initiative.id);
+  const entry = store.listTrash().find(t => t.id === initiative.id);
+
+  assert.equal(store.purgeTrash(entry.file), true);
+  assert.equal(store.listTrash().some(t => t.id === initiative.id), false);
+  assert.equal(store.restore(entry.file), null);
+});
+
+test('the trash does not grow without bound', () => {
+  for (let i = 0; i < 55; i++) {
+    const throwaway = make({ name: `Churn ${i}` });
+    store.remove(throwaway.id);
+  }
+  assert.ok(store.listTrash().length <= 50, `trash should be capped, got ${store.listTrash().length}`);
+});
+
+test('trashed files never show up as live initiatives', () => {
+  const before = store.list().length;
+  const initiative = make({ name: 'Hidden' });
+  store.remove(initiative.id);
+  assert.equal(store.list().length, before, 'the trash directory must not be listed');
+});

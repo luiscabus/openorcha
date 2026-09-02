@@ -91,6 +91,7 @@ import {
   frameInitiative,
   checkAcceptance,
   toggleCriterion,
+  restoreInitiative,
 } from './tabs/initiatives.js';
 import { loadClaudeSettings, loadClaudeProjectSettings, saveClaudeSettings } from './tabs/claudeSettings.js';
 import {
@@ -303,6 +304,7 @@ window.frameNewInitiative = frameNewInitiative;
 window.frameInitiative = frameInitiative;
 window.checkAcceptance = checkAcceptance;
 window.toggleCriterion = toggleCriterion;
+window.restoreInitiative = restoreInitiative;
 
 // Claude Code: History
 window.loadClaudeHistory = loadClaudeHistory;

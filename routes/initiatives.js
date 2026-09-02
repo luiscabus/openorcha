@@ -70,6 +70,23 @@ router.post('/', (req, res) => {
   }
 });
 
+// ─── Trash ───────────────────────────────────────────────────────────────────
+
+router.get('/trash', (req, res) => {
+  res.json({ trash: store.listTrash() });
+});
+
+router.post('/trash/:file/restore', (req, res) => {
+  const result = store.restore(req.params.file);
+  if (!result) return res.status(404).json({ error: 'Not in the trash' });
+  if (result.conflict) return res.status(409).json({ error: `An initiative with id ${result.id} already exists` });
+  res.json({ initiative: withLive(result.initiative) });
+});
+
+router.delete('/trash/:file', (req, res) => {
+  res.json({ ok: store.purgeTrash(req.params.file) });
+});
+
 router.get('/templates', (req, res) => {
   res.json({ templates: templates.list() });
 });
@@ -169,9 +186,10 @@ router.patch('/:id', (req, res) => {
   }
 });
 
-// Remove: the initiative record goes; what it produced does not. Agents are
-// killed by default so nothing keeps running for a thing that no longer exists,
-// and worktrees are only removed when asked and only when clean.
+// Remove: the record moves to the trash, where it can be restored; what it
+// produced does not go anywhere. Agents are killed by default so nothing keeps
+// running for a thing that no longer exists, and worktrees are only removed
+// when asked and only when clean.
 router.delete('/:id', (req, res) => {
   const initiative = store.get(req.params.id);
   if (!initiative) return res.json({ ok: store.remove(req.params.id) });

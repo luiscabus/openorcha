@@ -31,6 +31,7 @@ export async function loadInitiatives() {
     renderList(list);
     renderDetail();
     renderNeedsYou();
+    renderTrash();
   } catch (err) {
     list.innerHTML = `<div class="drawer-empty" style="color:var(--danger)">${escHtml(err.message)}</div>`;
   }
@@ -87,6 +88,34 @@ function renderNeedsYou() {
   el.innerHTML = `<button class="btn btn-sm initiatives-needs-btn" onclick="selectInitiative('${escAttr(gates[0].initiative.id)}')">
     ${gates.length} decision${gates.length === 1 ? '' : 's'} waiting
   </button>`;
+}
+
+async function renderTrash() {
+  const el = document.getElementById('initiatives-trash');
+  if (!el) return;
+  let trash = [];
+  try {
+    trash = (await api('GET', '/api/initiatives/trash')).trash || [];
+  } catch { return; }
+
+  if (!trash.length) { el.innerHTML = ''; return; }
+  el.innerHTML = `<details class="initiatives-trash">
+    <summary>Recently removed (${trash.length})</summary>
+    ${trash.map(t => `<div class="trash-row">
+      <span class="trash-name">${escHtml(t.name)}</span>
+      <span class="trash-meta">${escHtml(t.stage || '')} · removed ${escHtml(timeAgo(t.deletedAt))}</span>
+      <button class="btn btn-ghost btn-sm" onclick="restoreInitiative('${escAttr(t.file)}')">Restore</button>
+    </div>`).join('')}
+  </details>`;
+}
+
+export async function restoreInitiative(file) {
+  try {
+    const data = await api('POST', `/api/initiatives/trash/${encodeURIComponent(file)}/restore`);
+    selectedId = data.initiative.id;
+    toast(`Restored "${data.initiative.name}"`);
+    loadInitiatives();
+  } catch (err) { toast(err.message, 'error'); }
 }
 
 // ─── Detail ──────────────────────────────────────────────────────────────────
@@ -363,7 +392,7 @@ export async function deleteInitiative(id) {
 
   if (!window.confirm(
     `Remove "${i?.name || id}"?\n\n`
-    + `This deletes the initiative record only.\n`
+    + `The record goes to the trash and can be restored.\n`
     + (live ? `• ${live} running agent${live === 1 ? '' : 's'} will be killed\n` : '')
     + `• Commits and branches are kept\n`
     + (worktrees ? `• ${worktrees} worktree${worktrees === 1 ? '' : 's'} stay on disk unless you choose to clean them next\n` : ''),

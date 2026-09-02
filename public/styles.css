@@ -4041,3 +4041,37 @@ body {
 }
 
 .dod-proposal-error { font-size: 12px; color: var(--danger); }
+
+/* Recently removed */
+
+.initiatives-trash {
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--bg2);
+  padding: 8px 12px;
+  margin-bottom: 12px;
+}
+
+.initiatives-trash summary {
+  cursor: pointer;
+  font-size: 11px;
+  color: var(--text2);
+  list-style: none;
+}
+
+.initiatives-trash summary::-webkit-details-marker { display: none; }
+.initiatives-trash summary::before { content: '▸ '; color: var(--text3); }
+.initiatives-trash[open] summary::before { content: '▾ '; }
+
+.trash-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 5px 0;
+  font-size: 12px;
+  border-top: 1px solid rgba(42, 51, 71, .5);
+}
+
+.trash-name { font-weight: 600; }
+.trash-meta { color: var(--text3); font-size: 11px; }
+.trash-row .btn { margin-left: auto; }

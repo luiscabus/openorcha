@@ -91,9 +91,10 @@ only the human ones become a single sign-off.
   over by hand.
 - **Stop** — end the run and kill the agent sessions it started. Commits,
   branches and worktrees are untouched.
-- **Remove** — delete the initiative record. Its agents are killed, commits and
-  branches always survive, and worktrees are only removed if you ask and only
-  when they are clean.
+- **Remove** — the initiative record moves to `data/initiatives/.trash/` and can
+  be restored from *Recently removed* at the top of the tab. Its agents are
+  killed, commits and branches always survive, and worktrees are only removed if
+  you ask and only when they are clean. The trash keeps the last 50.
 
 Set `OPENORCHA_NO_LAUNCH=1` to stop the supervisor starting agents at all —
 what the test suite uses, and useful for a dry run.
