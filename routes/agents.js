@@ -25,6 +25,7 @@ const {
 const { router: presetsRouter, loadPresets } = require('./agentPresets');
 const { AGENT_COMMANDS, AGENT_RESUME_FLAG, launchAgent } = require('../lib/agentLauncher');
 const { parsePsLine, parsePsStats, psFloat } = require('../lib/psNumbers');
+const { sendMuxInput } = require('../lib/muxInput');
 
 const router = express.Router();
 
@@ -85,31 +86,6 @@ function captureTmuxSnapshot(target) {
   };
 }
 
-function sendMuxInput(target, muxType, { message, noEnter = false, paste = false }) {
-  if (muxType === 'tmux') {
-    if (paste) {
-      execSync(`tmux set-buffer -- ${shellEscape(message)}`, { timeout: 3000 });
-      execSync(`tmux paste-buffer -t ${shellEscape(target)} -d`, { timeout: 3000 });
-      return;
-    }
-
-    if (noEnter) {
-      execSync(`tmux send-keys -t ${shellEscape(target)} ${shellEscape(message)}`, { timeout: 3000 });
-      return;
-    }
-
-    execSync(`tmux set-buffer -- ${shellEscape(message)}`, { timeout: 3000 });
-    execSync(`tmux paste-buffer -t ${shellEscape(target)} -d`, { timeout: 3000 });
-    execSync('sleep 0.15');
-    execSync(`tmux send-keys -t ${shellEscape(target)} Enter`, { timeout: 3000 });
-    return;
-  }
-
-  if (muxType === 'screen') {
-    const payload = noEnter ? message : message + '\n';
-    execSync(`screen -S ${shellEscape(target)} -X stuff ${shellEscape(payload)}`, { timeout: 3000 });
-  }
-}
 
 // ─── Routes ──────────────────────────────────────────────────────────────────
 

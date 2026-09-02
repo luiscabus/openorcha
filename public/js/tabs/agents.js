@@ -505,14 +505,19 @@ export async function loadAgents() {
 
     // Server-backed initiatives own their lane; an agent launched by the
     // supervisor lands in it automatically, without anyone dragging it there.
-    const serverLanes = serverInitiatives.map(initiative => ({
-      id: initiative.id,
-      name: initiative.name,
-      server: initiative,
-      agents: visibleAgents.filter(agent =>
-        tmuxSessionOf(agent) === initiative.run?.sessionName
-        || initiativeState.assignments[agentInitiativeKey(agent)] === initiative.id),
-    }));
+    const serverLanes = serverInitiatives.map(initiative => {
+      // An initiative owns a pool of workers, each with its own tmux session —
+      // a fanned-out stage runs several at once, so match against all of them.
+      const sessions = new Set((initiative.workers || []).map(w => w.sessionName).filter(Boolean));
+      return {
+        id: initiative.id,
+        name: initiative.name,
+        server: initiative,
+        agents: visibleAgents.filter(agent =>
+          sessions.has(tmuxSessionOf(agent))
+          || initiativeState.assignments[agentInitiativeKey(agent)] === initiative.id),
+      };
+    });
 
     const claimed = new Set(serverLanes.flatMap(lane => lane.agents.map(agentInitiativeKey)));
 
