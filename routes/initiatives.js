@@ -266,22 +266,52 @@ router.post('/:id/stop', (req, res) => {
   res.json({ stopped, initiative: withLive(store.save(initiative)) });
 });
 
+// Messaging an initiative always succeeds. It reaches a live agent when there
+// is one — a named worker if you say which — and waits for the next briefing
+// when there is not. Losing what the operator typed is never the right answer.
 router.post('/:id/message', (req, res) => {
   const initiative = store.get(req.params.id);
   if (!initiative) return res.status(404).json({ error: 'Initiative not found' });
   const message = String(req.body?.message || '').trim();
   if (!message) return res.status(400).json({ error: 'message is required' });
 
-  const agent = supervisor.findAgent(initiative);
-  if (!agent) return res.status(400).json({ error: 'No live agent for this initiative' });
-
   try {
-    supervisor.applyGateAnswer(initiative, { kind: 'note' }, message);
-    store.addEvent(initiative, 'user-message', message.slice(0, 300));
-    res.json({ initiative: withLive(store.save(initiative)) });
+    const snapshot = supervisor.takeSnapshot();
+    const workerId = req.body?.workerId || null;
+    const agent = supervisor.findAgent(initiative, snapshot, { workerId });
+
+    if (!agent) {
+      const queued = store.queueMessage(initiative, message);
+      return res.json({
+        delivered: false,
+        queued: true,
+        note: 'No agent is running for this initiative right now — this is held and handed over with the next briefing.',
+        pending: (store.save(initiative).pendingMessages || []).length,
+        at: queued.ts,
+      });
+    }
+
+    supervisor.applyGateAnswer(initiative, { kind: 'note', workerId: agent.workerId }, message);
+    store.addEvent(initiative, 'user-message', `→ ${agent.workerName || 'agent'}: ${message.slice(0, 260)}`, { workerId: agent.workerId });
+    res.json({ delivered: true, worker: agent.workerName, initiative: withLive(store.save(initiative), snapshot) });
   } catch (e) {
     res.status(500).json({ error: e.message });
   }
+});
+
+// Who is actually reachable right now, so the UI can offer a choice.
+router.get('/:id/live', (req, res) => {
+  const initiative = store.get(req.params.id);
+  if (!initiative) return res.status(404).json({ error: 'Initiative not found' });
+  const live = supervisor.liveWorkers(initiative).map(({ worker, agent }) => ({
+    workerId: worker.id,
+    name: worker.name,
+    session: worker.sessionName,
+    pid: agent.pid,
+    status: supervisor.inferStatus(agent).status,
+    branch: worker.worktree?.branch || null,
+  }));
+  res.json({ live, pending: (initiative.pendingMessages || []).length });
 });
 
 router.post('/:id/check', (req, res) => {

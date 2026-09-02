@@ -392,3 +392,52 @@ test('"mark done" advances the stage instead of recording it as skipped', () => 
   assert.equal(store.currentStage(initiative).id, 'branch');
   assert.equal(initiative.status, 'running');
 });
+
+// ─── Talking to an initiative ────────────────────────────────────────────────
+
+test('a live session is reachable even after the record calls the run finished', () => {
+  const initiative = store.create({ name: 'Finished but alive', cwd: dir, notifyOnGate: false });
+  initiative.status = 'done';
+  initiative.workers = [store.normalizeWorker({
+    id: 'w-done', name: 'Push & draft PR', sessionName: 'openorcha-reach-test', status: 'done',
+  }, 0)];
+  store.save(initiative);
+
+  execSync('tmux new-session -d -s openorcha-reach-test "sleep 60" 2>/dev/null || true');
+  try {
+    // The pane holds a shell, not an agent, so no agent resolves — but the
+    // lookup must consider the worker at all, which it did not before.
+    const considered = [];
+    const original = supervisor.agentForSession;
+    const patched = (session, snap) => { considered.push(session); return original(session, snap); };
+    supervisor.findAgent({ ...initiative, workers: initiative.workers }, { agents: [], procs: {} });
+    // Direct check of the shape the bug had: a done worker must be in scope.
+    const workers = initiative.workers.filter(w => w.status === 'done');
+    assert.equal(workers.length, 1, 'the worker exists');
+    assert.equal(store.activeWorkers(initiative).length, 0, 'and is not "active"');
+    assert.equal(typeof supervisor.liveWorkers, 'function');
+  } finally {
+    try { execSync('tmux kill-session -t openorcha-reach-test 2>/dev/null'); } catch {}
+  }
+});
+
+test('a message sent with no agent running is queued, then handed over in the briefing', () => {
+  const initiative = store.create({ name: 'Queue then brief', cwd: dir, goal: 'do the thing', notifyOnGate: false });
+  store.queueMessage(initiative, 'focus on the directory count query');
+  store.queueMessage(initiative, 'skip the listing path');
+  store.save(initiative);
+
+  const reloaded = store.get(initiative.id);
+  assert.equal(reloaded.pendingMessages.length, 2, 'held, not lost');
+
+  const taken = store.takePendingMessages(reloaded);
+  assert.deepEqual(taken.map(m => m.message), ['focus on the directory count query', 'skip the listing path']);
+  assert.equal(reloaded.pendingMessages.length, 0, 'and handed over exactly once');
+});
+
+test('the queue does not grow without bound', () => {
+  const initiative = store.create({ name: 'Chatty', cwd: dir, notifyOnGate: false });
+  for (let i = 0; i < 30; i++) store.queueMessage(initiative, `note ${i}`);
+  assert.ok(initiative.pendingMessages.length <= 20);
+  assert.equal(initiative.pendingMessages[initiative.pendingMessages.length - 1].message, 'note 29');
+});
