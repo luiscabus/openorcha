@@ -173,3 +173,28 @@ test('a permission prompt is resolved before anything else', () => {
   const d = decide({ status: 'waiting_input', prompt, stage, checkPassed: false, nudges: 9 });
   assert.equal(d.action, 'approve');
 });
+
+// ─── A stage with nothing to verify against ──────────────────────────────────
+
+test('a checkless stage asks for judgement instead of gating on nudge count', () => {
+  const checkless = { name: 'Read the ground truth', instruction: 'read it', check: null, maxNudges: 6 };
+  const d = decide({ status: 'idle', stage: checkless, checkPassed: null, nudges: 6 });
+  assert.equal(d.action, 'ask-llm', 'nothing here can pass a check, so counting nudges strands the run');
+  assert.match(d.reason, /no automated check/);
+});
+
+test('a stage that does have a check still gates when its nudges run out', () => {
+  const checked = { name: 'Implement', instruction: 'build it', check: { type: 'git-dirty' }, maxNudges: 5 };
+  const d = decide({ status: 'idle', stage: checked, checkPassed: false, nudges: 5 });
+  assert.equal(d.action, 'gate');
+  assert.equal(d.kind, 'nudge-limit');
+  assert.ok(d.options.includes('Mark done and continue'), 'and offers a way out that is not a skip');
+});
+
+test('a stuck stage offers marking done rather than only skipping', () => {
+  const checked = { name: 'Verify', check: { type: 'command', command: 'npm test' }, maxNudges: 5 };
+  const d = decide({ status: 'idle', stage: checked, checkPassed: false, consecutiveFailures: 3 });
+  assert.equal(d.kind, 'stuck');
+  assert.ok(d.options.includes('Mark done and continue'));
+  assert.ok(d.options.includes('Skip this stage'));
+});

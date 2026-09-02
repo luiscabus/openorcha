@@ -379,3 +379,16 @@ test('tool-only turns are rendered as work, not as blank lines', () => {
   assert.match(rendered[1], /used Grep, Read/);
   assert.ok(!rendered.some(r => r === ''), 'no blank lines reach the decider');
 });
+
+test('"mark done" advances the stage instead of recording it as skipped', () => {
+  const initiative = store.create({ name: 'Mark done', cwd: dir, notifyOnGate: false });
+  initiative.status = 'blocked';
+  const gate = store.openGate(initiative, { kind: 'nudge-limit', question: 'stuck?', options: ['Mark done and continue'] });
+  store.resolveGate(initiative, gate.id, 'Mark done and continue');
+
+  supervisor.applyGateAnswer(initiative, gate, 'Mark done and continue');
+
+  assert.equal(initiative.stages[0].status, 'done', 'the work happened — it is done, not skipped');
+  assert.equal(store.currentStage(initiative).id, 'branch');
+  assert.equal(initiative.status, 'running');
+});
