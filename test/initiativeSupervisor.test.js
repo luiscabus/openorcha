@@ -330,3 +330,27 @@ function tmuxSessions() {
     return [];
   }
 }
+
+test('stopping reaches sessions behind workers the supervisor already retired', () => {
+  const initiative = store.create({ name: 'Orphans', cwd: dir, notifyOnGate: false });
+  // The shape the ps-locale bug produced: recorded as gone, still alive.
+  initiative.workers = [
+    store.normalizeWorker({ id: 'w1', name: 'a', sessionName: 'openorcha-orphan-1', status: 'gone' }, 0),
+    store.normalizeWorker({ id: 'w2', name: 'b', sessionName: 'openorcha-orphan-2', status: 'working' }, 1),
+  ];
+  store.save(initiative);
+
+  execSync('tmux new-session -d -s openorcha-orphan-1 "sleep 60" 2>/dev/null || true');
+  execSync('tmux new-session -d -s openorcha-orphan-2 "sleep 60" 2>/dev/null || true');
+
+  try {
+    const stopped = supervisor.stopWorkers(initiative, { kill: true });
+    assert.ok(stopped.includes('openorcha-orphan-1'), 'a retired worker\'s live session must still be killed');
+    assert.ok(stopped.includes('openorcha-orphan-2'));
+    assert.equal(tmuxSessions().filter(s => s.startsWith('openorcha-orphan')).length, 0);
+  } finally {
+    for (const s of ['openorcha-orphan-1', 'openorcha-orphan-2']) {
+      try { execSync(`tmux kill-session -t ${s} 2>/dev/null`); } catch {}
+    }
+  }
+});

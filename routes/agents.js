@@ -24,6 +24,7 @@ const {
 } = require('../lib/multiplexer');
 const { router: presetsRouter, loadPresets } = require('./agentPresets');
 const { AGENT_COMMANDS, AGENT_RESUME_FLAG, launchAgent } = require('../lib/agentLauncher');
+const { parsePsLine, parsePsStats, psFloat } = require('../lib/psNumbers');
 
 const router = express.Router();
 
@@ -130,9 +131,9 @@ router.get('/', (req, res) => {
     const matched = [];
 
     for (const line of out.trim().split('\n').slice(1)) {
-      const m = line.match(/^\s*(\d+)\s+([\d.]+)\s+([\d.]+)\s+(\S+)\s+(\S+)\s+(.*)/);
-      if (!m) continue;
-      const [, pid, cpu, mem, tty, etime, args] = m;
+      const parsed = parsePsLine(line);
+      if (!parsed) continue;
+      const { pid, cpu, mem, tty, etime, args } = parsed;
       const bin = path.basename(args.split(/\s+/)[0]);
       const def = AGENT_DEFS.find(d => d.match(bin, args));
       if (!def) continue;
@@ -154,8 +155,8 @@ router.get('/', (req, res) => {
         agentId: def.id,
         agentName: def.name,
         pid,
-        cpu: parseFloat(cpu),
-        mem: parseFloat(mem),
+        cpu,
+        mem,
         tty: tty === '??' ? null : tty,
         etime,
         cwd,
@@ -252,8 +253,8 @@ router.get('/:pid/messages', (req, res) => {
     let cpu = null, mem = null, etime = null;
     try {
       const info = execSync(`ps -p ${pid} -o pcpu=,pmem=,etime= 2>/dev/null`, { encoding: 'utf8' }).trim();
-      const m = info.match(/^\s*([\d.]+)\s+([\d.]+)\s+(\S+)/);
-      if (m) { cpu = parseFloat(m[1]); mem = parseFloat(m[2]); etime = m[3]; }
+      const stats = parsePsStats(info);
+      if (stats) ({ cpu, mem, etime } = stats);
     } catch {}
 
     // If the last message is from the user, the agent is working on a response
@@ -583,7 +584,7 @@ router.get('/:pid/wait', async (req, res) => {
       const psOut = execSync(`ps -p ${pid} -o pcpu= 2>/dev/null`, { encoding: 'utf8' }).trim();
       if (!psOut) return { done: true, reason: 'process_exited' };
 
-      const cpu = parseFloat(psOut);
+      const cpu = psFloat(psOut);
       const procs = buildProcTable();
       const proc = procs[pid];
       if (!proc) return { done: true, reason: 'process_exited' };

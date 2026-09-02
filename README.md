@@ -85,6 +85,16 @@ dressed up as automatic. At the end of the run the supervisor measures rather
 than asks: unmet checkable criteria send the agent back to close the gap, and
 only the human ones become a single sign-off.
 
+### If no agents show up
+
+The AI Agents tab and the supervisor share one detection path: `ps`, matched
+per line. `ps` prints `%CPU`/`%MEM` in the machine's locale, so on a system that
+writes decimals with a comma (`0,4`) a dot-only pattern matches nothing and the
+app reports zero agents while they are plainly running — and the supervisor,
+seeing none of its own workers, keeps concluding they died and relaunching them.
+`lib/psNumbers.js` parses both conventions; if you ever see an empty Agents tab
+with live sessions, start there.
+
 ### Stopping and removing
 
 - **Pause** — stop supervising, leave the agents running so you can take one
