@@ -295,9 +295,9 @@ router.post('/:id/message', (req, res) => {
       });
     }
 
-    supervisor.applyGateAnswer(initiative, { kind: 'note', workerId: agent.workerId }, message);
-    store.addEvent(initiative, 'user-message', `→ ${agent.workerName || 'agent'}: ${message.slice(0, 260)}`, { workerId: agent.workerId });
-    res.json({ delivered: true, worker: agent.workerName, initiative: withLive(store.save(initiative), snapshot) });
+    const sent = supervisor.deliverNote(initiative, message, { workerId: agent.workerId });
+    store.addEvent(initiative, 'user-message', `→ ${sent.workerName || 'agent'}: ${message.slice(0, 260)}`, { workerId: sent.workerId });
+    res.json({ delivered: true, worker: sent.workerName, initiative: withLive(store.save(initiative), snapshot) });
   } catch (e) {
     res.status(500).json({ error: e.message });
   }

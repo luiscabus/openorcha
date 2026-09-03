@@ -441,3 +441,54 @@ test('the queue does not grow without bound', () => {
   assert.ok(initiative.pendingMessages.length <= 20);
   assert.equal(initiative.pendingMessages[initiative.pendingMessages.length - 1].message, 'note 29');
 });
+
+// ─── A message must not restart a finished run ───────────────────────────────
+
+test('messaging a finished initiative does not set it running again', () => {
+  const initiative = store.create({ name: 'Finished', cwd: dir, notifyOnGate: false });
+  initiative.status = 'done';
+  initiative.stageIndex = initiative.stages.length - 1;
+  for (const st of initiative.stages) st.status = 'done';
+  store.save(initiative);
+
+  // No live agent here, so nothing is delivered — the point is what it does
+  // NOT do: five agents piled up on one run because this flipped it running.
+  supervisor.deliverNote(initiative, 'what did you accomplish?');
+  assert.equal(initiative.status, 'done');
+});
+
+test('a gate answer resumes a run that was waiting, and leaves a finished one alone', () => {
+  const waiting = store.create({ name: 'Waiting', cwd: dir, notifyOnGate: false });
+  waiting.status = 'blocked';
+  const gate = store.openGate(waiting, { kind: 'decision', question: 'go on?' });
+  supervisor.applyGateAnswer(waiting, gate, 'yes, carry on');
+  assert.equal(waiting.status, 'running');
+
+  const over = store.create({ name: 'Over', cwd: dir, notifyOnGate: false });
+  over.status = 'done';
+  const stray = store.openGate(over, { kind: 'decision', question: 'anything?' });
+  supervisor.applyGateAnswer(over, stray, 'sure');
+  assert.equal(over.status, 'done', 'answering something on a finished run does not restart it');
+});
+
+test('a finished stage is never given another worker', async () => {
+  const initiative = store.create({ name: 'Last stage done', cwd: dir, notifyOnGate: false });
+  initiative.status = 'running';
+  initiative.stageIndex = initiative.stages.length - 1;
+  const last = initiative.stages[initiative.stageIndex];
+  last.status = 'done';
+  store.save(initiative);
+
+  const started = await supervisor.ensureWorkers(initiative, last, { agents: [], procs: {} });
+  assert.equal(started, false, 'the stage is done — there is nothing for an agent to do');
+  assert.equal(store.get(initiative.id).workers.length, 0);
+});
+
+test('a run marked done is not staffed even if a stage looks open', async () => {
+  const initiative = store.create({ name: 'Done but open stage', cwd: dir, notifyOnGate: false });
+  initiative.status = 'done';
+  store.save(initiative);
+
+  const started = await supervisor.ensureWorkers(initiative, store.currentStage(initiative), { agents: [], procs: {} });
+  assert.equal(started, false);
+});
