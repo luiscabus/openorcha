@@ -95,6 +95,7 @@ import {
   toggleOrchestrator,
   setInitiativeView,
   toggleTranscript,
+  loadTrash,
 } from './tabs/initiatives.js';
 import { loadClaudeSettings, loadClaudeProjectSettings, saveClaudeSettings } from './tabs/claudeSettings.js';
 import {
@@ -311,6 +312,7 @@ window.restoreInitiative = restoreInitiative;
 window.toggleOrchestrator = toggleOrchestrator;
 window.setInitiativeView = setInitiativeView;
 window.toggleTranscript = toggleTranscript;
+window.loadTrash = loadTrash;
 
 // Claude Code: History
 window.loadClaudeHistory = loadClaudeHistory;

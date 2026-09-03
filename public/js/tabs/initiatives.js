@@ -23,7 +23,7 @@ const STATUS_LABELS = {
 
 // ─── Loading ─────────────────────────────────────────────────────────────────
 
-export async function loadInitiatives() {
+export async function loadInitiatives({ background = false } = {}) {
   const list = document.getElementById('initiatives-list');
   try {
     const data = await api('GET', '/api/initiatives');
@@ -32,9 +32,13 @@ export async function loadInitiatives() {
     if (!initiatives.some(i => i.id === selectedId)) {
       selectedId = initiatives.find(i => i.status === 'blocked')?.id || initiatives[0]?.id || null;
     }
-    // A refresh must not close a conversation you are reading.
-    if (Date.now() - (outcomeCache.__at || 0) > 20000) { outcomeCache = { __at: Date.now() }; }
     renderList(list);
+    if (background && isBusyInDetail()) {
+      // You are typing or have text in a field. Re-rendering the panel would
+      // throw it away, and no refresh is worth that.
+      renderNeedsYou();
+      return;
+    }
     renderDetail();
     renderNeedsYou();
     renderTrash();
@@ -45,7 +49,7 @@ export async function loadInitiatives() {
 
 export function startInitiativesAutoRefresh() {
   clearInitiativesAutoRefresh();
-  refreshTimer = setInterval(loadInitiatives, 8000);
+  refreshTimer = setInterval(() => loadInitiatives({ background: true }), 8000);
 }
 
 export function clearInitiativesAutoRefresh() {
@@ -96,23 +100,38 @@ function renderNeedsYou() {
   </button>`;
 }
 
-async function renderTrash() {
+function renderTrash() {
   const el = document.getElementById('initiatives-trash');
-  if (!el) return;
-  let trash = [];
-  try {
-    trash = (await api('GET', '/api/initiatives/trash')).trash || [];
-  } catch { return; }
-
-  if (!trash.length) { el.innerHTML = ''; return; }
-  el.innerHTML = `<details class="initiatives-trash">
-    <summary>Recently removed (${trash.length})</summary>
-    ${trash.map(t => `<div class="trash-row">
-      <span class="trash-name">${escHtml(t.name)}</span>
-      <span class="trash-meta">${escHtml(t.stage || '')} · removed ${escHtml(timeAgo(t.deletedAt))}</span>
-      <button class="btn btn-ghost btn-sm" onclick="restoreInitiative('${escAttr(t.file)}')">Restore</button>
-    </div>`).join('')}
+  if (!el || el.dataset.rendered === '1') return;
+  el.dataset.rendered = '1';
+  el.innerHTML = `<details class="initiatives-trash" ontoggle="if(this.open)window.loadTrash()">
+    <summary>Recently removed</summary>
+    <div id="trash-body"></div>
   </details>`;
+}
+
+let trashLoading = false;
+
+/** Fetched when you open it, not every eight seconds to render a number. */
+export async function loadTrash() {
+  const body = document.getElementById('trash-body');
+  if (!body || trashLoading) return;
+  trashLoading = true;
+  body.innerHTML = '<div class="drawer-loading">Loading…</div>';
+  try {
+    const trash = (await api('GET', '/api/initiatives/trash')).trash || [];
+    body.innerHTML = trash.length
+      ? trash.map(t => `<div class="trash-row">
+          <span class="trash-name">${escHtml(t.name)}</span>
+          <span class="trash-meta">${escHtml(t.stage || '')} · removed ${escHtml(timeAgo(t.deletedAt))}</span>
+          <button class="btn btn-ghost btn-sm" onclick="restoreInitiative('${escAttr(t.file)}')">Restore</button>
+        </div>`).join('')
+      : '<div class="drawer-empty">Nothing removed recently.</div>';
+  } catch (err) {
+    body.innerHTML = `<div class="drawer-empty" style="color:var(--danger)">${escHtml(err.message)}</div>`;
+  } finally {
+    trashLoading = false;
+  }
 }
 
 export async function restoreInitiative(file) {
@@ -120,13 +139,79 @@ export async function restoreInitiative(file) {
     const data = await api('POST', `/api/initiatives/trash/${encodeURIComponent(file)}/restore`);
     selectedId = data.initiative.id;
     toast(`Restored "${data.initiative.name}"`);
-    loadInitiatives();
+    await loadInitiatives();
+    if (document.getElementById('trash-body')) loadTrash();
   } catch (err) { toast(err.message, 'error'); }
 }
 
 // ─── Detail ──────────────────────────────────────────────────────────────────
 
+/** True while a text field in the panel is focused or holds unsent text. */
+function isBusyInDetail() {
+  const panel = document.getElementById('initiative-detail');
+  if (!panel) return false;
+  const active = document.activeElement;
+  if (active && panel.contains(active) && /^(INPUT|TEXTAREA)$/.test(active.tagName)) return true;
+  return [...panel.querySelectorAll('input[type="text"], textarea')].some(el => el.value.trim());
+}
+
+/**
+ * What the panel looked like before a re-render: typed text, where the caret
+ * was, and how far things were scrolled. innerHTML throws all of that away.
+ */
+function captureDetailState() {
+  const panel = document.getElementById('initiative-detail');
+  if (!panel) return null;
+  const active = document.activeElement;
+  const fields = [];
+  panel.querySelectorAll('input, textarea').forEach((el, index) => {
+    const key = el.id || `${el.tagName}:${index}`;
+    fields.push({
+      key,
+      value: el.value,
+      focused: el === active,
+      start: el.selectionStart,
+      end: el.selectionEnd,
+    });
+  });
+  const scrolls = [];
+  panel.querySelectorAll('.transcript, .initiative-timeline').forEach((el, index) => {
+    scrolls.push({ key: `${el.className}:${index}`, top: el.scrollTop });
+  });
+  return { fields, scrolls, panelTop: panel.scrollTop };
+}
+
+function restoreDetailState(state) {
+  if (!state) return;
+  const panel = document.getElementById('initiative-detail');
+  if (!panel) return;
+
+  const inputs = [...panel.querySelectorAll('input, textarea')];
+  inputs.forEach((el, index) => {
+    const key = el.id || `${el.tagName}:${index}`;
+    const saved = state.fields.find(f => f.key === key);
+    if (!saved || !saved.value) return;
+    el.value = saved.value;
+    if (saved.focused) {
+      el.focus();
+      try { el.setSelectionRange(saved.start ?? el.value.length, saved.end ?? el.value.length); } catch {}
+    }
+  });
+
+  panel.querySelectorAll('.transcript, .initiative-timeline').forEach((el, index) => {
+    const saved = state.scrolls.find(sc => sc.key === `${el.className}:${index}`);
+    if (saved) el.scrollTop = saved.top;
+  });
+  panel.scrollTop = state.panelTop;
+}
+
 function renderDetail() {
+  const state = captureDetailState();
+  renderDetailInner();
+  restoreDetailState(state);
+}
+
+function renderDetailInner() {
   const el = document.getElementById('initiative-detail');
   const i = initiatives.find(x => x.id === selectedId);
   if (!i) {
@@ -190,7 +275,9 @@ function renderDetail() {
 
   `;
 
-  if (detailView === 'work' && !outcomeCache[i.id]) loadOutcome(i.id);
+  // Refetch only when the run has moved on: churning this while you read is
+  // as disruptive as clearing an input.
+  if (detailView === 'work' && outcomeCache[i.id]?.forVersion !== i.updatedAt) loadOutcome(i.id, i.updatedAt);
 }
 
 export function setInitiativeView(view) {
@@ -198,15 +285,18 @@ export function setInitiativeView(view) {
   renderDetail();
 }
 
-async function loadOutcome(id) {
+async function loadOutcome(id, forVersion) {
+  if (outcomeCache[id]?.loading) return;
+  outcomeCache[id] = { ...(outcomeCache[id] || {}), loading: true };
   try {
     const { outcome } = await api('GET', `/api/initiatives/${id}/outcome`);
-    outcomeCache[id] = outcome;
+    outcomeCache[id] = { ...outcome, forVersion, loading: false };
     if (selectedId === id && detailView === 'work') {
       const el = document.getElementById('initiative-outcome');
       if (el) el.innerHTML = renderOutcome(initiatives.find(x => x.id === id));
     }
   } catch (err) {
+    outcomeCache[id] = { loading: false, forVersion, error: err.message };
     const el = document.getElementById('initiative-outcome');
     if (el) el.innerHTML = `<div class="drawer-empty" style="color:var(--danger)">${escHtml(err.message)}</div>`;
   }
@@ -214,7 +304,11 @@ async function loadOutcome(id) {
 
 function renderOutcome(i) {
   const o = outcomeCache[i.id];
-  if (!o) return '<div class="drawer-loading">Reading what the run has produced…</div>';
+  if (!o || o.loading || !o.workers) {
+    return o?.error
+      ? `<div class="drawer-empty" style="color:var(--danger)">${escHtml(o.error)}</div>`
+      : '<div class="drawer-loading">Reading what the run has produced…</div>';
+  }
 
   const commits = o.repos.flatMap(r => r.work.commits.map(c => ({ ...c, tree: r.label })));
   const files = o.repos.flatMap(r => r.work.committed.map(f => ({ ...f, tree: r.label })));
