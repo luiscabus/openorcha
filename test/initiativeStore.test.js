@@ -187,3 +187,20 @@ test('trashed files never show up as live initiatives', () => {
   store.remove(initiative.id);
   assert.equal(store.list().length, before, 'the trash directory must not be listed');
 });
+
+test('a trailing slash on a directory is stripped', () => {
+  // Claude's transcript directory is the cwd with slashes turned into dashes,
+  // so "…/llp-renderer/" becomes "…-llp-renderer-" and resolves to nothing:
+  // the supervisor could not read its own orchestrator's replies.
+  const initiative = store.create({ name: 'Slashes', cwd: `${dir}/` });
+  assert.equal(initiative.cwd, dir);
+
+  const withWorker = store.normalize({
+    name: 'x', cwd: `${dir}///`,
+    workers: [{ id: 'w', name: 'w', sessionName: 's', cwd: '/some/path/' }],
+  });
+  assert.equal(withWorker.cwd, dir);
+  assert.equal(withWorker.workers[0].cwd, '/some/path');
+  assert.equal(store.normalizeDir('/'), '/', 'the root is not emptied');
+  assert.equal(store.normalizeDir(''), '');
+});

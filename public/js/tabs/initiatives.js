@@ -356,8 +356,15 @@ function renderOutcome(i) {
     <div class="outcome-block">
       <div class="outcome-head">
         Agents &amp; conversations
-        <button class="btn btn-ghost btn-sm" onclick="toggleOrchestrator('${escAttr(i.id)}', ${o.workers.some(w => w.role === 'orchestrator' && w.status !== 'gone') ? 'false' : 'true'})">${o.workers.some(w => w.role === 'orchestrator' && w.status !== 'gone') ? 'Turn off orchestrator' : 'Add orchestrator'}</button>
+        <button class="btn btn-ghost btn-sm" onclick="toggleOrchestrator('${escAttr(i.id)}', ${hasOrchestrator(i) ? 'false' : 'true'})">${hasOrchestrator(i) ? 'Turn off orchestrator' : 'Add orchestrator'}</button>
       </div>
+      ${i.useOrchestrator && !hasOrchestrator(i) ? `<div class="outcome-agent outcome-agent-pending">
+        <div class="outcome-agent-head">
+          <span class="initiative-worker-dot initiative-worker-starting"></span>
+          <span class="outcome-agent-name">Orchestrator</span>
+          <span class="outcome-agent-meta">${escHtml(orchestratorWaitReason(i))}</span>
+        </div>
+      </div>` : ''}
       ${o.workers.length ? o.workers.map(w => `<div class="outcome-agent">
         <div class="outcome-agent-head">
           <span class="outcome-agent-name">${escHtml(w.name)}</span>
@@ -372,6 +379,20 @@ function renderOutcome(i) {
         ${openTranscript?.workerId === w.workerId ? renderTranscript() : ''}
       </div>`).join('') : '<div class="drawer-empty">No agents have run yet.</div>'}
     </div>`;
+}
+
+function hasOrchestrator(i) {
+  return (i.workers || []).some(w => w.role === 'orchestrator' && w.status !== 'gone');
+}
+
+/** Why it is not here yet — the last thing the run recorded about it. */
+function orchestratorWaitReason(i) {
+  const note = [...(i.events || [])].reverse()
+    .find(e => /orchestrator/i.test(e.detail || '') && ['error', 'warning'].includes(e.type));
+  if (note) return note.detail;
+  if (['draft'].includes(i.status)) return 'starts when you start the run';
+  if (['cancelled', 'failed'].includes(i.status)) return 'the run is stopped';
+  return 'starting…';
 }
 
 function liveLabel(i, w) {
@@ -810,8 +831,11 @@ export async function toggleOrchestrator(id, enabled) {
   )) return;
   try {
     await api('POST', `/api/initiatives/${id}/orchestrator`, { enabled });
-    toast(enabled ? 'Orchestrator starting…' : 'Orchestrator stopped');
-    loadInitiatives();
+    toast(enabled ? 'Orchestrator starting — it takes a few seconds' : 'Orchestrator stopped');
+    outcomeCache[id] = null;
+    await loadInitiatives();
+    // It launches in the background; look again once it should be up.
+    if (enabled) setTimeout(() => { outcomeCache[id] = null; loadInitiatives(); }, 12000);
   } catch (err) { toast(err.message, 'error'); }
 }
 

@@ -96,12 +96,48 @@ test('an initiative that does not want one never gets one', async () => {
 
 test('one that does is honest about being unable to launch under the guard', async () => {
   const initiative = store.create({ name: 'Wants a boss', cwd: dir, useOrchestrator: true, notifyOnGate: false });
-  assert.equal(initiative.useOrchestrator, true);
+  initiative.status = 'running';
+  store.save(initiative);
   assert.equal(await supervisor.ensureOrchestrator(initiative, { agents: [], procs: {} }), false);
 
   const after = store.get(initiative.id);
   assert.ok(after.events.some(e => /Orchestrator launch suppressed/.test(e.detail)));
   assert.equal(store.orchestrator(after), null, 'and no phantom orchestrator is recorded');
+});
+
+test('a draft launches nothing, however much it wants an orchestrator', async () => {
+  const initiative = store.create({ name: 'Not started', cwd: dir, useOrchestrator: true, notifyOnGate: false });
+  assert.equal(initiative.status, 'draft');
+  assert.equal(await supervisor.ensureOrchestrator(initiative, { agents: [], procs: {} }), false);
+  assert.ok(!store.get(initiative.id).events.some(e => /suppressed/.test(e.detail)), 'it never got as far as trying');
+});
+
+test('a blocked or finished run still gets the orchestrator it asked for', async () => {
+  // The bug: an orchestrator added to a run that was not advancing never
+  // started, because the status check came first and the loop skipped it.
+  for (const status of ['blocked', 'done', 'paused']) {
+    const initiative = store.create({ name: `Wants one while ${status}`, cwd: dir, useOrchestrator: true, notifyOnGate: false });
+    initiative.status = status;
+    store.save(initiative);
+
+    await supervisor.tickOne(store.get(initiative.id), { agents: [], procs: {} });
+
+    const after = store.get(initiative.id);
+    assert.ok(
+      after.events.some(e => /Orchestrator launch suppressed/.test(e.detail)),
+      `a ${status} run should have tried to start one (the guard then stops it)`,
+    );
+  }
+});
+
+test('a stopped run does not start one', async () => {
+  for (const status of ['cancelled', 'failed']) {
+    const initiative = store.create({ name: `Over: ${status}`, cwd: dir, useOrchestrator: true, notifyOnGate: false });
+    initiative.status = status;
+    store.save(initiative);
+    assert.equal(await supervisor.ensureOrchestrator(store.get(initiative.id), { agents: [], procs: {} }), false);
+    assert.ok(!store.get(initiative.id).events.some(e => /suppressed/.test(e.detail)));
+  }
 });
 
 test('asking an initiative with no orchestrator says so rather than hanging', async () => {

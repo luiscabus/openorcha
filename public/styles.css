@@ -4285,3 +4285,5 @@ body {
 }
 
 .transcript-tool-row span { color: var(--text3); overflow-wrap: anywhere; }
+
+.outcome-agent-pending { border-style: dashed; opacity: .85; }

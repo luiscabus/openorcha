@@ -337,14 +337,7 @@ router.post('/:id/advance', (req, res) => {
 // How each worker's messages are read, wherever they came from: a remembered
 // transcript first, so a finished worker's conversation is still readable.
 function readWorkerMessages(initiative, worker, snapshot) {
-  const agent = worker.sessionName ? supervisor.agentForSession(worker.sessionName, snapshot) : null;
-  return supervisor.allMessages({
-    agentId: worker.agentId || initiative.agentId,
-    pid: agent?.pid || null,
-    args: agent?.args || '',
-    cwd: worker.cwd || initiative.cwd,
-    sessionFile: worker.sessionFile || null,
-  });
+  return supervisor.workerMessages(initiative, worker, snapshot);
 }
 
 // What a tool call actually did, in one line. "Bash" six times tells you
@@ -430,8 +423,9 @@ router.post('/:id/orchestrator', (req, res) => {
   }
 
   const saved = store.save(initiative);
-  if (enabled && saved.status === 'running') supervisor.tick().catch(() => {});
-  res.json({ initiative: withLive(saved) });
+  // Kick a tick whatever the run's state: the orchestrator is wanted now.
+  if (enabled) supervisor.tick().catch(() => {});
+  res.json({ initiative: withLive(saved), starting: enabled });
 });
 
 // ─── Parallel work ───────────────────────────────────────────────────────────
