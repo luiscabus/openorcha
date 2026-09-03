@@ -7,7 +7,9 @@ let selectedTemplate = 'ticket-to-pr';
 let pendingCriteria = null;
 let outcomeCache = {};
 let openTranscript = null;   // { workerId, messages, worker, total }
-let detailView = 'work';     // 'work' | 'plan' | 'activity'
+let detailView = 'work';     // 'chat' | 'work' | 'plan' | 'activity'
+let chat = null;             // { id, worker, turns, sending, waitingSince, showSystem }
+let chatPoll = null;
 let selectedId = null;
 let refreshTimer = null;
 
@@ -55,6 +57,7 @@ export function startInitiativesAutoRefresh() {
 export function clearInitiativesAutoRefresh() {
   if (refreshTimer) clearInterval(refreshTimer);
   refreshTimer = null;
+  stopChatPoll();
 }
 
 // ─── List ────────────────────────────────────────────────────────────────────
@@ -254,6 +257,7 @@ function renderDetailInner() {
     ${renderGates(i)}
 
     <div class="initiative-view-switch">
+      ${i.useOrchestrator || i.liveWorkers ? `<button class="btn btn-sm btn-toggle${detailView === 'chat' ? ' active' : ''}" onclick="setInitiativeView('chat')">Chat${chat?.unread ? ` (${chat.unread})` : ''}</button>` : ''}
       <button class="btn btn-sm btn-toggle${detailView === 'work' ? ' active' : ''}" onclick="setInitiativeView('work')">What it has done</button>
       <button class="btn btn-sm btn-toggle${detailView === 'plan' ? ' active' : ''}" onclick="setInitiativeView('plan')">Plan &amp; definition of done</button>
       <button class="btn btn-sm btn-toggle${detailView === 'activity' ? ' active' : ''}" onclick="setInitiativeView('activity')">Supervisor activity</button>
@@ -264,14 +268,11 @@ function renderDetailInner() {
         ${[...(i.events || [])].reverse().slice(0, 80).map(renderEvent).join('') || '<div class="drawer-empty">Nothing yet.</div>'}
       </div>` : ''}
     ${detailView === 'work' ? `<div id="initiative-outcome">${renderOutcome(i)}</div>` : ''}
+    ${detailView === 'chat' ? `<div id="initiative-chat">${renderChat(i)}</div>` : ''}
 
     ${renderStats(i)}
 
-    <form class="initiative-say" onsubmit="sendInitiativeMessage(event, '${escAttr(i.id)}')">
-      <input type="text" id="initiative-say-input" placeholder="${escAttr(sayPlaceholder(i))}" />
-      <button type="submit" class="btn btn-ghost btn-sm">Send</button>
-    </form>
-    ${(i.pendingMessages || []).length ? `<div class="initiative-pending">${(i.pendingMessages || []).length} message(s) waiting for the next agent</div>` : ''}
+    ${detailView === 'chat' ? '' : renderSayBox(i)}
 
   `;
 
@@ -282,7 +283,12 @@ function renderDetailInner() {
 
 export function setInitiativeView(view) {
   detailView = view;
+  if (view !== 'chat') stopChatPoll();
   renderDetail();
+  if (view === 'chat') {
+    if (chat?.id === selectedId) scrollChatToBottom();
+    else loadChat(selectedId);
+  }
 }
 
 async function loadOutcome(id, forVersion) {
@@ -299,6 +305,157 @@ async function loadOutcome(id, forVersion) {
     outcomeCache[id] = { loading: false, forVersion, error: err.message };
     const el = document.getElementById('initiative-outcome');
     if (el) el.innerHTML = `<div class="drawer-empty" style="color:var(--danger)">${escHtml(err.message)}</div>`;
+  }
+}
+
+function renderChat(i) {
+  if (!chat || chat.id !== i.id) {
+    loadChat(i.id);
+    return '<div class="drawer-loading">Opening the conversation…</div>';
+  }
+
+  const who = chat.worker;
+  const shown = chat.turns.filter(t => chat.showSystem || t.side !== 'system');
+  const systemCount = chat.turns.filter(t => t.side === 'system').length;
+
+  return `
+    <div class="chat-head">
+      <span class="chat-with">${who ? escHtml(who.name) : 'nobody yet'}</span>
+      ${who?.isOrchestrator ? '<span class="initiative-worker-role">orchestrator</span>' : ''}
+      ${who ? `<span class="chat-status chat-status-${escAttr(who.live ? who.status : 'gone')}">${escHtml(who.live ? who.status : 'not running')}</span>` : ''}
+      ${systemCount ? `<button class="btn btn-ghost btn-sm" onclick="toggleChatSystem()">${chat.showSystem ? 'Hide' : 'Show'} ${systemCount} supervisor message${systemCount === 1 ? '' : 's'}</button>` : ''}
+    </div>
+
+    <div class="chat-log" id="chat-log">
+      ${shown.length ? shown.map(renderChatTurn).join('') : '<div class="drawer-empty">Nothing said yet. Ask it something.</div>'}
+      ${chat.sending ? `<div class="chat-turn chat-you chat-optimistic">
+          <div class="chat-bubble">${escHtml(chat.sending)}</div>
+          <div class="chat-meta">sending…</div>
+        </div>` : ''}
+      ${chat.waitingSince ? `<div class="chat-waiting">${escHtml(who?.name || 'it')} is thinking${'…'}<span class="chat-elapsed">${Math.round((Date.now() - chat.waitingSince) / 1000)}s</span></div>` : ''}
+    </div>
+
+    <form class="chat-compose" onsubmit="sendChat(event, '${escAttr(i.id)}')">
+      <textarea id="chat-input" rows="2" placeholder="${escAttr(who ? `Message ${who.name}…` : 'Nothing is running — this will be held for the next agent')}" onkeydown="chatKeydown(event, '${escAttr(i.id)}')"></textarea>
+      <button type="submit" class="btn btn-primary btn-sm">Send</button>
+    </form>
+    ${(i.pendingMessages || []).length ? `<div class="initiative-pending">${(i.pendingMessages || []).length} message(s) waiting for the next agent</div>` : ''}
+    <div class="chat-hint">Enter sends · Shift+Enter for a new line</div>`;
+}
+
+function renderChatTurn(t) {
+  const side = t.side === 'you' ? 'you' : t.side === 'orchestrator' ? 'them' : 'system';
+  return `<div class="chat-turn chat-${side}">
+    <div class="chat-bubble">${t.text ? simpleMarkdown(t.text) : ''}
+      ${t.tools?.length ? `<div class="transcript-tools">${t.tools.map(x => `<code>${escHtml(x)}</code>`).join(' ')}</div>` : ''}
+    </div>
+    <div class="chat-meta">${t.side === 'you' ? 'you' : t.side === 'system' ? 'supervisor' : ''}${t.timestamp ? ` · ${escHtml(shortTime(t.timestamp))}` : ''}</div>
+  </div>`;
+}
+
+async function loadChat(id, { keepScroll = false } = {}) {
+  try {
+    const data = await api('GET', `/api/initiatives/${id}/chat`);
+    const before = chat?.turns?.length || 0;
+    const showSystem = chat?.id === id ? chat.showSystem : false;
+    const waitingSince = chat?.id === id ? chat.waitingSince : null;
+
+    // The answer has landed when a new turn from it appears.
+    const answered = data.turns.length > before
+      && data.turns.slice(before).some(t => t.side === 'orchestrator');
+
+    chat = {
+      id,
+      worker: data.worker,
+      turns: data.turns,
+      pending: data.pending,
+      showSystem,
+      sending: null,
+      waitingSince: answered ? null : waitingSince,
+      unread: 0,
+    };
+    if (answered) stopChatPoll();
+
+    if (selectedId === id && detailView === 'chat') {
+      const el = document.getElementById('initiative-chat');
+      if (el) {
+        const log = document.getElementById('chat-log');
+        const wasAtBottom = !log || log.scrollTop + log.clientHeight >= log.scrollHeight - 40;
+        const input = document.getElementById('chat-input');
+        const draft = input?.value;
+        const focused = document.activeElement === input;
+        el.innerHTML = renderChat({ id, pendingMessages: new Array(data.pending || 0) });
+        const newInput = document.getElementById('chat-input');
+        if (newInput && draft) newInput.value = draft;
+        if (newInput && focused) newInput.focus();
+        if (!keepScroll || wasAtBottom) scrollChatToBottom();
+      }
+    }
+  } catch (err) {
+    const el = document.getElementById('initiative-chat');
+    if (el) el.innerHTML = `<div class="drawer-empty" style="color:var(--danger)">${escHtml(err.message)}</div>`;
+  }
+}
+
+function scrollChatToBottom() {
+  const log = document.getElementById('chat-log');
+  if (log) log.scrollTop = log.scrollHeight;
+}
+
+function startChatPoll(id) {
+  stopChatPoll();
+  chatPoll = setInterval(() => loadChat(id, { keepScroll: true }), 4000);
+}
+
+function stopChatPoll() {
+  if (chatPoll) clearInterval(chatPoll);
+  chatPoll = null;
+}
+
+export function toggleChatSystem() {
+  if (!chat) return;
+  chat.showSystem = !chat.showSystem;
+  const el = document.getElementById('initiative-chat');
+  if (el) el.innerHTML = renderChat({ id: chat.id, pendingMessages: new Array(chat.pending || 0) });
+  scrollChatToBottom();
+}
+
+export function chatKeydown(event, id) {
+  if (event.key === 'Enter' && !event.shiftKey) {
+    event.preventDefault();
+    sendChat(event, id);
+  }
+}
+
+export async function sendChat(event, id) {
+  if (event?.preventDefault) event.preventDefault();
+  const input = document.getElementById('chat-input');
+  const message = (input?.value || '').trim();
+  if (!message) return;
+
+  // Show it straight away — waiting for a round trip to see your own words is
+  // what made this not feel like a conversation.
+  input.value = '';
+  if (chat?.id === id) {
+    chat.sending = message;
+    const el = document.getElementById('initiative-chat');
+    if (el) el.innerHTML = renderChat({ id, pendingMessages: new Array(chat.pending || 0) });
+    scrollChatToBottom();
+  }
+
+  try {
+    const data = await api('POST', `/api/initiatives/${id}/chat`, { message });
+    if (chat?.id === id) {
+      chat.sending = null;
+      chat.waitingSince = data.delivered ? Date.now() : null;
+    }
+    if (!data.delivered) toast(data.note, 'error');
+    await loadChat(id);
+    if (data.delivered) startChatPoll(id);
+  } catch (err) {
+    if (chat?.id === id) chat.sending = null;
+    toast(err.message, 'error');
+    await loadChat(id);
   }
 }
 
@@ -599,6 +756,14 @@ function renderStages(i) {
   </div>`;
 }
 
+function renderSayBox(i) {
+  return `<form class="initiative-say" onsubmit="sendInitiativeMessage(event, '${escAttr(i.id)}')">
+      <input type="text" id="initiative-say-input" placeholder="${escAttr(sayPlaceholder(i))}" />
+      <button type="submit" class="btn btn-ghost btn-sm">Send</button>
+    </form>
+    ${(i.pendingMessages || []).length ? `<div class="initiative-pending">${(i.pendingMessages || []).length} message(s) waiting for the next agent</div>` : ''}`;
+}
+
 function sayPlaceholder(i) {
   const boss = (i.workers || []).find(w => w.role === 'orchestrator' && w.status !== 'gone');
   if (boss) return 'Ask the orchestrator…';
@@ -643,6 +808,7 @@ function renderEvent(e) {
 // ─── Actions ─────────────────────────────────────────────────────────────────
 
 export function selectInitiative(id) {
+  if (id !== selectedId) { stopChatPoll(); chat = null; }
   selectedId = id;
   renderList(document.getElementById('initiatives-list'));
   renderDetail();
@@ -750,8 +916,15 @@ export async function sendInitiativeMessage(event, id) {
   input.value = '';
   try {
     const data = await api('POST', `/api/initiatives/${id}/message`, { message });
-    toast(data.delivered ? `Sent to ${data.worker || 'the agent'}` : data.note, data.delivered ? 'success' : 'error');
-    loadInitiatives();
+    if (data.delivered) {
+      // Show the exchange where it belongs rather than as a toast that vanishes.
+      toast(`Sent to ${data.worker || 'the agent'} — opening the conversation`);
+      chat = null;
+      setInitiativeView('chat');
+    } else {
+      toast(data.note, 'error');
+      loadInitiatives();
+    }
   } catch (err) { toast(err.message, 'error'); }
 }
 

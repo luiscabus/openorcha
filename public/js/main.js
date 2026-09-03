@@ -96,6 +96,9 @@ import {
   setInitiativeView,
   toggleTranscript,
   loadTrash,
+  sendChat,
+  chatKeydown,
+  toggleChatSystem,
 } from './tabs/initiatives.js';
 import { loadClaudeSettings, loadClaudeProjectSettings, saveClaudeSettings } from './tabs/claudeSettings.js';
 import {
@@ -313,6 +316,9 @@ window.toggleOrchestrator = toggleOrchestrator;
 window.setInitiativeView = setInitiativeView;
 window.toggleTranscript = toggleTranscript;
 window.loadTrash = loadTrash;
+window.sendChat = sendChat;
+window.chatKeydown = chatKeydown;
+window.toggleChatSystem = toggleChatSystem;
 
 // Claude Code: History
 window.loadClaudeHistory = loadClaudeHistory;

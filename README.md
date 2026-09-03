@@ -104,6 +104,19 @@ seeing none of its own workers, keeps concluding they died and relaunching them.
 `lib/psNumbers.js` parses both conventions; if you ever see an empty Agents tab
 with live sessions, start there.
 
+### Talking to it
+
+When a run has an orchestrator, the initiative opens a **Chat** view: your
+messages and its answers as a conversation, your message shown the moment you
+send it, a thinking indicator while it works, and the reply arriving on its own.
+
+The supervisor's own traffic travels down the same pipe — the opening brief, the
+stage updates, the decision requests and the JSON decisions it sends back. Those
+are folded away behind *Show N supervisor messages* rather than mixed into the
+conversation. An operator's message carries its own marker so the two can be
+told apart; without that, a message beginning "Stage finished" is
+indistinguishable from the supervisor saying a stage finished.
+
 ### Reading what a run has done
 
 Selecting an initiative opens on **What it has done**, not on the plan:

@@ -10,6 +10,7 @@ const { PROFILES } = require('../lib/initiativePolicy');
 const templates = require('../lib/initiativeTemplates');
 const framing = require('../lib/initiativeFraming');
 const outcome = require('../lib/initiativeOutcome');
+const orch = require('../lib/initiativeOrchestrator');
 
 const router = express.Router();
 
@@ -396,6 +397,87 @@ router.get('/:id/transcript', (req, res) => {
         timestamp: m.timestamp || null,
       })),
     });
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
+// ─── Chatting with the orchestrator ──────────────────────────────────────────
+
+function chatTarget(initiative) {
+  return store.orchestrator(initiative) || store.activeWorkers(initiative)[0] || (initiative.workers || [])[0] || null;
+}
+
+// The conversation, with the supervisor's own traffic marked rather than mixed
+// in: the brief, the status updates and the JSON decisions are real but they
+// are not what you said to it.
+router.get('/:id/chat', (req, res) => {
+  const initiative = store.get(req.params.id);
+  if (!initiative) return res.status(404).json({ error: 'Initiative not found' });
+
+  const worker = chatTarget(initiative);
+  if (!worker) return res.json({ worker: null, turns: [], pending: (initiative.pendingMessages || []).length });
+
+  try {
+    const snapshot = supervisor.takeSnapshot();
+    const agent = worker.sessionName ? supervisor.agentForSession(worker.sessionName, snapshot) : null;
+    const all = supervisor.workerMessages(initiative, worker, snapshot);
+
+    const turns = all.map((m, index) => {
+      const side = orch.classifyTurn(m.role, m.text);
+      return {
+        index,
+        side,
+        text: orch.stripMarkers(m.text),
+        tools: (Array.isArray(m.tools) ? m.tools : []).map(t => (typeof t === 'string' ? t : t.name || 'tool')).slice(0, 8),
+        timestamp: m.timestamp || null,
+      };
+    }).filter(t => t.text || t.tools.length);
+
+    res.json({
+      worker: {
+        workerId: worker.id,
+        name: worker.name,
+        role: worker.role || 'worker',
+        isOrchestrator: (worker.role || 'worker') === 'orchestrator',
+        live: !!agent,
+        status: agent ? supervisor.inferStatus(agent).status : worker.status,
+      },
+      turns,
+      pending: (initiative.pendingMessages || []).length,
+    });
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
+// Send, and say how many turns existed beforehand so the caller knows what to
+// wait for rather than guessing when the answer has landed.
+router.post('/:id/chat', (req, res) => {
+  const initiative = store.get(req.params.id);
+  if (!initiative) return res.status(404).json({ error: 'Initiative not found' });
+  const message = String(req.body?.message || '').trim();
+  if (!message) return res.status(400).json({ error: 'message is required' });
+
+  try {
+    const worker = chatTarget(initiative);
+    const snapshot = supervisor.takeSnapshot();
+    const before = worker ? supervisor.workerMessages(initiative, worker, snapshot).length : 0;
+    const sent = worker ? supervisor.deliverNote(initiative, message, { workerId: worker.id }) : { delivered: false };
+
+    if (!sent.delivered) {
+      store.queueMessage(initiative, message);
+      return res.json({
+        delivered: false,
+        queued: true,
+        note: 'Nothing is running for this initiative — held for the next agent.',
+        pending: (store.save(initiative).pendingMessages || []).length,
+      });
+    }
+
+    store.addEvent(initiative, 'user-message', `→ ${sent.workerName || 'agent'}: ${message.slice(0, 260)}`, { workerId: sent.workerId });
+    store.save(initiative);
+    res.json({ delivered: true, worker: sent.workerName, turnsBefore: before });
   } catch (e) {
     res.status(500).json({ error: e.message });
   }
