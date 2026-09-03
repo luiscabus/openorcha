@@ -4406,3 +4406,144 @@ body {
 
 .chat-compose textarea:focus { outline: none; border-color: var(--accent); }
 .chat-hint { font-size: 10px; color: var(--text3); margin-top: 5px; }
+
+/* ── One run, one stream ──────────────────────────────────────────────────── */
+
+.strip {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  flex-wrap: wrap;
+  padding: 9px 11px;
+  margin: 12px 0;
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  font-size: 11px;
+  color: var(--text2);
+}
+
+.strip-progress { display: flex; flex-direction: column; gap: 4px; min-width: 190px; flex: 1; }
+
+.strip-bar { height: 4px; background: var(--bg3); border-radius: 2px; overflow: hidden; }
+.strip-bar > span { display: block; height: 100%; background: var(--success); }
+
+.strip-stage { font-size: 12px; color: var(--text); font-weight: 600; }
+.strip-stage em { color: var(--text3); font-weight: 400; font-style: normal; }
+
+.strip-item strong { color: var(--text); font-size: 13px; }
+.strip-who { display: flex; align-items: center; gap: 6px; }
+.strip-gates { color: var(--warning); font-weight: 600; }
+.strip-detail { margin-left: auto; }
+
+.stream {
+  max-height: 56vh;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 4px 2px 10px;
+  scroll-behavior: auto;
+}
+
+.stream-turn { display: flex; flex-direction: column; max-width: 84%; }
+.stream-you { align-self: flex-end; align-items: flex-end; }
+.stream-them { align-self: flex-start; align-items: flex-start; }
+
+.stream-you .chat-bubble {
+  background: var(--accent);
+  color: #0b1220;
+  border-bottom-right-radius: 4px;
+}
+
+.stream-you .chat-bubble code,
+.stream-you .chat-bubble pre { background: rgba(0, 0, 0, .18); color: inherit; }
+
+.stream-them .chat-bubble {
+  background: var(--bg3);
+  border: 1px solid var(--border);
+  border-bottom-left-radius: 4px;
+}
+
+.stream-optimistic .chat-bubble { opacity: .65; }
+
+/* Supervisor events: present, quiet, in order */
+
+.stream-event {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  font-size: 11px;
+  color: var(--text3);
+  padding: 1px 4px;
+}
+
+.stream-dot {
+  width: 5px;
+  height: 5px;
+  border-radius: 50%;
+  background: var(--border);
+  flex-shrink: 0;
+  margin-top: 5px;
+}
+
+.stream-event-label { color: var(--text2); font-weight: 600; flex-shrink: 0; }
+.stream-event-stage { color: var(--text3); flex-shrink: 0; }
+.stream-event-text { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.stream-event-time { margin-left: auto; flex-shrink: 0; font-variant-numeric: tabular-nums; }
+
+.stream-event-error .stream-dot { background: var(--danger); }
+.stream-event-error .stream-event-label { color: var(--danger); }
+.stream-event-warning .stream-dot { background: var(--warning); }
+.stream-event-warning .stream-event-label { color: var(--warning); }
+.stream-event-answered .stream-dot { background: var(--success); }
+.stream-event-answered .stream-event-label { color: var(--success); }
+.stream-event-plumbing { opacity: .6; font-style: italic; }
+
+/* A gate, where it happened */
+
+.stream-gate {
+  align-self: stretch;
+  border: 1px solid var(--warning);
+  background: rgba(243, 179, 76, .07);
+  border-radius: var(--radius);
+  padding: 11px 13px;
+  margin: 4px 0;
+}
+
+.stream-gate-head {
+  display: flex;
+  justify-content: space-between;
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: .04em;
+  color: var(--warning);
+  font-weight: 700;
+  margin-bottom: 6px;
+}
+
+.stream-gate-question { font-size: 13px; font-weight: 600; }
+.stream-gate-reason { font-size: 11px; color: var(--text2); margin-top: 4px; }
+
+/* Reference material, out of the way */
+
+.initiative-details {
+  margin-top: 16px;
+  border-top: 1px solid var(--border);
+  padding-top: 10px;
+}
+
+.initiative-details summary {
+  cursor: pointer;
+  font-size: 11px;
+  color: var(--text3);
+  text-transform: uppercase;
+  letter-spacing: .05em;
+  font-weight: 700;
+  list-style: none;
+}
+
+.initiative-details summary::-webkit-details-marker { display: none; }
+.initiative-details summary::before { content: '▸ '; }
+.initiative-details[open] summary::before { content: '▾ '; }
+.initiative-details-body { padding-top: 10px; }

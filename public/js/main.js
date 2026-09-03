@@ -93,12 +93,12 @@ import {
   toggleCriterion,
   restoreInitiative,
   toggleOrchestrator,
-  setInitiativeView,
+  setDetailsOpen,
+  toggleSupervisorDetail,
   toggleTranscript,
   loadTrash,
   sendChat,
   chatKeydown,
-  toggleChatSystem,
 } from './tabs/initiatives.js';
 import { loadClaudeSettings, loadClaudeProjectSettings, saveClaudeSettings } from './tabs/claudeSettings.js';
 import {
@@ -313,12 +313,12 @@ window.checkAcceptance = checkAcceptance;
 window.toggleCriterion = toggleCriterion;
 window.restoreInitiative = restoreInitiative;
 window.toggleOrchestrator = toggleOrchestrator;
-window.setInitiativeView = setInitiativeView;
+window.setDetailsOpen = setDetailsOpen;
+window.toggleSupervisorDetail = toggleSupervisorDetail;
 window.toggleTranscript = toggleTranscript;
 window.loadTrash = loadTrash;
 window.sendChat = sendChat;
 window.chatKeydown = chatKeydown;
-window.toggleChatSystem = toggleChatSystem;
 
 // Claude Code: History
 window.loadClaudeHistory = loadClaudeHistory;

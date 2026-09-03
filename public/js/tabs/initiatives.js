@@ -7,9 +7,11 @@ let selectedTemplate = 'ticket-to-pr';
 let pendingCriteria = null;
 let outcomeCache = {};
 let openTranscript = null;   // { workerId, messages, worker, total }
-let detailView = 'work';     // 'chat' | 'work' | 'plan' | 'activity'
-let chat = null;             // { id, worker, turns, sending, waitingSince, showSystem }
-let chatPoll = null;
+let stream = null;           // { id, entries, talkingTo, sending, waitingSince }
+let streamPoll = null;
+let showSupervisorDetail = false;
+let detailsOpen = false;
+let atBottom = true;
 let selectedId = null;
 let refreshTimer = null;
 
@@ -44,6 +46,7 @@ export async function loadInitiatives({ background = false } = {}) {
     renderDetail();
     renderNeedsYou();
     renderTrash();
+    if (selectedId && (!stream || stream.id !== selectedId)) loadStream(selectedId, { first: true });
   } catch (err) {
     list.innerHTML = `<div class="drawer-empty" style="color:var(--danger)">${escHtml(err.message)}</div>`;
   }
@@ -57,7 +60,7 @@ export function startInitiativesAutoRefresh() {
 export function clearInitiativesAutoRefresh() {
   if (refreshTimer) clearInterval(refreshTimer);
   refreshTimer = null;
-  stopChatPoll();
+  stopStreamPoll();
 }
 
 // ─── List ────────────────────────────────────────────────────────────────────
@@ -178,7 +181,7 @@ function captureDetailState() {
     });
   });
   const scrolls = [];
-  panel.querySelectorAll('.transcript, .initiative-timeline').forEach((el, index) => {
+  panel.querySelectorAll('.transcript, .initiative-timeline, .stream').forEach((el, index) => {
     scrolls.push({ key: `${el.className}:${index}`, top: el.scrollTop });
   });
   return { fields, scrolls, panelTop: panel.scrollTop };
@@ -201,7 +204,7 @@ function restoreDetailState(state) {
     }
   });
 
-  panel.querySelectorAll('.transcript, .initiative-timeline').forEach((el, index) => {
+  panel.querySelectorAll('.transcript, .initiative-timeline, .stream').forEach((el, index) => {
     const saved = state.scrolls.find(sc => sc.key === `${el.className}:${index}`);
     if (saved) el.scrollTop = saved.top;
   });
@@ -212,6 +215,11 @@ function renderDetail() {
   const state = captureDetailState();
   renderDetailInner();
   restoreDetailState(state);
+  watchStreamScroll();
+  // A rebuilt panel starts at scrollTop 0. If you were following the newest
+  // message, keep following it.
+  if (atBottom) scrollStreamToBottom();
+  if (selectedId && !streamPoll) startStreamPoll(selectedId);
 }
 
 function renderDetailInner() {
@@ -254,41 +262,39 @@ function renderDetailInner() {
 
     ${i.goal ? `<p class="initiative-goal">${escHtml(i.goal)}</p>` : ''}
 
-    ${renderGates(i)}
+    ${renderStatusStrip(i)}
 
-    <div class="initiative-view-switch">
-      ${i.useOrchestrator || i.liveWorkers ? `<button class="btn btn-sm btn-toggle${detailView === 'chat' ? ' active' : ''}" onclick="setInitiativeView('chat')">Chat${chat?.unread ? ` (${chat.unread})` : ''}</button>` : ''}
-      <button class="btn btn-sm btn-toggle${detailView === 'work' ? ' active' : ''}" onclick="setInitiativeView('work')">What it has done</button>
-      <button class="btn btn-sm btn-toggle${detailView === 'plan' ? ' active' : ''}" onclick="setInitiativeView('plan')">Plan &amp; definition of done</button>
-      <button class="btn btn-sm btn-toggle${detailView === 'activity' ? ' active' : ''}" onclick="setInitiativeView('activity')">Supervisor activity</button>
-    </div>
+    <div class="stream" id="initiative-stream">${renderStream(i)}</div>
 
-    ${detailView === 'plan' ? `${renderAcceptance(i)}${renderStages(i)}` : ''}
-    ${detailView === 'activity' ? `<div class="initiative-timeline">
-        ${[...(i.events || [])].reverse().slice(0, 80).map(renderEvent).join('') || '<div class="drawer-empty">Nothing yet.</div>'}
-      </div>` : ''}
-    ${detailView === 'work' ? `<div id="initiative-outcome">${renderOutcome(i)}</div>` : ''}
-    ${detailView === 'chat' ? `<div id="initiative-chat">${renderChat(i)}</div>` : ''}
+    ${renderComposer(i)}
 
-    ${renderStats(i)}
-
-    ${detailView === 'chat' ? '' : renderSayBox(i)}
+    <details class="initiative-details"${detailsOpen ? ' open' : ''} ontoggle="window.setDetailsOpen(this.open)">
+      <summary>Plan, definition of done, and what it produced</summary>
+      <div class="initiative-details-body">
+        ${renderAcceptance(i)}
+        ${renderStages(i)}
+        ${renderStats(i)}
+        <div id="initiative-outcome">${renderOutcome(i)}</div>
+      </div>
+    </details>
 
   `;
 
   // Refetch only when the run has moved on: churning this while you read is
   // as disruptive as clearing an input.
-  if (detailView === 'work' && outcomeCache[i.id]?.forVersion !== i.updatedAt) loadOutcome(i.id, i.updatedAt);
+  if (detailsOpen && outcomeCache[i.id]?.forVersion !== i.updatedAt) loadOutcome(i.id, i.updatedAt);
 }
 
-export function setInitiativeView(view) {
-  detailView = view;
-  if (view !== 'chat') stopChatPoll();
-  renderDetail();
-  if (view === 'chat') {
-    if (chat?.id === selectedId) scrollChatToBottom();
-    else loadChat(selectedId);
-  }
+export function setDetailsOpen(open) {
+  detailsOpen = open;
+  if (!open) return;
+  const i = initiatives.find(x => x.id === selectedId);
+  if (i && outcomeCache[i.id]?.forVersion !== i.updatedAt) loadOutcome(i.id, i.updatedAt);
+}
+
+export function toggleSupervisorDetail() {
+  showSupervisorDetail = !showSupervisorDetail;
+  loadStream(selectedId, { force: true });
 }
 
 async function loadOutcome(id, forVersion) {
@@ -297,7 +303,7 @@ async function loadOutcome(id, forVersion) {
   try {
     const { outcome } = await api('GET', `/api/initiatives/${id}/outcome`);
     outcomeCache[id] = { ...outcome, forVersion, loading: false };
-    if (selectedId === id && detailView === 'work') {
+    if (selectedId === id && detailsOpen) {
       const el = document.getElementById('initiative-outcome');
       if (el) el.innerHTML = renderOutcome(initiatives.find(x => x.id === id));
     }
@@ -308,34 +314,102 @@ async function loadOutcome(id, forVersion) {
   }
 }
 
-function renderChat(i) {
-  if (!chat || chat.id !== i.id) {
-    loadChat(i.id);
-    return '<div class="drawer-loading">Opening the conversation…</div>';
+// ─── The run, as one live stream ─────────────────────────────────────────────
+
+function renderStatusStrip(i) {
+  const done = i.stages.filter(x => x.status === 'done').length;
+  const pct = Math.round((done / i.stages.length) * 100);
+  const met = (i.acceptance || []).filter(c => c.status === 'met' || c.status === 'waived').length;
+  const who = stream?.talkingTo;
+  const gates = (i.openGates || []).length;
+
+  return `<div class="strip">
+    <div class="strip-progress" title="${escAttr(i.stages.map(x => x.name).join(' → '))}">
+      <div class="strip-bar"><span style="width:${pct}%"></span></div>
+      <div class="strip-stage">${escHtml(i.currentStage?.name || '—')} <em>${done}/${i.stages.length}</em></div>
+    </div>
+    ${(i.acceptance || []).length ? `<div class="strip-item"><strong>${met}/${i.acceptance.length}</strong> criteria</div>` : ''}
+    <div class="strip-item"><strong>${i.liveWorkers || 0}</strong> agent${i.liveWorkers === 1 ? '' : 's'} live</div>
+    ${who ? `<div class="strip-item strip-who">talking to <strong>${escHtml(who.name)}</strong>
+      <span class="chat-status chat-status-${escAttr(who.live ? who.status : 'gone')}">${escHtml(who.live ? who.status : 'not running')}</span></div>` : ''}
+    ${gates ? `<div class="strip-item strip-gates">${gates} waiting on you</div>` : ''}
+    <button class="btn btn-ghost btn-sm strip-detail" onclick="toggleSupervisorDetail()">${showSupervisorDetail ? 'Less' : 'More'} detail</button>
+  </div>`;
+}
+
+function renderStream(i) {
+  if (!stream || stream.id !== i.id) return '<div class="drawer-loading">Loading the run…</div>';
+
+  const entries = stream.entries || [];
+  return `${entries.length ? entries.map(e => renderStreamEntry(i, e)).join('') : '<div class="drawer-empty">Nothing has happened yet.</div>'}
+    ${stream.sending ? `<div class="stream-turn stream-you stream-optimistic">
+        <div class="chat-bubble">${escHtml(stream.sending)}</div>
+        <div class="chat-meta">sending…</div>
+      </div>` : ''}
+    ${stream.waitingSince ? `<div class="chat-waiting">${escHtml(stream.talkingTo?.name || 'it')} is thinking<span class="chat-elapsed">${Math.round((Date.now() - stream.waitingSince) / 1000)}s</span></div>` : ''}`;
+}
+
+function renderStreamEntry(i, e) {
+  if (e.kind === 'you' || e.kind === 'agent') {
+    return `<div class="stream-turn stream-${e.kind === 'you' ? 'you' : 'them'}">
+      <div class="chat-bubble">${e.text ? simpleMarkdown(e.text) : ''}
+        ${e.tools?.length ? `<div class="transcript-tools">${e.tools.map(x => `<code>${escHtml(x)}</code>`).join(' ')}</div>` : ''}
+      </div>
+      <div class="chat-meta">${e.kind === 'you' ? 'you' : escHtml(e.who || 'agent')}${e.at ? ` · ${escHtml(shortTime(e.at))}` : ''}</div>
+    </div>`;
   }
 
-  const who = chat.worker;
-  const shown = chat.turns.filter(t => chat.showSystem || t.side !== 'system');
-  const systemCount = chat.turns.filter(t => t.side === 'system').length;
+  if (e.kind === 'gate') {
+    return e.open ? renderOpenGate(i, e) : `<div class="stream-event stream-event-answered">
+      <span class="stream-dot"></span>
+      <span class="stream-event-label">Answered</span>
+      <span class="stream-event-text">${escHtml(e.answer || '')}${e.answeredBy === 'auto' ? ' (taken automatically)' : ''}</span>
+      <span class="stream-event-time">${escHtml(shortTime(e.resolvedAt || e.at))}</span>
+    </div>`;
+  }
 
-  return `
-    <div class="chat-head">
-      <span class="chat-with">${who ? escHtml(who.name) : 'nobody yet'}</span>
-      ${who?.isOrchestrator ? '<span class="initiative-worker-role">orchestrator</span>' : ''}
-      ${who ? `<span class="chat-status chat-status-${escAttr(who.live ? who.status : 'gone')}">${escHtml(who.live ? who.status : 'not running')}</span>` : ''}
-      ${systemCount ? `<button class="btn btn-ghost btn-sm" onclick="toggleChatSystem()">${chat.showSystem ? 'Hide' : 'Show'} ${systemCount} supervisor message${systemCount === 1 ? '' : 's'}</button>` : ''}
+  if (e.kind === 'plumbing') {
+    return `<div class="stream-event stream-event-plumbing">
+      <span class="stream-dot"></span>
+      <span class="stream-event-text">${escHtml((e.text || '').slice(0, 220))}</span>
+      <span class="stream-event-time">${escHtml(shortTime(e.at))}</span>
+    </div>`;
+  }
+
+  return `<div class="stream-event stream-event-${escAttr(e.severity || 'normal')}">
+    <span class="stream-dot"></span>
+    <span class="stream-event-label">${escHtml(e.label)}${e.count > 1 ? ` ×${e.count}` : ''}</span>
+    ${e.stage ? `<span class="stream-event-stage">${escHtml(e.stage)}</span>` : ''}
+    <span class="stream-event-text">${escHtml((e.text || '').slice(0, 200))}</span>
+    <span class="stream-event-time">${escHtml(shortTime(e.at))}</span>
+  </div>`;
+}
+
+/** A gate is a moment in the story, answered where it happened. */
+function renderOpenGate(i, e) {
+  return `<div class="stream-gate">
+    <div class="stream-gate-head">
+      <span>${escHtml(e.gateKind)} · needs you</span>
+      <span>${escHtml(timeAgo(e.at))}</span>
     </div>
-
-    <div class="chat-log" id="chat-log">
-      ${shown.length ? shown.map(renderChatTurn).join('') : '<div class="drawer-empty">Nothing said yet. Ask it something.</div>'}
-      ${chat.sending ? `<div class="chat-turn chat-you chat-optimistic">
-          <div class="chat-bubble">${escHtml(chat.sending)}</div>
-          <div class="chat-meta">sending…</div>
-        </div>` : ''}
-      ${chat.waitingSince ? `<div class="chat-waiting">${escHtml(who?.name || 'it')} is thinking${'…'}<span class="chat-elapsed">${Math.round((Date.now() - chat.waitingSince) / 1000)}s</span></div>` : ''}
+    <div class="stream-gate-question">${escHtml(e.question)}</div>
+    ${e.reason ? `<div class="stream-gate-reason">${escHtml(e.reason)}</div>` : ''}
+    ${e.command ? `<pre class="initiative-gate-command">${escHtml(e.command)}</pre>` : ''}
+    ${e.context ? `<div class="initiative-gate-context">${escHtml(e.context)}</div>` : ''}
+    <div class="initiative-gate-options">
+      ${(e.options || []).map(o => `<button class="btn btn-sm${o === e.defaultOption ? ' btn-primary' : ''}" onclick="answerGate('${escAttr(i.id)}','${escAttr(e.gateId)}','${escAttr(o)}')">${escHtml(o)}</button>`).join('')}
     </div>
+    <form class="initiative-gate-free" onsubmit="answerGateFree(event, '${escAttr(i.id)}','${escAttr(e.gateId)}')">
+      <input type="text" placeholder="…or answer in your own words" />
+      <button type="submit" class="btn btn-ghost btn-sm">Answer</button>
+    </form>
+    ${e.defaultOption ? `<div class="initiative-gate-default">Unanswered, it takes "${escHtml(e.defaultOption)}".</div>` : ''}
+  </div>`;
+}
 
-    <form class="chat-compose" onsubmit="sendChat(event, '${escAttr(i.id)}')">
+function renderComposer(i) {
+  const who = stream?.talkingTo;
+  return `<form class="chat-compose" onsubmit="sendChat(event, '${escAttr(i.id)}')">
       <textarea id="chat-input" rows="2" placeholder="${escAttr(who ? `Message ${who.name}…` : 'Nothing is running — this will be held for the next agent')}" onkeydown="chatKeydown(event, '${escAttr(i.id)}')"></textarea>
       <button type="submit" class="btn btn-primary btn-sm">Send</button>
     </form>
@@ -343,81 +417,69 @@ function renderChat(i) {
     <div class="chat-hint">Enter sends · Shift+Enter for a new line</div>`;
 }
 
-function renderChatTurn(t) {
-  const side = t.side === 'you' ? 'you' : t.side === 'orchestrator' ? 'them' : 'system';
-  return `<div class="chat-turn chat-${side}">
-    <div class="chat-bubble">${t.text ? simpleMarkdown(t.text) : ''}
-      ${t.tools?.length ? `<div class="transcript-tools">${t.tools.map(x => `<code>${escHtml(x)}</code>`).join(' ')}</div>` : ''}
-    </div>
-    <div class="chat-meta">${t.side === 'you' ? 'you' : t.side === 'system' ? 'supervisor' : ''}${t.timestamp ? ` · ${escHtml(shortTime(t.timestamp))}` : ''}</div>
-  </div>`;
-}
-
-async function loadChat(id, { keepScroll = false } = {}) {
+async function loadStream(id, { first = false, force = false } = {}) {
+  if (!id) return;
   try {
-    const data = await api('GET', `/api/initiatives/${id}/chat`);
-    const before = chat?.turns?.length || 0;
-    const showSystem = chat?.id === id ? chat.showSystem : false;
-    const waitingSince = chat?.id === id ? chat.waitingSince : null;
+    const data = await api('GET', `/api/initiatives/${id}/timeline${showSupervisorDetail ? '?detail=all' : ''}`);
+    const before = stream?.id === id ? (stream.entries || []).filter(e => e.kind === 'agent').length : 0;
+    const answered = data.entries.filter(e => e.kind === 'agent').length > before;
 
-    // The answer has landed when a new turn from it appears.
-    const answered = data.turns.length > before
-      && data.turns.slice(before).some(t => t.side === 'orchestrator');
-
-    chat = {
+    stream = {
       id,
-      worker: data.worker,
-      turns: data.turns,
+      entries: data.entries,
+      talkingTo: data.talkingTo,
       pending: data.pending,
-      showSystem,
-      sending: null,
-      waitingSince: answered ? null : waitingSince,
-      unread: 0,
+      sending: stream?.id === id ? stream.sending : null,
+      waitingSince: answered ? null : (stream?.id === id ? stream.waitingSince : null),
     };
-    if (answered) stopChatPoll();
 
-    if (selectedId === id && detailView === 'chat') {
-      const el = document.getElementById('initiative-chat');
-      if (el) {
-        const log = document.getElementById('chat-log');
-        const wasAtBottom = !log || log.scrollTop + log.clientHeight >= log.scrollHeight - 40;
-        const input = document.getElementById('chat-input');
-        const draft = input?.value;
-        const focused = document.activeElement === input;
-        el.innerHTML = renderChat({ id, pendingMessages: new Array(data.pending || 0) });
-        const newInput = document.getElementById('chat-input');
-        if (newInput && draft) newInput.value = draft;
-        if (newInput && focused) newInput.focus();
-        if (!keepScroll || wasAtBottom) scrollChatToBottom();
-      }
-    }
+    if (selectedId !== id) return;
+    const el = document.getElementById('initiative-stream');
+    if (!el) return;
+    const goToBottom = first || force || atBottom;
+    const i = initiatives.find(x => x.id === id);
+    if (i) el.innerHTML = renderStream(i);
+    watchStreamScroll();
+    if (goToBottom) scrollStreamToBottom();
   } catch (err) {
-    const el = document.getElementById('initiative-chat');
+    if (!first) return;
+    const el = document.getElementById('initiative-stream');
     if (el) el.innerHTML = `<div class="drawer-empty" style="color:var(--danger)">${escHtml(err.message)}</div>`;
   }
 }
 
-function scrollChatToBottom() {
-  const log = document.getElementById('chat-log');
-  if (log) log.scrollTop = log.scrollHeight;
+/**
+ * Scroll once the browser has laid the content out. Setting scrollTop in the
+ * same frame as innerHTML lands on a stale height, which is why the stream did
+ * not reliably open at the newest message.
+ */
+function scrollStreamToBottom() {
+  const el = document.getElementById('initiative-stream');
+  if (!el) return;
+  requestAnimationFrame(() => {
+    el.scrollTop = el.scrollHeight;
+    requestAnimationFrame(() => { el.scrollTop = el.scrollHeight; atBottom = true; });
+  });
 }
 
-function startChatPoll(id) {
-  stopChatPoll();
-  chatPoll = setInterval(() => loadChat(id, { keepScroll: true }), 4000);
+function watchStreamScroll() {
+  const el = document.getElementById('initiative-stream');
+  if (!el || el.dataset.watching === '1') return;
+  el.dataset.watching = '1';
+  el.addEventListener('scroll', () => {
+    atBottom = el.scrollTop + el.clientHeight >= el.scrollHeight - 60;
+  });
 }
 
-function stopChatPoll() {
-  if (chatPoll) clearInterval(chatPoll);
-  chatPoll = null;
+/** While you are looking at a run it keeps up on its own. */
+function startStreamPoll(id) {
+  stopStreamPoll();
+  streamPoll = setInterval(() => loadStream(id), 5000);
 }
 
-export function toggleChatSystem() {
-  if (!chat) return;
-  chat.showSystem = !chat.showSystem;
-  const el = document.getElementById('initiative-chat');
-  if (el) el.innerHTML = renderChat({ id: chat.id, pendingMessages: new Array(chat.pending || 0) });
-  scrollChatToBottom();
+function stopStreamPoll() {
+  if (streamPoll) clearInterval(streamPoll);
+  streamPoll = null;
 }
 
 export function chatKeydown(event, id) {
@@ -433,30 +495,28 @@ export async function sendChat(event, id) {
   const message = (input?.value || '').trim();
   if (!message) return;
 
-  // Show it straight away — waiting for a round trip to see your own words is
-  // what made this not feel like a conversation.
   input.value = '';
-  if (chat?.id === id) {
-    chat.sending = message;
-    const el = document.getElementById('initiative-chat');
-    if (el) el.innerHTML = renderChat({ id, pendingMessages: new Array(chat.pending || 0) });
-    scrollChatToBottom();
+  if (stream?.id === id) {
+    stream.sending = message;
+    const i = initiatives.find(x => x.id === id);
+    const el = document.getElementById('initiative-stream');
+    if (el && i) el.innerHTML = renderStream(i);
+    atBottom = true;
+    scrollStreamToBottom();
   }
 
   try {
     const data = await api('POST', `/api/initiatives/${id}/chat`, { message });
-    if (chat?.id === id) {
-      chat.sending = null;
-      chat.waitingSince = data.delivered ? Date.now() : null;
+    if (stream?.id === id) {
+      stream.sending = null;
+      stream.waitingSince = data.delivered ? Date.now() : null;
     }
     if (!data.delivered) toast(data.note, 'error');
-    await loadChat(id);
-    if (data.delivered) startChatPoll(id);
   } catch (err) {
-    if (chat?.id === id) chat.sending = null;
+    if (stream?.id === id) stream.sending = null;
     toast(err.message, 'error');
-    await loadChat(id);
   }
+  await loadStream(id, { force: true });
 }
 
 function renderOutcome(i) {
@@ -756,21 +816,6 @@ function renderStages(i) {
   </div>`;
 }
 
-function renderSayBox(i) {
-  return `<form class="initiative-say" onsubmit="sendInitiativeMessage(event, '${escAttr(i.id)}')">
-      <input type="text" id="initiative-say-input" placeholder="${escAttr(sayPlaceholder(i))}" />
-      <button type="submit" class="btn btn-ghost btn-sm">Send</button>
-    </form>
-    ${(i.pendingMessages || []).length ? `<div class="initiative-pending">${(i.pendingMessages || []).length} message(s) waiting for the next agent</div>` : ''}`;
-}
-
-function sayPlaceholder(i) {
-  const boss = (i.workers || []).find(w => w.role === 'orchestrator' && w.status !== 'gone');
-  if (boss) return 'Ask the orchestrator…';
-  if (i.liveWorkers) return 'Say something to the working agent…';
-  return 'Leave a message for the next agent…';
-}
-
 function renderStats(i) {
   const s = i.stats || {};
   const saved = (s.autoApprovals || 0) + (s.nudges || 0) + (s.autoDecided || 0);
@@ -808,10 +853,18 @@ function renderEvent(e) {
 // ─── Actions ─────────────────────────────────────────────────────────────────
 
 export function selectInitiative(id) {
-  if (id !== selectedId) { stopChatPoll(); chat = null; }
+  if (id !== selectedId) {
+    stopStreamPoll();
+    stream = null;
+    atBottom = true;
+  }
   selectedId = id;
   renderList(document.getElementById('initiatives-list'));
   renderDetail();
+  if (id) {
+    loadStream(id, { first: true });
+    startStreamPoll(id);
+  }
 }
 
 export async function startInitiative(id) {
@@ -895,7 +948,8 @@ export async function answerGate(id, gateId, answer) {
   try {
     await api('POST', `/api/initiatives/${id}/gates/${gateId}`, { answer });
     toast('Answered — the run continues');
-    loadInitiatives();
+    await loadInitiatives();
+    loadStream(id, { force: true });
   } catch (err) { toast(err.message, 'error'); }
 }
 
@@ -909,23 +963,8 @@ export async function answerGateFree(event, id, gateId) {
 }
 
 export async function sendInitiativeMessage(event, id) {
-  event.preventDefault();
-  const input = document.getElementById('initiative-say-input');
-  const message = input.value.trim();
-  if (!message) return;
-  input.value = '';
-  try {
-    const data = await api('POST', `/api/initiatives/${id}/message`, { message });
-    if (data.delivered) {
-      // Show the exchange where it belongs rather than as a toast that vanishes.
-      toast(`Sent to ${data.worker || 'the agent'} — opening the conversation`);
-      chat = null;
-      setInitiativeView('chat');
-    } else {
-      toast(data.note, 'error');
-      loadInitiatives();
-    }
-  } catch (err) { toast(err.message, 'error'); }
+  // Kept for anything still wired to the old box: send through the same path.
+  return sendChat(event, id);
 }
 
 export async function openSplitStage(id) {

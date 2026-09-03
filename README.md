@@ -104,18 +104,27 @@ seeing none of its own workers, keeps concluding they died and relaunching them.
 `lib/psNumbers.js` parses both conventions; if you ever see an empty Agents tab
 with live sessions, start there.
 
-### Talking to it
+### The initiative screen
 
-When a run has an orchestrator, the initiative opens a **Chat** view: your
-messages and its answers as a conversation, your message shown the moment you
-send it, a thinking indicator while it works, and the reply arriving on its own.
+One run, one stream. Your messages, the agents' replies, what the supervisor
+did and every decision it stopped for, in the order they happened:
 
-The supervisor's own traffic travels down the same pipe — the opening brief, the
-stage updates, the decision requests and the JSON decisions it sends back. Those
-are folded away behind *Show N supervisor messages* rather than mixed into the
-conversation. An operator's message carries its own marker so the two can be
-told apart; without that, a message beginning "Stage finished" is
-indistinguishable from the supervisor saying a stage finished.
+- a **status strip** across the top — stage and progress, criteria met, agents
+  live, who you are talking to, and how many decisions are waiting
+- the **stream** itself, which keeps up on its own while you are looking at it,
+  opens at the newest message and stays there unless you scroll up to read
+- **gates answered in place**, because a decision is a moment in the story and
+  not a separate inbox
+- mechanical events — every approved prompt, every nudge — folded away behind
+  *More detail*, and repeated ones collapsed into one line with a count
+- the plan, the definition of done and what the run produced behind one
+  disclosure at the bottom, where reference material belongs
+
+Supervisor traffic travels the same pipe as your words: the opening brief, the
+stage updates, the decision requests and the JSON decisions it sends back. An
+operator's message carries its own marker so the two can be told apart —
+without it, a message beginning "Stage finished" is indistinguishable from the
+supervisor saying a stage finished.
 
 ### Reading what a run has done
 

@@ -11,6 +11,7 @@ const templates = require('../lib/initiativeTemplates');
 const framing = require('../lib/initiativeFraming');
 const outcome = require('../lib/initiativeOutcome');
 const orch = require('../lib/initiativeOrchestrator');
+const timeline = require('../lib/initiativeTimeline');
 
 const router = express.Router();
 
@@ -402,11 +403,56 @@ router.get('/:id/transcript', (req, res) => {
   }
 });
 
-// ─── Chatting with the orchestrator ──────────────────────────────────────────
-
+// Who you are talking to: the orchestrator when there is one, otherwise
+// whichever agent is doing the work.
 function chatTarget(initiative) {
   return store.orchestrator(initiative) || store.activeWorkers(initiative)[0] || (initiative.workers || [])[0] || null;
 }
+
+// ─── The run as one stream ───────────────────────────────────────────────────
+
+router.get('/:id/timeline', (req, res) => {
+  const initiative = store.get(req.params.id);
+  if (!initiative) return res.status(404).json({ error: 'Initiative not found' });
+
+  try {
+    const snapshot = supervisor.takeSnapshot();
+    const worker = chatTarget(initiative);
+    const agent = worker?.sessionName ? supervisor.agentForSession(worker.sessionName, snapshot) : null;
+
+    const turns = worker
+      ? supervisor.workerMessages(initiative, worker, snapshot).map(m => ({
+        side: orch.classifyTurn(m.role, m.text),
+        text: orch.stripMarkers(m.text),
+        tools: (Array.isArray(m.tools) ? m.tools : []).map(t => (typeof t === 'string' ? t : t.name || 'tool')).slice(0, 8),
+        timestamp: m.timestamp || null,
+        who: worker.name,
+      })).filter(t => t.text || t.tools.length)
+      : [];
+
+    const entries = timeline.build(initiative, turns, { detail: req.query.detail === 'all' ? 'all' : 'story' });
+
+    res.json({
+      entries,
+      talkingTo: worker
+        ? {
+          workerId: worker.id,
+          name: worker.name,
+          isOrchestrator: (worker.role || 'worker') === 'orchestrator',
+          live: !!agent,
+          status: agent ? supervisor.inferStatus(agent).status : worker.status,
+        }
+        : null,
+      pending: (initiative.pendingMessages || []).length,
+      openGates: store.openGates(initiative).length,
+      updatedAt: initiative.updatedAt,
+    });
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
+// ─── Chatting with the orchestrator ──────────────────────────────────────────
 
 // The conversation, with the supervisor's own traffic marked rather than mixed
 // in: the brief, the status updates and the JSON decisions are real but they
