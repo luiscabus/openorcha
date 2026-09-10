@@ -54,6 +54,26 @@ sessions that name no ticket — from the title of any PR the session links to.
 Set `projectKeys` in `data/worklog/config.json` to scope inference to your own
 projects; without it a placeholder like `TICKET-1234` in a prompt can slip in.
 
+### Its own sessions are not work
+
+Reading a day runs `claude` over the day's evidence, and the supervisor runs it
+to make decisions. Those runs leave transcripts like any other, and they quote
+the very ticket keys they were handed — so the sessions source counted them as
+work, invented a row for the ticket they mentioned, and the same tickets came
+back day after day. Describing Tuesday manufactured Tuesday's tickets into
+Wednesday.
+
+They are recognised by what they say, not where they ran: the scratch
+directories only cover runs started since they moved there, and there were
+already dozens in ordinary project directories.
+
+An agent this tool launched is treated the same way — its output is counted as
+commits and through the initiatives source, so counting its session time as
+your attention would be counting the same work twice, and it was never your
+attention to begin with. **Unless you spoke in it**: a worker you took over is
+partly yours and stays. Of the transcripts on this machine, that rule keeps 100
+and drops 59.
+
 ### What the lines say
 
 Detection knows *when* you worked and *which* ticket. It cannot say what you
