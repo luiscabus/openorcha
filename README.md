@@ -64,6 +64,10 @@ come out, because they have two audiences:
   sense a month later.
 - **note** — what Jira receives. Deliberately bare: "Code review.",
   "Implementation." A shared ticket gets the shape of the work, not the detail.
+- **context** — what the ticket *is*, as opposed to what moved on it today. Its
+  standing subject, so a reader who does not know the ticket can follow the
+  post. Taken from Jira's own description when Jira is reachable, otherwise
+  inferred from the evidence.
 
 The row shows both, so what leaves the machine is never a surprise; the push
 dialog repeats the note before sending. Work with no ticket gets a **name**
@@ -84,6 +88,21 @@ part of the cached read and is sealed with the evidence it describes, so a
 finished day is described exactly once. Set `narrate: false` to turn it off, or
 `narrateModel` to change the model (default `claude-opus-5`). If it fails, rows
 fall back to the mechanical summary and the source bar says so — nothing breaks.
+
+### The EOD message
+
+An item leads with the ticket and its own title, then says what the ticket is
+and what moved on it, on separate lines:
+
+```
+- SO-89850 Server-side directory level count (in review)
+  - expose child counts at every directory level so pages can render them
+  - threaded a publish-time child count through the asset schema
+```
+
+The two sub-lines answer different questions and run together badly as one
+clause. The first is dropped when it merely repeats the title or the work — a
+line that tells the reader nothing costs a line.
 
 ### Time estimates
 

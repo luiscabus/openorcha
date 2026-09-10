@@ -200,3 +200,82 @@ test('a week with nothing in it says so', () => {
   });
   assert.match(message, /nothing logged yet/);
 });
+
+// ─── What the ticket is, and what moved on it ────────────────────────────────
+
+test('an item reads as the ticket and its title, then two sub-lines', () => {
+  const message = summary.buildDayMessage({
+    date: '2026-09-09',
+    cfg,
+    rows: [entry({
+      ticket: 'SO-89850',
+      title: 'Server-side directory level count',
+      status: 'in review',
+      context: 'expose child counts at every directory level so pages can render them',
+      eod: 'threaded a publish-time child count through the asset schema',
+    })],
+  });
+
+  assert.deepEqual(body(message).slice(2), [
+    '- SO-89850 Server-side directory level count (in review)',
+    '  - expose child counts at every directory level so pages can render them',
+    '  - threaded a publish-time child count through the asset schema',
+  ]);
+});
+
+test('the context line is dropped when the title already says it', () => {
+  const lines = summary.subLines({
+    title: 'Asset Storage PDFs on the client domain',
+    context: 'asset storage pdfs on the client domain',
+  }, 'scoped the feature-flag refresh problem');
+
+  assert.deepEqual(lines, ['scoped the feature-flag refresh problem'], 'a repeat costs a line and says nothing');
+});
+
+test('the context line is dropped when it just restates the work', () => {
+  const clause = 'threaded a publish-time child count through the asset schema';
+  const lines = summary.subLines({ title: 'Directory count', context: clause }, clause);
+  assert.deepEqual(lines, [clause]);
+});
+
+test('a different context survives beside a similar-sounding title', () => {
+  const lines = summary.subLines({
+    title: 'Directory count',
+    context: 'so brands with thousands of locations can page through them',
+  }, 'threaded the count through the schema');
+
+  assert.equal(lines.length, 2);
+  assert.equal(lines[0], 'so brands with thousands of locations can page through them');
+});
+
+test('work with no ticket still gets its sub-lines', () => {
+  const message = summary.buildDayMessage({
+    date: '2026-09-09',
+    cfg,
+    rows: [entry({
+      label: 'worklog review and branch prep',
+      context: 'keeping the local checkouts current',
+      eod: 'brought each repo to latest master and cut the branches',
+    })],
+  });
+
+  assert.deepEqual(body(message).slice(2), [
+    '- worklog review and branch prep',
+    '  - keeping the local checkouts current',
+    '  - brought each repo to latest master and cut the branches',
+  ]);
+});
+
+test('an item with neither context nor clause is just its heading', () => {
+  const message = summary.buildDayMessage({
+    date: '2026-09-09',
+    cfg,
+    rows: [entry({ ticket: 'SO-1', title: 'A thing' })],
+  });
+  assert.deepEqual(body(message).slice(2), ['- SO-1 A thing']);
+});
+
+test('a stray backtick in the context cannot break the fence', () => {
+  const lines = summary.subLines({ context: 'uses ```json blocks``` in the payload' }, 'fixed it');
+  assert.ok(!lines[0].includes('`'));
+});

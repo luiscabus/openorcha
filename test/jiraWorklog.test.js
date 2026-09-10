@@ -37,3 +37,26 @@ test('an unconfigured Jira fails loudly and says what is missing', () => {
 
   process.env = saved;
 });
+
+// ─── What a ticket is about ──────────────────────────────────────────────────
+
+test('a description is trimmed to its opening, at a sentence where it can', () => {
+  const long = '## Summary / JTBD\n\nWhen a Local Pages client publishes a downloadable PDF, they want it to '
+    + 'open on their own domain. There is a second problem in the self-serve path, where the platform renames the file.';
+  const trimmed = jira.firstSentences(long, 160);
+
+  assert.ok(trimmed.length <= 161, `got ${trimmed.length} chars`);
+  assert.ok(!trimmed.includes('#'), 'headings add nothing to a one-line subject');
+  assert.match(trimmed, /^Summary \/ JTBD When a Local Pages client/);
+  assert.ok(trimmed.endsWith('…'), 'and says it was cut');
+});
+
+test('a short description is left exactly as it is', () => {
+  assert.equal(jira.firstSentences('Remove the flag after rollout.', 160), 'Remove the flag after rollout.');
+});
+
+test('nothing in, nothing out', () => {
+  assert.equal(jira.firstSentences('', 160), '');
+  assert.equal(jira.firstSentences(null, 160), '');
+  assert.equal(jira.firstSentences(undefined, 160), '');
+});
