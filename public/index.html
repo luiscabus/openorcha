@@ -78,6 +78,10 @@
           <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 12h6"/><path d="M9 16h4"/><path d="M5 3h9l5 5v13a1 1 0 0 1-1 1H5a1 1 0 0 1-1-1V4a1 1 0 0 1 1-1z"/><path d="M14 3v5h5"/></svg>
           GitHub Issues
         </a></li>
+        <li><a href="#" class="nav-item" data-tab="worklog">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="9"/><polyline points="12 7 12 12 15 14"/><path d="M3 5l3-2M21 5l-3-2"/></svg>
+          Work Log
+        </a></li>
         <li class="nav-section-divider">Claude Code</li>
         <li><a href="#" class="nav-item" data-tab="claude-memory">
           <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 2a7 7 0 0 0-7 7c0 3 1.5 5 3 6.5V20a2 2 0 0 0 2 2h4a2 2 0 0 0 2-2v-4.5c1.5-1.5 3-3.5 3-6.5a7 7 0 0 0-7-7z"/><line x1="10" y1="22" x2="14" y2="22"/></svg>
@@ -300,6 +304,70 @@
             </thead>
             <tbody id="issues-body"></tbody>
           </table>
+        </div>
+      </div>
+
+      <!-- Work Log Tab -->
+      <div id="tab-worklog" class="tab-content">
+        <div class="page-header">
+          <div>
+            <h1>Work Log</h1>
+            <p class="subtitle">What you did, where it came from, and what has reached Jira</p>
+          </div>
+          <div class="worklog-controls">
+            <div class="worklog-mode-group">
+              <button class="btn btn-ghost btn-sm active" data-worklog-mode="day" onclick="setWorkLogMode('day')">Day</button>
+              <button class="btn btn-ghost btn-sm" data-worklog-mode="week" onclick="setWorkLogMode('week')">Week</button>
+            </div>
+            <div class="worklog-date-nav">
+              <button class="btn btn-ghost btn-sm" onclick="shiftWorkLogDate(-1)" title="Previous">&#9664;</button>
+              <span id="worklog-date-label" class="worklog-date-label">&nbsp;</span>
+              <button class="btn btn-ghost btn-sm" onclick="shiftWorkLogDate(1)" title="Next">&#9654;</button>
+              <button class="btn btn-ghost btn-sm" onclick="goToWorkLogYesterday()">Yesterday</button>
+              <button class="btn btn-ghost btn-sm" onclick="goToWorkLogToday()">Today</button>
+            </div>
+            <button class="btn btn-primary btn-sm" onclick="rescanWorkLog()">Rescan</button>
+          </div>
+        </div>
+
+        <div id="worklog-jira-warning" class="worklog-warning" style="display:none"></div>
+        <div id="worklog-summary" class="worklog-summary"></div>
+        <div id="worklog-attention"></div>
+        <div id="worklog-source-bar"></div>
+
+        <div class="table-wrap">
+          <table class="data-table worklog-table">
+            <thead>
+              <tr>
+                <th style="width:110px">Start</th>
+                <th>Ticket</th>
+                <th style="width:130px">Attention</th>
+                <th style="width:110px">Time</th>
+                <th style="width:110px">Status</th>
+                <th style="width:230px">Actions</th>
+              </tr>
+            </thead>
+            <tbody id="worklog-body"></tbody>
+          </table>
+        </div>
+
+        <form class="worklog-compose" onsubmit="addWorkLogLine(event)">
+          <input type="text" id="worklog-new-ticket" class="worklog-input" placeholder="TICKET" size="10" />
+          <input type="text" id="worklog-new-summary" class="worklog-input worklog-compose-summary" placeholder="Add a line by hand — work that left no trace" />
+          <input type="text" id="worklog-new-note" class="worklog-input" placeholder="Jira note" size="14" />
+          <input type="text" id="worklog-new-duration" class="worklog-input" placeholder="1h 30m" size="8" />
+          <button type="submit" class="btn btn-primary btn-sm">Add line</button>
+        </form>
+
+        <div class="worklog-eod">
+          <div class="worklog-eod-head">
+            <div>
+              <h2>EOD message</h2>
+              <p class="subtitle">One line per item that got your attention. Only lines you have kept appear here — suggestions are left out.</p>
+            </div>
+            <button class="btn btn-primary btn-sm" onclick="copyWorkLogMessage()">Copy for Slack</button>
+          </div>
+          <textarea id="worklog-message" class="worklog-message" rows="8" spellcheck="false"></textarea>
         </div>
       </div>
 

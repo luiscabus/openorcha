@@ -22,6 +22,162 @@ OpenOrcha makes multi-agent work easier to manage. Instead of juggling terminal 
 - Browse terminal, `tmux`, and optional `screen` sessions
 - Run **supervised initiatives**: long work an agent carries through on its own
 
+## Work Log
+
+A personal record of what you actually did, assembled from the traces the work
+already leaves, and the place you turn that into an EOD message or time on a
+ticket.
+
+Open the **Work Log** tab. Each row is one ticket on one day — the grain Jira
+logs time at — and is one of three things:
+
+- **suggested** — detection found evidence and estimated the time. Nothing is
+  claimed yet.
+- **kept** — you accepted or typed it. This is what the EOD message reports.
+- **in Jira** — time that exists on the ticket, whether this tool put it there
+  or you logged it by hand.
+
+Expand any row to see the commits, sessions and reviews it was built from, so
+an estimate can always explain itself.
+
+### Where the evidence comes from
+
+Sources are plugins with their own on/off toggle; the chips under the totals
+show which are running and why one cannot. Enabled by default: **git commits**,
+**Claude sessions** and **GitHub PR activity**. Also available: **Jira
+activity**, **OpenOrcha initiatives**, **branch checkouts**, and **shell
+history** (needs `setopt EXTENDED_HISTORY`). Calendar and Slack are declared
+but not wired to a credential yet.
+
+Tickets are read from commit prefixes and branch names, and — for review
+sessions that name no ticket — from the title of any PR the session links to.
+Set `projectKeys` in `data/worklog/config.json` to scope inference to your own
+projects; without it a placeholder like `TICKET-1234` in a prompt can slip in.
+
+### What the lines say
+
+Detection knows *when* you worked and *which* ticket. It cannot say what you
+were doing, so a model reads each block of evidence and writes it up. Two texts
+come out, because they have two audiences:
+
+- **summary** — rich, private, for you. Specific enough that a day still makes
+  sense a month later.
+- **note** — what Jira receives. Deliberately bare: "Code review.",
+  "Implementation." A shared ticket gets the shape of the work, not the detail.
+
+The row shows both, so what leaves the machine is never a surprise; the push
+dialog repeats the note before sending. Work with no ticket gets a **name**
+instead of a blank — "local 503 debugging" rather than an empty context.
+
+Each block is also classified by the **kind of attention** it took —
+`prompting`, `coding`, `reviewing`, `re-review`, `peer-review`, `planning`,
+`building`, `testing`, `functional-testing`, `env-prep`, `debugging`,
+`discovery`, `deployment`, `meetings`. Edit `attentionKinds` in
+`data/worklog/config.json` to change the list; an answer outside it becomes
+`other` rather than silently inventing a category. The panel above the table
+totals the day by kind, with claimed time solid and suggestions shaded.
+
+Narration runs through the `claude` CLI — the same transport
+`initiativeSupervisor.js` uses, so there is no extra dependency and no API key:
+it uses the Claude Code auth already on this machine. It runs once per day as
+part of the cached read and is sealed with the evidence it describes, so a
+finished day is described exactly once. Set `narrate: false` to turn it off, or
+`narrateModel` to change the model (default `claude-opus-5`). If it fails, rows
+fall back to the mechanical summary and the source bar says so — nothing breaks.
+
+### Time estimates
+
+Signals are clustered into blocks of continuous work — a gap longer than
+`idleGapMinutes` starts a new block — and each block's span is its duration. A
+day that overshoots `dayMinutes` is scaled back proportionally, keeping its
+shape. Every number is editable, and a scaled row says so when expanded.
+
+### The clock
+
+Jira decides a worklog's day by your Jira account timezone, which may not be
+your machine's. One setting, `workTimezone`, decides both which day a signal
+belongs to and the offset stamped on a push, so evening work cannot silently
+land on the wrong day.
+
+### Cached reads
+
+Reading a day costs about a minute — git log across every checkout, a GitHub
+search plus a call per pull request, and every transcript parsed — so reads are
+cached to disk under `data/worklog/cache/`, gzipped at roughly 5KB a day.
+
+A finished day cannot gain new evidence, so it is **sealed**: read once and kept
+until something actually invalidates it. Today keeps a two-minute TTL because it
+is still being written, and a read where a source failed is retried within the
+hour rather than sealed half-empty. The chip on the right of the source bar says
+which read you are looking at.
+
+Invalidation is automatic where it matters. Each entry records a fingerprint of
+the settings that produced it, so changing sources, repos or ticket inference
+re-reads, while changing rounding or the day target does not — those apply
+during assembly, which stays live. A `COLLECTOR_VERSION` covers the case config
+cannot: bump it when a collector starts producing different signals.
+
+Only raw evidence is cached. Your entries and Jira are read fresh every time.
+**Rescan** forces a re-read of the days in view; `DELETE /api/worklog/cache`
+clears it wholesale.
+
+### Logging to Jira
+
+Set these in the environment before starting the server:
+
+```
+JIRA_BASE_URL=https://your-site.atlassian.net
+JIRA_EMAIL=you@example.com
+JIRA_API_TOKEN=…            # id.atlassian.com/manage-profile/security/api-tokens
+```
+
+Nothing reaches Jira on its own. There is no scheduler, no hook, and no
+supervisor path to it: a push happens when you press the button on one row and
+confirm it. A row that already carries a worklog id is **updated in place**, so
+the worklog keeps its identity and history rather than being replaced.
+
+Jira is read back on every load to reconcile. A row Jira disagrees with is
+marked **drifted** and offers to update; a worklog that vanished is marked
+failed rather than left claiming success; and time in Jira this tool never
+created is still shown, so the day total is the truth rather than a subset.
+
+### EOD message
+
+The panel at the bottom renders the day — or the week — as a fenced code block,
+shaped the way these posts are actually written in `#team-horses-eod`:
+
+```
+2026-08-31
+
+Meeting w/ Gideon
+
+- SO-52569 Let Administrators edit asset type Default Values (in review)
+  - fixed malformed multi-asset defaults from review comments
+- GA4 property spreadsheet mapping (in discovery)
+  - traced account to GA4 property mapping
+
+reviewed PRs SO-93675, SO-93677
+```
+
+The date on the first line, one item per thing that moved, and a short clause
+under it. No durations and no totals — the numbers are Jira's business. Because
+it is a code block Slack renders none of its markup, so ticket keys go in bare
+rather than as links, and a stray backtick in a description is neutralised so it
+cannot end the fence early.
+
+Three details the channel's style depends on:
+
+- **Titles and statuses** come from Jira when it is configured, and are inferred
+  from pull-request titles and the shape of the evidence when it is not.
+- **Reviewing teammates' pull requests** collapses into one `reviewed PRs …`
+  line — six reviews is one fact about the day, not six items. A *re-review* of
+  your own PR stays an item.
+- **Meetings** are bare lines above the list.
+
+Only kept lines appear: a suggestion is still a guess and never goes into
+something you are about to send to a person. The week is the same shape, one
+dated section per day inside a single fence. Copy it and paste it into Slack.
+
 ## Initiatives
 
 An initiative is a piece of work that outlives the agent running it. You describe

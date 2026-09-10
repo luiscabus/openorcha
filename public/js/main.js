@@ -7,6 +7,13 @@ import { loadKnownHosts, filterKnownHosts, removeKnownHost } from './tabs/known-
 import { loadRawConfig, saveRawConfig } from './tabs/raw-config.js';
 import { loadIssues, setIssuesFilter } from './tabs/issues.js';
 import {
+  loadWorkLog, editWorkLogRow, keepWorkLogRow, dismissWorkLogRow, deleteWorkLogRow,
+  pushWorkLogRow, adoptWorkLogJiraRow, addWorkLogLine, toggleWorkLogEvidence,
+  toggleWorkLogSource, shiftWorkLogDate, openWorkLogDay, setWorkLogMode,
+  goToWorkLogToday, goToWorkLogYesterday, rescanWorkLog, copyWorkLogMessage,
+  growWorkLogField,
+} from './tabs/workLog.js';
+import {
   loadSessions,
   focusSession,
   launchSSH,
@@ -189,6 +196,26 @@ window.saveRawConfig = saveRawConfig;
 window.loadIssues = loadIssues;
 window.setIssuesFilter = setIssuesFilter;
 
+// Work Log
+window.loadWorkLog = loadWorkLog;
+window.growWorkLogField = growWorkLogField;
+window.editWorkLogRow = editWorkLogRow;
+window.keepWorkLogRow = keepWorkLogRow;
+window.dismissWorkLogRow = dismissWorkLogRow;
+window.deleteWorkLogRow = deleteWorkLogRow;
+window.pushWorkLogRow = pushWorkLogRow;
+window.adoptWorkLogJiraRow = adoptWorkLogJiraRow;
+window.addWorkLogLine = addWorkLogLine;
+window.toggleWorkLogEvidence = toggleWorkLogEvidence;
+window.toggleWorkLogSource = toggleWorkLogSource;
+window.shiftWorkLogDate = shiftWorkLogDate;
+window.openWorkLogDay = openWorkLogDay;
+window.setWorkLogMode = setWorkLogMode;
+window.goToWorkLogToday = goToWorkLogToday;
+window.goToWorkLogYesterday = goToWorkLogYesterday;
+window.rescanWorkLog = rescanWorkLog;
+window.copyWorkLogMessage = copyWorkLogMessage;
+
 // Sessions
 window.loadSessions = loadSessions;
 window.focusSession = focusSession;
@@ -354,6 +381,7 @@ function loadTab(tab) {
   else if (tab === 'known-hosts') loadKnownHosts();
   else if (tab === 'raw-config') loadRawConfig();
   else if (tab === 'issues') loadIssues();
+  else if (tab === 'worklog') loadWorkLog();
   else if (tab === 'sessions') loadSessions();
   else if (tab === 'agents') {
     loadAgents();

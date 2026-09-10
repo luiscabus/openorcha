@@ -24,6 +24,7 @@ app.use('/api/issues',       require('./routes/issues'));
 app.use('/api/agents',       require('./routes/agents'));
 app.use('/api/claude',       require('./routes/claudeCode'));
 app.use('/api/initiatives',  require('./routes/initiatives'));
+app.use('/api/worklog',      require('./routes/workLog'));
 
 attachTerminalSocket(server);
 
