@@ -313,3 +313,9 @@ test('work with no ticket carries no status', () => {
   });
   assert.match(message, /^- Cloudflare ticket and side questions$/m);
 });
+
+test('a Slack post covering two days splits into one per date', () => {
+  const days = summary.parsePosted('```2026-09-16\n\n- SO-1 A &amp; B```\n\n```2026-09-17\n\n- SO-2```');
+  assert.deepEqual(days.map(d => d.date), ['2026-09-16', '2026-09-17']);
+  assert.equal(days[0].text, '```\n2026-09-16\n\n- SO-1 A & B\n```');
+});

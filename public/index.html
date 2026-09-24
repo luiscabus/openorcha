@@ -363,11 +363,16 @@
           <div class="worklog-eod-head">
             <div>
               <h2>EOD message</h2>
-              <p class="subtitle">One line per item that got your attention. Only lines you have kept appear here — suggestions are left out.</p>
+              <p class="subtitle">Generated from the lines you kept. Rewrite it, or paste what you posted in Slack, and save it as yours — the generated text is kept beside it.</p>
             </div>
-            <button class="btn btn-primary btn-sm" onclick="copyWorkLogMessage()">Copy for Slack</button>
+            <div class="worklog-eod-actions">
+              <button class="btn btn-ghost btn-sm" onclick="saveWorkLogPosted()" title="Keep this text as what you posted for the day">Save as mine</button>
+              <button class="btn btn-primary btn-sm" onclick="copyWorkLogMessage()">Copy for Slack</button>
+            </div>
           </div>
+          <div id="worklog-eod-meta" class="worklog-eod-meta"></div>
           <textarea id="worklog-message" class="worklog-message" rows="8" spellcheck="false"></textarea>
+          <div id="worklog-eod-compare" class="worklog-eod-compare" style="display:none"></div>
         </div>
       </div>
 

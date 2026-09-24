@@ -14,6 +14,8 @@ const state = {
   week: null,
   expanded: new Set(),
   busy: new Set(),
+  // Which EOD text is on screen: 'posted', 'generated' or 'compare'.
+  eodView: 'posted',
 };
 
 // Columns in the day table: Start, Ticket, Attention, Time, Status, Actions.
@@ -356,7 +358,7 @@ function renderDay() {
   document.getElementById('worklog-summary').innerHTML = renderTotals(day.totals, day.jira || {});
   document.getElementById('worklog-attention').innerHTML = renderAttention(day.byAttention);
   document.getElementById('worklog-source-bar').innerHTML = renderSourceBar();
-  document.getElementById('worklog-message').value = day.message || '';
+  renderEod();
 
   const jiraWarning = document.getElementById('worklog-jira-warning');
   if (day.jira?.error) {
@@ -368,6 +370,57 @@ function renderDay() {
   } else {
     jiraWarning.style.display = 'none';
   }
+}
+
+// The EOD panel has two texts: what this tool generates from your rows, and
+// what you posted. Yours is shown when you have one; the generated one is
+// never thrown away and can be compared against it.
+function renderEod() {
+  const day = state.day;
+  const field = document.getElementById('worklog-message');
+  const meta = document.getElementById('worklog-eod-meta');
+  const compare = document.getElementById('worklog-eod-compare');
+  const posted = day?.posted;
+  const showing = posted && state.eodView !== 'generated' ? 'posted' : 'generated';
+
+  if (state.eodView === 'compare' && posted) {
+    field.style.display = 'none';
+    compare.style.display = '';
+    compare.innerHTML = renderLineDiff(day.message || '', posted.text);
+  } else {
+    field.style.display = '';
+    compare.style.display = 'none';
+    field.value = showing === 'posted' ? posted.text : (day?.message || '');
+  }
+
+  const views = posted
+    ? ['posted', 'generated', 'compare'].map(view => `
+        <button class="btn btn-ghost btn-sm${(state.eodView || 'posted') === view ? ' active' : ''}"
+                onclick="setWorkLogEodView('${view}')">${view === 'posted' ? 'Yours' : view === 'generated' ? 'Generated' : 'Compare'}</button>`).join('')
+    : '';
+  const note = posted
+    ? `<span class="worklog-cache-note">yours · ${posted.source === 'slack' ? 'from Slack' : 'saved'} ${escHtml(relativeTime(posted.savedAt))}${posted.history?.length ? ` · ${posted.history.length} earlier version${posted.history.length === 1 ? '' : 's'}` : ''}</span>`
+    : '<span class="worklog-cache-note">generated from your kept lines · edit it and save to keep your version</span>';
+  const reset = posted
+    ? '<button class="btn btn-ghost btn-sm" onclick="clearWorkLogPosted()" title="Go back to the generated text. Yours is kept in history.">Use generated</button>'
+    : '';
+  meta.innerHTML = `${views}${note}${reset}`;
+}
+
+// A line-level comparison: what only the generated text has, and what only
+// yours has. Enough to see how your rewrite differs without a diff library.
+function renderLineDiff(generated, posted) {
+  const strip = text => text.split('\n').filter(l => l.trim() && l.trim() !== '```');
+  const left = strip(generated);
+  const right = strip(posted);
+  const rightSet = new Set(right.map(l => l.trim()));
+  const leftSet = new Set(left.map(l => l.trim()));
+  const onlyGenerated = left.filter(l => !rightSet.has(l.trim()));
+  const lines = right.map(l => rightSet.has(l.trim()) && leftSet.has(l.trim())
+    ? `<div class="worklog-diff-same">  ${escHtml(l)}</div>`
+    : `<div class="worklog-diff-add" title="Only in yours">+ ${escHtml(l)}</div>`);
+  const removed = onlyGenerated.map(l => `<div class="worklog-diff-del" title="Only in the generated text">− ${escHtml(l)}</div>`);
+  return `<div class="worklog-diff">${lines.join('')}${removed.length ? `<div class="worklog-diff-sep">only in the generated text</div>${removed.join('')}` : ''}</div>`;
 }
 
 function renderWeek() {
@@ -410,6 +463,9 @@ function renderWeek() {
   document.getElementById('worklog-summary').innerHTML = renderTotals(totals, week.jira || {});
   document.getElementById('worklog-attention').innerHTML = renderAttention(weekAttention);
   document.getElementById('worklog-source-bar').innerHTML = renderSourceBar();
+  document.getElementById('worklog-message').style.display = '';
+  document.getElementById('worklog-eod-compare').style.display = 'none';
+  document.getElementById('worklog-eod-meta').innerHTML = '';
   document.getElementById('worklog-message').value = week.message || '';
 }
 
@@ -709,6 +765,46 @@ export async function revertWorkLogRow(id) {
   try {
     await api('POST', `/api/worklog/day/${state.date}/entries/${id}/revert`, {});
     toast('Back to the original text');
+    await loadWorkLog();
+  } catch (err) {
+    toast(err.message, 'error');
+  }
+}
+
+export function setWorkLogEodView(view) {
+  state.eodView = view;
+  renderEod();
+}
+
+// Saves what is in the box as the day's posted EOD. A paste covering other
+// days — one Slack message often carries two — is filed under each date.
+export async function saveWorkLogPosted() {
+  const text = document.getElementById('worklog-message').value;
+  const dates = [...text.matchAll(/(?:^|```\s*)(\d{4}-\d{2}-\d{2})/gm)].map(m => m[1]);
+  const otherDays = dates.some(d => d !== state.date);
+  try {
+    if (otherDays) {
+      const result = await api('POST', '/api/worklog/eod/import', { text });
+      toast(`Saved yours for ${result.saved.map(s => s.date).join(', ')}`);
+    } else {
+      await api('PUT', `/api/worklog/day/${state.date}/eod`, {
+        text,
+        drafted: state.day?.message || null,
+        source: 'typed',
+      });
+      toast('Saved as what you posted — the generated text is kept too');
+    }
+    state.eodView = 'posted';
+    await loadWorkLog();
+  } catch (err) {
+    toast(err.message, 'error');
+  }
+}
+
+export async function clearWorkLogPosted() {
+  if (!confirm('Go back to the generated EOD text? Your version is kept in the day\'s history.')) return;
+  try {
+    await api('DELETE', `/api/worklog/day/${state.date}/eod`);
     await loadWorkLog();
   } catch (err) {
     toast(err.message, 'error');

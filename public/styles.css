@@ -4807,6 +4807,27 @@ body {
 }
 .worklog-message:focus { border-color: var(--accent); outline: none; }
 
+.worklog-eod-actions { display: flex; gap: 8px; flex-shrink: 0; }
+.worklog-eod-meta { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; margin-bottom: 8px; }
+.worklog-eod-meta .btn.active { background: var(--bg3, rgba(127,127,127,0.15)); color: var(--text); }
+.worklog-eod-meta .worklog-cache-note { margin-left: 0; }
+.worklog-eod-compare {
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 12px;
+  font-family: var(--mono, ui-monospace, monospace);
+  font-size: 12.5px;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+.worklog-diff-same { color: var(--text2, var(--text)); }
+.worklog-diff-add { color: var(--success, #3fb950); }
+.worklog-diff-del { color: var(--danger); }
+.worklog-diff-sep { margin: 10px 0 4px; font-family: inherit; font-size: 11px; color: var(--text3); text-transform: uppercase; letter-spacing: 0.04em; }
+/* A field you have rewritten, so it is clear which text is yours. */
+.worklog-input-edited { border-left: 2px solid var(--warning); }
+
 .worklog-cache-note {
   margin-left: auto;
   font-size: 11.5px;

@@ -137,7 +137,11 @@ router.get('/day/:date', async (req, res) => {
         sealed: dayKey < time.todayKey(cfg.workTimezone),
       },
       jira: { configured: jiraResult.configured, error: jiraResult.error },
+      // What this tool writes from the rows, recomputed every view.
       message: summary.buildDayMessage({ date: dayKey, rows: day.rows, cfg }),
+      // What you actually posted, if you saved it. Never overwritten by the
+      // generated message above.
+      posted: store.readDay(dayKey).eod,
     });
   } catch (err) {
     res.status(err.statusCode || 500).json({ error: err.message });
@@ -266,6 +270,41 @@ router.post('/day/:date/entries/:id/revert', (req, res) => {
     res.json(reverted);
   } catch (err) {
     res.status(500).json({ error: err.message });
+  }
+});
+
+// The EOD you posted, kept beside the generated one. `drafted` is the
+// generated message at the moment you saved, so the two can be compared later.
+router.put('/day/:date/eod', (req, res) => {
+  if (!validDay(req.params.date)) return badDay(res);
+  try {
+    const { text, drafted, source, slackTs } = req.body || {};
+    res.json(store.setEod(req.params.date, { text, drafted, source, slackTs }));
+  } catch (err) {
+    res.status(400).json({ error: err.message });
+  }
+});
+
+router.delete('/day/:date/eod', (req, res) => {
+  if (!validDay(req.params.date)) return badDay(res);
+  try {
+    store.clearEod(req.params.date);
+    res.json({ ok: true });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// Paste one or more Slack posts; each fenced block is filed under the date on
+// its first line. A post covering two days lands on both.
+router.post('/eod/import', (req, res) => {
+  try {
+    const days = summary.parsePosted(req.body?.text);
+    if (!days.length) return res.status(400).json({ error: 'No dated EOD block found — the first line of each block should be YYYY-MM-DD' });
+    const saved = days.map(({ date, text }) => ({ date, eod: store.setEod(date, { text, source: 'slack', slackTs: req.body?.slackTs || null }) }));
+    res.json({ saved });
+  } catch (err) {
+    res.status(400).json({ error: err.message });
   }
 });
 

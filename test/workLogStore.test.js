@@ -132,3 +132,38 @@ test('revert restores the text but leaves time alone unless asked', () => {
   assert.equal(reverted.minutes, 90);
   assert.deepEqual(store.editedFields(reverted), ['minutes']);
 });
+
+test('the posted EOD sits beside the generated one and keeps its history', () => {
+  store.setEod('2026-09-08', { text: '```\n2026-09-08\n\n- mine\n```', drafted: 'generated' });
+  const second = store.setEod('2026-09-08', { text: '```\n2026-09-08\n\n- mine, fixed\n```' });
+
+  assert.match(second.text, /mine, fixed/);
+  assert.equal(second.drafted, 'generated');
+  assert.equal(second.history.length, 1);
+  assert.match(second.history[0].text, /- mine\n/);
+});
+
+test('saving the posted EOD does not disturb the entries', () => {
+  store.addEntry('2026-09-08', { ticket: 'SO-1', minutes: 60 });
+  store.setEod('2026-09-08', { text: 'posted' });
+  store.addEntry('2026-09-08', { ticket: 'SO-2', minutes: 30 });
+
+  const day = store.readDay('2026-09-08');
+  assert.equal(day.entries.length, 2);
+  assert.equal(day.eod.text, 'posted');
+});
+
+test('clearing the posted EOD keeps it in the day history', () => {
+  store.setEod('2026-09-08', { text: 'posted' });
+  store.clearEod('2026-09-08');
+  const day = store.readDay('2026-09-08');
+  assert.equal(day.eod, null);
+  assert.equal(day.eodHistory[0].text, 'posted');
+});
+
+test('recent posts come newest first and only from earlier days', () => {
+  store.setEod('2026-09-08', { text: 'a' });
+  store.setEod('2026-09-09', { text: 'b' });
+  store.setEod('2026-09-10', { text: 'c' });
+  assert.deepEqual(store.recentPosted('2026-09-10').map(p => p.text), ['b', 'a']);
+});
