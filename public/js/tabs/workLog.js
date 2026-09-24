@@ -116,6 +116,9 @@ function renderCacheNote(info) {
   if (!info.fromCache) {
     return `<span class="worklog-cache-note worklog-cache-live" title="Collected just now">read ${escHtml(when || 'now')}</span>`;
   }
+  if (info.outdated) {
+    return `<span class="worklog-cache-note" title="Settings or the collector changed since this was read. It is kept rather than re-read on every view — press Rescan to read it again with the current ones.">cached ${escHtml(when)} · read with older settings</span>`;
+  }
   const label = info.sealed
     ? `cached ${escHtml(when)} · this day is finished`
     : `cached ${escHtml(when)}`;

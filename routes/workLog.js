@@ -163,6 +163,7 @@ router.get('/day/:date', async (req, res) => {
       cache: {
         collectedAt: collected.meta.collectedAt,
         fromCache: collected.meta.fromCache.includes(dayKey),
+        outdated: collected.meta.outdated.includes(dayKey),
         sealed: dayKey < time.todayKey(cfg.workTimezone),
       },
       jira: { configured: jiraResult.configured, error: jiraResult.error },
@@ -207,6 +208,7 @@ router.get('/week/:date', async (req, res) => {
         collectedAt: collected.meta.collectedAt,
         fromCache: collected.meta.fromCache.length === dayKeys.length,
         cachedDays: collected.meta.fromCache.length,
+        outdated: collected.meta.outdated.length > 0,
       },
       jira: { configured: jiraResult.configured, error: jiraResult.error },
       message: summary.buildWeekMessage({ days, cfg }),

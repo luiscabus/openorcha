@@ -208,3 +208,25 @@ test('a partly cached week collects only the days it is missing', async () => {
   // Every requested day still comes back.
   assert.equal(result.byDay.size, 3);
 });
+
+test('a finished day read with older settings is served, not re-read', async () => {
+  const quiet = { ...cfg, sources: { ...ALL_OFF } };
+  seed('2026-08-11', { fingerprint: 'fingerprint-from-another-version' });
+
+  const result = await cache.collectDays({ dayKeys: ['2026-08-11'], cfg: quiet });
+  assert.deepEqual(result.meta.collected, []);
+  assert.deepEqual(result.meta.outdated, ['2026-08-11']);
+});
+
+test('rescan still re-reads an outdated day', async () => {
+  const quiet = { ...cfg, sources: { ...ALL_OFF } };
+  seed('2026-08-11', { fingerprint: 'fingerprint-from-another-version' });
+
+  const result = await cache.collectDays({ dayKeys: ['2026-08-11'], cfg: quiet, refresh: true });
+  assert.deepEqual(result.meta.collected, ['2026-08-11']);
+});
+
+test('an outdated read with a failed source is not kept', () => {
+  const entry = seed('2026-08-11', { fingerprint: 'old', errors: [{ source: 'github', error: 'x' }] });
+  assert.equal(cache.isOutdatedButUsable(entry, '2026-08-11', cfg, '2026-09-09'), false);
+});
