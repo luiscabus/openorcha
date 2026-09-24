@@ -7,17 +7,34 @@ const summary = require('../lib/workLogSummary');
 const time = require('../lib/workLogTime');
 const jira = require('../lib/jiraWorklog');
 const cache = require('../lib/workLogCache');
+const jiraCache = require('../lib/jiraReadCache');
 
 const router = express.Router();
 
 // Jira is read for reconciliation only. A Jira outage must degrade to a local
 // view rather than an error page, so the failure is reported beside the data.
-async function readJira(fromDay, toDay) {
+//
+// Both reads go through jiraCache: a finished day's evidence costs nothing to
+// re-read, and without it every view still waited seconds on Jira.
+const ME_TTL_MS = 7 * 24 * 60 * 60 * 1000;
+// A span that includes today is where time is still being logged.
+const WORKLOGS_TODAY_TTL_MS = 2 * 60 * 1000;
+const WORKLOGS_PAST_TTL_MS = 15 * 60 * 1000;
+const ISSUE_TTL_MS = 30 * 60 * 1000;
+
+async function readJira(fromDay, toDay, { refresh = false } = {}) {
   if (!config.jiraEnv().configured) {
     return { worklogs: [], error: null, configured: false };
   }
   try {
-    return { worklogs: await jira.myWorklogs(fromDay, toDay), error: null, configured: true };
+    const today = time.todayKey(config.read().workTimezone);
+    const me = await jiraCache.read('me', { ttlMs: ME_TTL_MS, loader: () => jira.currentUser() });
+    const worklogs = await jiraCache.read(`worklogs:${fromDay}:${toDay}`, {
+      ttlMs: toDay >= today ? WORKLOGS_TODAY_TTL_MS : WORKLOGS_PAST_TTL_MS,
+      refresh,
+      loader: () => jira.myWorklogs(fromDay, toDay, { accountId: me.accountId }),
+    });
+    return { worklogs, error: null, configured: true };
   } catch (err) {
     return { worklogs: [], error: err.message, configured: true };
   }
@@ -26,14 +43,27 @@ async function readJira(fromDay, toDay) {
 // Titles and statuses for the tickets a view mentions. The EOD post names both,
 // and only Jira actually knows them — without it the model's guess from PR
 // titles stands in.
-async function readTicketDetails(tickets) {
+async function readTicketDetails(tickets, { refresh = false } = {}) {
   const keys = [...new Set(tickets.filter(Boolean))];
   if (!keys.length || !config.jiraEnv().configured) return {};
-  try {
-    return await jira.issueDetails(keys);
-  } catch {
-    return {};
-  }
+  const out = {};
+  await Promise.all(keys.map(async key => {
+    try {
+      out[key] = await jiraCache.read(`issue:${key}`, {
+        ttlMs: ISSUE_TTL_MS,
+        refresh,
+        loader: async () => {
+          const details = (await jira.issueDetails([key]))[key];
+          // Unreadable is not an answer to keep; the next view asks again.
+          if (!details) throw new Error(`could not read ${key}`);
+          return details;
+        },
+      });
+    } catch {
+      // Falls back to the model's inference for this one ticket.
+    }
+  }));
+  return out;
 }
 
 function validDay(value) {
@@ -97,32 +127,31 @@ router.get('/day/:date', async (req, res) => {
     const cfg = config.read();
     const dayKey = req.params.date;
 
-    const [collected, jiraResult] = await Promise.all([
-      cache.collectDays({ dayKeys: [dayKey], cfg, refresh: req.query.refresh === '1' }),
-      readJira(dayKey, dayKey),
+    const refresh = req.query.refresh === '1';
+    const collected = await cache.collectDays({ dayKeys: [dayKey], cfg, refresh });
+    const signals = collected.byDay.get(dayKey)?.signals || [];
+    const narration = collected.byDay.get(dayKey)?.narration || null;
+
+    // The tickets your own rows mention are known before Jira answers, so
+    // their titles are fetched alongside the worklogs rather than after them.
+    const local = detect.assembleDay({ dayKey, signals, narration, cfg });
+    const [jiraResult, localDetails] = await Promise.all([
+      readJira(dayKey, dayKey, { refresh }),
+      readTicketDetails(local.rows.map(r => r.ticket), { refresh }),
     ]);
 
-    const narration = collected.byDay.get(dayKey)?.narration || null;
-    const draft = detect.assembleDay({
+    // Then only what Jira itself added: time logged by hand or elsewhere.
+    const extra = jiraResult.worklogs.map(w => w.ticket).filter(t => t && !(t in localDetails));
+    const ticketDetails = { ...localDetails, ...(await readTicketDetails(extra, { refresh })) };
+
+    const day = detect.assembleDay({
       dayKey,
-      signals: collected.byDay.get(dayKey)?.signals || [],
+      signals,
       narration,
       jiraWorklogs: jiraResult.worklogs,
       cfg,
+      ticketDetails,
     });
-
-    // Second pass, now that we know which tickets the day actually mentions.
-    const ticketDetails = await readTicketDetails(draft.rows.map(r => r.ticket));
-    const day = Object.keys(ticketDetails).length
-      ? detect.assembleDay({
-        dayKey,
-        signals: collected.byDay.get(dayKey)?.signals || [],
-        narration,
-        jiraWorklogs: jiraResult.worklogs,
-        cfg,
-        ticketDetails,
-      })
-      : draft;
 
     res.json({
       ...day,
@@ -157,7 +186,7 @@ router.get('/week/:date', async (req, res) => {
 
     const [collected, jiraResult] = await Promise.all([
       cache.collectDays({ dayKeys, cfg, refresh: req.query.refresh === '1' }),
-      readJira(dayKeys[0], dayKeys[6]),
+      readJira(dayKeys[0], dayKeys[6], { refresh: req.query.refresh === '1' }),
     ]);
 
     const days = dayKeys.map(dayKey => detect.assembleDay({
@@ -201,6 +230,8 @@ router.delete('/cache', (req, res) => {
   try {
     const { dates } = req.body || {};
     const removed = Array.isArray(dates) && dates.length ? cache.clearDays(dates) : cache.clearAll();
+    if (Array.isArray(dates) && dates.length) dates.forEach(d => jiraCache.invalidateWorklogDay(d));
+    else jiraCache.clear();
     res.json({ ok: true, removed });
   } catch (err) {
     res.status(500).json({ error: err.message });
@@ -349,6 +380,10 @@ router.post('/day/:date/entries/:id/push', async (req, res) => {
       ? await jira.updateWorklog({ ...payload, worklogId: entry.push.worklogId })
       : await jira.createWorklog(payload);
 
+    // What Jira holds for this day just changed; the next view must not
+    // show the copy from before it.
+    jiraCache.invalidateWorklogDay(req.params.date);
+
     const saved = store.setPush(req.params.date, entry.id, {
       state: 'pushed',
       worklogId: result.worklogId,
@@ -359,6 +394,9 @@ router.post('/day/:date/entries/:id/push', async (req, res) => {
 
     res.json({ entry: saved, jira: result });
   } catch (err) {
+    // A failure may still have landed (a timeout after Jira wrote it), so the
+    // next view asks Jira rather than trusting the cached copy.
+    jiraCache.invalidateWorklogDay(req.params.date);
     store.setPush(req.params.date, req.params.id, { state: 'failed', error: err.message });
     res.status(err.statusCode || 500).json({ error: err.message });
   }
