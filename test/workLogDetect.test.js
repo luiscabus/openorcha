@@ -255,3 +255,42 @@ test('signals outside the requested day never leak into it', () => {
   assert.equal(day.rows.length, 1);
   assert.equal(day.rows[0].ticket, 'SO-1');
 });
+
+const JIRA_DETAILS = {
+  'SO-90816': { title: 'GA4 BYO: fetch + backfill for managed-SA rows', status: 'In Review', context: 'backfill managed-SA rows' },
+};
+
+test('a suggestion carries the ticket title and status from Jira', () => {
+  const day = detect.assembleDay({
+    dayKey: '2026-08-13',
+    signals: [signal('2026-08-13T17:18:00Z', 'SO-90816', 'SO-90816 Enqueue the backfill')],
+    cfg,
+    ticketDetails: JIRA_DETAILS,
+  });
+  const row = day.rows.find(r => r.kind === 'candidate');
+  assert.equal(row.title, 'GA4 BYO: fetch + backfill for managed-SA rows');
+  assert.equal(row.status, 'in review');
+});
+
+test('time found only in Jira carries the ticket title too', () => {
+  const day = detect.assembleDay({
+    dayKey: '2026-08-13',
+    signals: [],
+    cfg,
+    ticketDetails: JIRA_DETAILS,
+    jiraWorklogs: [{ worklogId: '1', ticket: 'SO-90816', minutes: 60, started: '2026-08-13T09:00:00.000-0500', startedDate: '2026-08-13', comment: '' }],
+  });
+  assert.equal(day.rows[0].kind, 'jira');
+  assert.equal(day.rows[0].title, 'GA4 BYO: fetch + backfill for managed-SA rows');
+});
+
+test('a field you rewrote on a kept line wins over Jira', () => {
+  const entry = store.addEntry('2026-08-13', { ticket: 'SO-90816', minutes: 60, context: 'as suggested' });
+  store.updateEntry('2026-08-13', entry.id, { context: 'my own words' });
+
+  const day = detect.assembleDay({ dayKey: '2026-08-13', signals: [], cfg, ticketDetails: JIRA_DETAILS });
+  const row = day.rows.find(r => r.kind === 'entry');
+  assert.equal(row.context, 'my own words');
+  // What you did not touch still follows Jira.
+  assert.equal(row.title, 'GA4 BYO: fetch + backfill for managed-SA rows');
+});
