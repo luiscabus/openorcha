@@ -223,8 +223,22 @@ function rowActions(row) {
   } else {
     parts.push(`<button class="btn btn-primary btn-sm" onclick="pushWorkLogRow('${id}')" ${disabled}>${busy ? '…' : 'Log to Jira'}</button>`);
   }
+  if (row.edited?.length) {
+    parts.push(`<button class="btn btn-ghost btn-sm" onclick="revertWorkLogRow('${id}')" ${disabled}
+      title="${escHtml(originalTitle(row))}">↺ original</button>`);
+  }
   parts.push(`<button class="btn btn-ghost btn-sm" onclick="deleteWorkLogRow('${id}')" ${disabled} title="Remove this line">✕</button>`);
   return parts.join('');
+}
+
+// What the row said before you changed it, for the revert button's tooltip.
+function originalTitle(row) {
+  const original = row.original || {};
+  const lines = row.edited.map(field => {
+    const value = field === 'minutes' ? fmtDuration(original.minutes) : (original[field] || '(empty)');
+    return `${field}: ${value}`;
+  });
+  return `You changed this line. Originally:\n${lines.join('\n')}`;
 }
 
 function renderEvidence(row) {
@@ -497,7 +511,9 @@ export async function editWorkLogRow(id, field, value) {
 
   try {
     if (row.kind === 'candidate') {
-      const entryId = await materialize({ ...row, ...patch });
+      // Saved as offered first, then edited, so the entry's original is the
+      // suggestion rather than your rewrite of it.
+      const entryId = await materialize(row);
       await api('PUT', `/api/worklog/day/${state.date}/entries/${entryId}`, patch);
     } else {
       await api('PUT', `/api/worklog/day/${state.date}/entries/${id}`, patch);
@@ -687,6 +703,16 @@ export async function goToWorkLogYesterday() {
 
 export function rescanWorkLog() {
   loadWorkLog({ refresh: true });
+}
+
+export async function revertWorkLogRow(id) {
+  try {
+    await api('POST', `/api/worklog/day/${state.date}/entries/${id}/revert`, {});
+    toast('Back to the original text');
+    await loadWorkLog();
+  } catch (err) {
+    toast(err.message, 'error');
+  }
 }
 
 export async function copyWorkLogMessage() {

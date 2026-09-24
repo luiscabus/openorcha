@@ -255,6 +255,20 @@ router.post('/day/:date/restore', (req, res) => {
   }
 });
 
+// Back to the text a row was first written with.
+router.post('/day/:date/entries/:id/revert', (req, res) => {
+  if (!validDay(req.params.date)) return badDay(res);
+  try {
+    const reverted = store.revertEntry(req.params.date, req.params.id, {
+      includeMinutes: req.body?.includeMinutes === true,
+    });
+    if (!reverted) return res.status(404).json({ error: 'No such entry, or nothing to revert to' });
+    res.json(reverted);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
 // The only path that writes to Jira.
 //
 // It runs for one entry, only when called, and only with an explicit confirm

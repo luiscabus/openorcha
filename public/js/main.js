@@ -11,7 +11,7 @@ import {
   pushWorkLogRow, adoptWorkLogJiraRow, addWorkLogLine, toggleWorkLogEvidence,
   toggleWorkLogSource, shiftWorkLogDate, openWorkLogDay, setWorkLogMode,
   goToWorkLogToday, goToWorkLogYesterday, rescanWorkLog, copyWorkLogMessage,
-  growWorkLogField,
+  growWorkLogField, revertWorkLogRow,
 } from './tabs/workLog.js';
 import {
   loadSessions,
@@ -215,6 +215,7 @@ window.goToWorkLogToday = goToWorkLogToday;
 window.goToWorkLogYesterday = goToWorkLogYesterday;
 window.rescanWorkLog = rescanWorkLog;
 window.copyWorkLogMessage = copyWorkLogMessage;
+window.revertWorkLogRow = revertWorkLogRow;
 
 // Sessions
 window.loadSessions = loadSessions;

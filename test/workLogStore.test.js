@@ -96,3 +96,39 @@ test('an unknown push state cannot be smuggled in', () => {
   const entry = store.addEntry('2026-09-08', { ticket: 'SO-1', minutes: 60, push: { state: 'definitely-fine' } });
   assert.equal(entry.push.state, 'unpushed');
 });
+
+test('an entry keeps the text it was first written with through edits', () => {
+  const entry = store.addEntry('2026-09-08', { ticket: 'SO-1', minutes: 60, eod: 'as suggested', context: 'the subject' });
+  assert.equal(entry.original.eod, 'as suggested');
+
+  const edited = store.updateEntry('2026-09-08', entry.id, { eod: 'as I would say it' });
+  assert.equal(edited.eod, 'as I would say it');
+  assert.equal(edited.original.eod, 'as suggested');
+  assert.deepEqual(store.editedFields(edited), ['eod']);
+});
+
+test('a patch cannot rewrite the original', () => {
+  const entry = store.addEntry('2026-09-08', { ticket: 'SO-1', minutes: 60, eod: 'first' });
+  const edited = store.updateEntry('2026-09-08', entry.id, { eod: 'second', original: { eod: 'forged' } });
+  assert.equal(edited.original.eod, 'first');
+});
+
+test('a row written before originals existed gets its pre-edit text as original', () => {
+  const entry = store.addEntry('2026-09-08', { ticket: 'SO-1', minutes: 60, eod: 'old text' });
+  const day = store.readDay('2026-09-08');
+  delete day.entries[0].original;
+  store.writeDay(day);
+
+  const edited = store.updateEntry('2026-09-08', entry.id, { eod: 'new text' });
+  assert.equal(edited.original.eod, 'old text');
+});
+
+test('revert restores the text but leaves time alone unless asked', () => {
+  const entry = store.addEntry('2026-09-08', { ticket: 'SO-1', minutes: 60, eod: 'first' });
+  store.updateEntry('2026-09-08', entry.id, { eod: 'second', minutes: 90 });
+
+  const reverted = store.revertEntry('2026-09-08', entry.id);
+  assert.equal(reverted.eod, 'first');
+  assert.equal(reverted.minutes, 90);
+  assert.deepEqual(store.editedFields(reverted), ['minutes']);
+});
