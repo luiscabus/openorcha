@@ -4658,7 +4658,10 @@ body {
 
 .worklog-cell-time { white-space: nowrap; color: var(--text2); font-variant-numeric: tabular-nums; }
 .worklog-cell-duration { font-variant-numeric: tabular-nums; }
-.worklog-cell-actions { display: flex; gap: 4px; align-items: center; flex-wrap: wrap; }
+/* Flex lives on an inner div: a flex <td> stops being a table cell, which
+   knocked the header row out of line. */
+.worklog-actions { display: flex; gap: 4px; align-items: center; justify-content: flex-end; white-space: nowrap; }
+.worklog-cell-duration .worklog-input-duration { width: 78px; }
 
 .worklog-expand {
   background: none;
@@ -4714,16 +4717,41 @@ body {
 
 .worklog-row-said.worklog-row-warn { box-shadow: inset 3px 0 0 var(--warning); }
 
+/* Below the facts, the three texts a row carries, each under its audience. */
 .worklog-said {
-  display: flex;
-  gap: 12px;
-  align-items: center;
+  display: grid;
+  grid-template-columns: minmax(0, 1.5fr) minmax(0, 1.2fr) minmax(170px, 0.6fr);
+  gap: 14px;
   padding-left: 22px;
+  align-items: start;
+}
+.worklog-said-readonly { grid-template-columns: minmax(0, 1fr); }
+
+.worklog-block { display: flex; flex-direction: column; gap: 4px; min-width: 0; }
+.worklog-block-head {
+  display: flex;
+  align-items: baseline;
+  gap: 6px;
+  min-height: 16px;
+  font-size: 10.5px;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--text3);
+}
+.worklog-block-head > span { font-weight: 600; }
+.worklog-block-head small { text-transform: none; letter-spacing: 0; font-size: 11px; }
+.worklog-block-sources {
+  margin-left: auto;
+  text-transform: none;
+  letter-spacing: 0;
+  font-size: 11px;
+  font-weight: 400 !important;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 .worklog-said .worklog-input-summary {
-  flex: 1;
-  min-width: 0;
   font-size: 13.5px;
   line-height: 1.45;
   resize: none;
@@ -4731,25 +4759,35 @@ body {
   min-height: 30px;
 }
 
+/* Each EOD field is a bullet under the heading, so it reads like the post. */
+.worklog-eod-line { display: flex; align-items: center; gap: 8px; }
+.worklog-eod-line > span {
+  flex: 0 0 38px;
+  font-size: 11px;
+  color: var(--text3);
+  text-align: right;
+}
+.worklog-eod-line .worklog-input { font-size: 12.5px; }
+
+.worklog-block-jira .worklog-input { font-size: 12.5px; color: var(--text2); }
+
 /* A ticket is six characters; it should not take the whole free column. */
-.worklog-cell-ticket { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
-.worklog-cell-ticket .worklog-input-ticket { width: 130px; flex: 0 0 130px; }
-.worklog-cell-ticket .worklog-effort-name { color: var(--text3); font-size: 12px; font-style: italic; }
-
-.worklog-said-text { flex: 1; min-width: 0; color: var(--text2); font-size: 13.5px; padding: 5px 0; }
-
-/* The Jira note keeps it company: same line, clearly the smaller half. */
-.worklog-said .worklog-note-line {
-  margin-top: 0;
-  flex: 0 0 clamp(200px, 30%, 340px);
+.worklog-ticket-line { display: flex; align-items: center; gap: 10px; min-width: 0; }
+.worklog-ticket-line .worklog-input-ticket { width: 120px; flex: 0 0 120px; }
+.worklog-cell-ticket { max-width: 0; width: 100%; }
+.worklog-row-name {
   min-width: 0;
+  color: var(--text2);
+  font-size: 13px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
-.worklog-said .worklog-input-note { min-width: 0; }
+.worklog-said-text { color: var(--text2); font-size: 13.5px; padding: 5px 0; }
 
 @media (max-width: 1100px) {
-  .worklog-said { flex-direction: column; align-items: stretch; gap: 6px; }
-  .worklog-said .worklog-note-line { flex: 1 1 auto; }
+  .worklog-said { grid-template-columns: minmax(0, 1fr); gap: 10px; }
 }
 
 .worklog-evidence-row > td { padding: 0 !important; background: var(--bg); }

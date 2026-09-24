@@ -274,18 +274,66 @@ function renderEvidence(row) {
   return `<tr class="worklog-evidence-row"><td colspan="${WORKLOG_COLUMNS}"><div class="worklog-evidence">${covered}${scaled}<ul>${items}${more}</ul></div></td></tr>`;
 }
 
+// Which of the source names a row's evidence came from, in words — the glyphs
+// alone meant nothing without hovering each one.
+function sourceSummary(row) {
+  const names = Object.keys(row.sourceCounts || {});
+  if (!names.length) return '';
+  const marks = names.map(s => SOURCE_ICONS[s] || '•').join('');
+  return `<span class="worklog-block-sources" title="Show the evidence with ▸">${marks} ${escHtml(names.join(', '))}</span>`;
+}
+
+// Where this row lands in the EOD post, when it is not an item of its own.
+function eodPlacement(row) {
+  if (row.attention === 'peer-review' && row.ticket) return 'folded into the "reviewed PRs" line';
+  if (row.attention === 'meetings' && !row.ticket) return 'printed as a bare line above the items';
+  return '';
+}
+
+// The heading the EOD post prints for this row: ticket and title, or the name
+// of the effort when there is no ticket.
+function headingName(row) {
+  if (row.ticket) return row.title || '';
+  return row.label || '';
+}
+
 function renderRow(row) {
   const id = escHtml(row.id);
   const readOnly = row.kind === 'jira';
-  const sourceMarks = Object.keys(row.sourceCounts || {})
-    .map(s => `<span title="${escHtml(s)}">${SOURCE_ICONS[s] || '•'}</span>`).join('');
-
   const warn = row.coveredByJiraMinutes ? ' worklog-row-warn' : '';
+  const name = headingName(row);
 
-  // Two rows per entry. The facts are narrow by nature — a time, a ticket, a
-  // duration — while what you did is the part you actually write, so it gets a
-  // row of its own, shared only with the note that goes to Jira. Squeezed
-  // between six fixed columns it had barely a third of the table.
+  // Facts on the first line; below it, the three texts a row carries, each
+  // under its audience: what you did (private), what the EOD post prints, and
+  // what Jira receives. They used to share one unlabelled strip, which made it
+  // impossible to tell which box went where.
+  const said = readOnly
+    ? `<div class="worklog-block worklog-block-did">
+         <div class="worklog-block-head"><span>Jira comment</span></div>
+         <div class="worklog-said-text">${escHtml(row.summary || '—')}</div>
+       </div>`
+    : `<div class="worklog-block worklog-block-did">
+         <div class="worklog-block-head"><span>What you did</span><small>private</small>${sourceSummary(row)}</div>
+         <textarea class="worklog-input worklog-input-summary${editedClass(row, 'summary')}" rows="1" placeholder="What you did"
+                   oninput="growWorkLogField(this)"
+                   onkeydown="if (event.key === 'Enter' && !event.shiftKey) { event.preventDefault(); this.blur(); }"
+                   onchange="editWorkLogRow('${id}','summary',this.value)">${escHtml(row.summary || '')}</textarea>
+       </div>
+       <div class="worklog-block worklog-block-eod">
+         <div class="worklog-block-head"><span>EOD post</span>${eodPlacement(row) ? `<small>${escHtml(eodPlacement(row))}</small>` : ''}</div>
+         <label class="worklog-eod-line"><span>about</span>
+           <input class="worklog-input${editedClass(row, 'context')}" value="${escHtml(row.context || '')}"
+                  placeholder="${row.ticket ? 'what the ticket is about' : 'what this effort is about'}" onchange="editWorkLogRow('${id}','context',this.value)"></label>
+         <label class="worklog-eod-line"><span>today</span>
+           <input class="worklog-input${editedClass(row, 'eod')}" value="${escHtml(row.eod || '')}"
+                  placeholder="what moved today" onchange="editWorkLogRow('${id}','eod',this.value)"></label>
+       </div>
+       <div class="worklog-block worklog-block-jira">
+         <div class="worklog-block-head"><span>Jira note</span></div>
+         <input class="worklog-input${editedClass(row, 'note')}" value="${escHtml(row.note || '')}"
+                placeholder="brief note" onchange="editWorkLogRow('${id}','note',this.value)">
+       </div>`;
+
   return `
     <tr class="worklog-row worklog-row-facts worklog-row-${row.kind}${warn}">
       <td class="worklog-cell-time">
@@ -294,13 +342,13 @@ function renderRow(row) {
         </button>
         ${escHtml(row.startTime || '—')}
       </td>
-      <td class="worklog-cell-ticket">
+      <td class="worklog-cell-ticket"><div class="worklog-ticket-line">
         ${readOnly
           ? `<strong>${escHtml(row.ticket || '—')}</strong>`
           : `<input class="worklog-input worklog-input-ticket" value="${escHtml(row.ticket || '')}"
-                    placeholder="TICKET" onchange="editWorkLogRow('${id}','ticket',this.value)">`}
-        ${!row.ticket && row.label ? `<div class="worklog-effort-name">${escHtml(row.label)}</div>` : ''}
-      </td>
+                    placeholder="no ticket" onchange="editWorkLogRow('${id}','ticket',this.value)">`}
+        ${name ? `<span class="worklog-row-name" title="${escHtml(name)}">${escHtml(name)}</span>` : ''}
+      </div></td>
       <td class="worklog-cell-attention">${attentionChip(row)}</td>
       <td class="worklog-cell-duration">
         ${readOnly
@@ -309,30 +357,19 @@ function renderRow(row) {
                     onchange="editWorkLogRow('${id}','minutes',this.value)">`}
       </td>
       <td class="worklog-cell-status">${pushBadge(row)}</td>
-      <td class="worklog-cell-actions">${rowActions(row)}</td>
+      <td class="worklog-cell-actions"><div class="worklog-actions">${rowActions(row)}</div></td>
     </tr>
     <tr class="worklog-row worklog-row-said worklog-row-${row.kind}${warn}">
       <td class="worklog-cell-summary" colspan="${WORKLOG_COLUMNS}">
-        <div class="worklog-said">
-          ${readOnly
-            ? `<div class="worklog-said-text">${escHtml(row.summary || '')}</div>`
-            : `<textarea class="worklog-input worklog-input-summary" rows="1" placeholder="What you did"
-                         oninput="growWorkLogField(this)"
-                         onkeydown="if (event.key === 'Enter' && !event.shiftKey) { event.preventDefault(); this.blur(); }"
-                         onchange="editWorkLogRow('${id}','summary',this.value)">${escHtml(row.summary || '')}</textarea>`}
-          <div class="worklog-note-line">
-            <span class="worklog-note-label" title="Only this reaches Jira — the description beside it stays local">to Jira</span>
-            ${readOnly
-              ? escHtml(row.note || '—')
-              : `<input class="worklog-input worklog-input-note" value="${escHtml(row.note || '')}"
-                        placeholder="brief note" onchange="editWorkLogRow('${id}','note',this.value)">`}
-            <span class="worklog-row-sources">${sourceMarks}</span>
-          </div>
-        </div>
+        <div class="worklog-said${readOnly ? ' worklog-said-readonly' : ''}">${said}</div>
       </td>
     </tr>
     ${renderEvidence(row)}
   `;
+}
+
+function editedClass(row, field) {
+  return row.edited?.includes(field) ? ' worklog-input-edited' : '';
 }
 
 /** Size a description field to its content — these run to a sentence or two. */
