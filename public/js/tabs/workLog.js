@@ -469,6 +469,13 @@ async function materialize(row) {
     note: row.note,
     minutes: row.minutes,
     summary: row.summary,
+    // What the ticket is, its name, where it stands and the clause the EOD post
+    // prints. Detection worked all four out; dropping them here meant a kept
+    // row went back to the day cache for them, and lost them when it was pruned.
+    context: row.context,
+    title: row.title,
+    status: row.status,
+    eod: row.eod,
     startTime: row.startTime,
     origin: 'detected',
     candidateKey: row.candidateKey,
