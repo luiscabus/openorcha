@@ -20,6 +20,7 @@ OpenOrcha makes multi-agent work easier to manage. Instead of juggling terminal 
 - Inspect agent context and git state for the current project
 - Manage SSH config, keys, and `known_hosts`
 - Browse terminal, `tmux`, and optional `screen` sessions
+- Track what is **open for you** and what each of those has cost, over time
 - Run **supervised initiatives**: long work an agent carries through on its own
 
 ## Work Log
@@ -87,7 +88,9 @@ come out, because they have two audiences:
 - **context** — what the ticket *is*, as opposed to what moved on it today. Its
   standing subject, so a reader who does not know the ticket can follow the
   post. Taken from Jira's own description when Jira is reachable, otherwise
-  inferred from the evidence.
+  inferred from the evidence. It is kept on the entry rather than recomputed,
+  so the Contexts board can still say what a row was about long after the day
+  cache that wrote the line has been pruned.
 
 The row shows both, so what leaves the machine is never a surprise; the push
 dialog repeats the note before sending. Work with no ticket gets a **name**
@@ -216,6 +219,103 @@ Three details the channel's style depends on:
 Only kept lines appear: a suggestion is still a guess and never goes into
 something you are about to send to a person. The week is the same shape, one
 dated section per day inside a single fence. Copy it and paste it into Slack.
+
+## Contexts
+
+The work log answers what you did. This answers the other half — what is open
+for you, and what each of those has actually cost — on one grid: a row per
+context, a column per day.
+
+A **context** is a piece of work that outlives a day. The ticket where there is
+one, so its Jira issue, its pull requests, its branch and its initiative all
+collapse into a single row, under the same key the work log files time against.
+Work with no ticket keeps a name instead, the way the work log names an
+unattributed block.
+
+### The two halves are collected in opposite directions
+
+Attention is *reconstructed*. Commits, transcripts and review activity are all
+still there tomorrow, so a past day can be read whenever you get round to it —
+which is how the work log can scan a week you never opened it.
+
+Open state cannot be. Jira answers "what is assigned to me now" and keeps no
+memory of what it would have said last Tuesday; a branch that was waiting on you
+in August looks like any other merged branch today. So it is **recorded as it is
+observed** — the server takes a look every `observeEveryMinutes` (30 by default)
+and writes down what changed. A context's history begins the first time
+something sees it and is only as fine-grained as the looks behind it.
+
+That asymmetry is the whole design, and the record is built to be honest about
+it:
+
+- Every observation is logged too, so asking what was open on a given day also
+  reports how near the closest look was, and answers `covered: false` when there
+  was none. "Nothing was open" and "nobody looked" must never read the same.
+- A context that stops being reported is marked **gone**, not *done*. Jira is
+  asked for recently finished tickets as well, precisely so that closure can be
+  recorded rather than inferred from an absence.
+- **Absence only counts when the provider answered.** A provider that fails
+  reports nothing, which looks exactly like reporting that nothing is open, and
+  closing a day's whole backlog because Jira was down would corrupt the one
+  history here that cannot be rebuilt afterwards. Contexts that could not be
+  confirmed either way come back as `unverified` on the observation.
+
+Because the history starts when the recording does, the board is thin on the day
+you turn it on and fills in from there. Nothing can back-fill it.
+
+### Where open work comes from
+
+The same providers as the work log, asked a different question. Each is a plugin
+with its own toggle under `contexts.sources` in `data/worklog/config.json`:
+
+- **Jira** — issues assigned to you that are not done, plus the ones finished
+  within `resolvedWithinDays`. Also where a ticket's standing subject is read.
+- **GitHub** — pull requests waiting on your review and your own open ones, with
+  *changes requested* called out. Review is work with no ticket of its own, and
+  it is most of some weeks.
+- **Branches** — your branches with unpushed commits, and any checkout with
+  uncommitted changes. Catches the thing you put down mid-thought.
+- **Initiatives** — runs in flight, and the decisions they have parked for you.
+  A gate is the most literal open task there is.
+
+### Reading the grid
+
+A cell is one context on one day: the minutes the work log kept against it, and
+the state as it stood that evening. Rows are ordered so the ones that repay a
+look come first, because sorting by date buries them:
+
+1. **open, never touched** — the backlog
+2. **open, and cold** — worked once and forgotten, longest gap first
+3. everything else, by the time it took
+
+What the view is for is the rows where the two halves disagree. Open with a cold
+strip is something you have forgotten, not something you are doing. A heavy
+strip that closed is what the work actually cost. Still open and all `debugging`
+is the one eating your week.
+
+A day nobody looked at carries the previous state forward, and `observed` says
+which days those were, so a carried-forward state is never drawn as though it
+had been seen.
+
+### The API
+
+```
+GET    /api/contexts?from=&to=      the grid; takes a look too, unless one is recent
+GET    /api/contexts/open/:date     what was open that day, and how near the nearest look
+GET    /api/contexts/history?key=   one context whole: every state, and every day it took
+GET    /api/contexts/observations   when looks happened, and what failed during them
+GET    /api/contexts/config         sources, why one cannot run, and the last look
+POST   /api/contexts/observe        look now
+DELETE /api/contexts?key=           forget one
+```
+
+Keys carry slashes and hashes (`meetsoci/soci#24754`), so they travel as a query
+rather than a path segment. Records live one file per context in
+`data/contexts/records/`, the observation log in
+`data/contexts/observations.json`; both are local and gitignored.
+
+There is no screen for this yet — `GET /api/contexts` returns rows ready to
+draw, and nothing draws them.
 
 ## Initiatives
 
