@@ -100,3 +100,17 @@ test('a day with nothing in it never reaches the model', async () => {
   const result = await narrate.narrateDay({ dayKey: '2026-08-31', candidates: [], cfg });
   assert.equal(result.skipped, 'empty');
 });
+
+test('your own earlier posts go into the prompt as the style to match', () => {
+  const prompt = narrate.buildPrompt('2026-09-22', [], { workTimezone: 'UTC' }, [
+    { date: '2026-09-21', text: '```\n2026-09-21\n\n- SO-1 Thing (live)\n  - shipped it\n```' },
+  ]);
+  assert.match(prompt, /- SO-1 Thing \(live\)/);
+  assert.match(prompt, /never from these posts/);
+  assert.doesNotMatch(prompt.split('Blocks:')[0], /```/);
+});
+
+test('without earlier posts the prompt carries no style section', () => {
+  const prompt = narrate.buildPrompt('2026-09-22', [], { workTimezone: 'UTC' });
+  assert.doesNotMatch(prompt, /How this person actually writes/);
+});
