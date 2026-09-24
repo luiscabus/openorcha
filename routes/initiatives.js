@@ -269,9 +269,10 @@ router.post('/:id/stop', (req, res) => {
   res.json({ stopped, initiative: withLive(store.save(initiative)) });
 });
 
-// Messaging an initiative always succeeds. It reaches a live agent when there
-// is one — a named worker if you say which — and waits for the next briefing
-// when there is not. Losing what the operator typed is never the right answer.
+// Messaging an initiative always succeeds. It reaches the agent it was meant
+// for, and waits for the next briefing when that one is not running. Losing
+// what the operator typed is never the right answer — but neither is handing it
+// to a different agent, which is what a fallback here used to do.
 router.post('/:id/message', (req, res) => {
   const initiative = store.get(req.params.id);
   if (!initiative) return res.status(404).json({ error: 'Initiative not found' });
@@ -280,18 +281,34 @@ router.post('/:id/message', (req, res) => {
 
   try {
     const snapshot = supervisor.takeSnapshot();
-    // Default addressee is the orchestrator: it owns the run and knows what
+    // The addressee is settled before anything is sent, and is never
+    // substituted. Default is the orchestrator: it owns the run and knows what
     // has happened. Name a workerId to talk to one worker directly.
-    const workerId = req.body?.workerId || store.orchestrator(initiative)?.id || null;
-    const agent = supervisor.findAgent(initiative, snapshot, { workerId })
-      || supervisor.findAgent(initiative, snapshot);
+    let workerId = req.body?.workerId || store.orchestrator(initiative)?.id || null;
+
+    // With no orchestrator and nobody named, one running worker is unambiguous
+    // and several are not. Picking the first of several is a coin toss with the
+    // operator's words, so it asks instead.
+    let candidates = [];
+    if (!workerId) {
+      const live = supervisor.liveWorkers(initiative, snapshot)
+        .filter(({ worker }) => worker.role === 'worker');
+      if (live.length === 1) workerId = live[0].worker.id;
+      else candidates = live.map(({ worker }) => ({ workerId: worker.id, name: worker.name }));
+    }
+
+    const agent = workerId ? supervisor.findAgent(initiative, snapshot, { workerId }) : null;
 
     if (!agent) {
       const queued = store.queueMessage(initiative, message);
       return res.json({
         delivered: false,
         queued: true,
-        note: 'No agent is running for this initiative right now — this is held and handed over with the next briefing.',
+        needsAddressee: candidates.length > 1,
+        candidates,
+        note: candidates.length > 1
+          ? 'Several agents are running here and none was named — this is held rather than sent to whichever one came first. Say which to reach it now.'
+          : 'The agent this was meant for is not running right now — this is held and handed over with the next briefing.',
         pending: (store.save(initiative).pendingMessages || []).length,
         at: queued.ts,
       });
@@ -403,10 +420,34 @@ router.get('/:id/transcript', (req, res) => {
   }
 });
 
-// Who you are talking to: the orchestrator when there is one, otherwise
-// whichever agent is doing the work.
+// Whose conversation you are looking at: the orchestrator when there is one,
+// otherwise whichever agent is doing the work. A read, so a rough answer is
+// better than none.
 function chatTarget(initiative) {
   return store.orchestrator(initiative) || store.activeWorkers(initiative)[0] || (initiative.workers || [])[0] || null;
+}
+
+/**
+ * Who a message may be *sent* to, which is a stricter question than whose
+ * transcript to show.
+ *
+ * With no orchestrator and several workers running there is no such thing as
+ * "the" agent, and taking the first is a coin toss with the operator's words:
+ * the wrong side of it puts an instruction in front of an agent that was never
+ * doing this work. Better to hold the message and ask which.
+ */
+function chatAddressee(initiative, namedWorkerId = null) {
+  if (namedWorkerId) {
+    const named = (initiative.workers || []).find(w => w.id === namedWorkerId);
+    return { worker: named || null, candidates: [] };
+  }
+
+  const boss = store.orchestrator(initiative);
+  if (boss) return { worker: boss, candidates: [] };
+
+  const active = store.activeWorkers(initiative);
+  if (active.length === 1) return { worker: active[0], candidates: [] };
+  return { worker: null, candidates: active.map(w => ({ workerId: w.id, name: w.name })) };
 }
 
 // ─── The run as one stream ───────────────────────────────────────────────────
@@ -506,7 +547,7 @@ router.post('/:id/chat', (req, res) => {
   if (!message) return res.status(400).json({ error: 'message is required' });
 
   try {
-    const worker = chatTarget(initiative);
+    const { worker, candidates } = chatAddressee(initiative, req.body?.workerId || null);
     const snapshot = supervisor.takeSnapshot();
     const before = worker ? supervisor.workerMessages(initiative, worker, snapshot).length : 0;
     const sent = worker ? supervisor.deliverNote(initiative, message, { workerId: worker.id }) : { delivered: false };
@@ -516,7 +557,11 @@ router.post('/:id/chat', (req, res) => {
       return res.json({
         delivered: false,
         queued: true,
-        note: 'Nothing is running for this initiative — held for the next agent.',
+        needsAddressee: candidates.length > 1,
+        candidates,
+        note: candidates.length > 1
+          ? 'Several agents are running here and there is no orchestrator to address — this is held rather than sent to whichever one came first. Say which to reach it now.'
+          : 'Nothing is running for this initiative — held for the next agent.',
         pending: (store.save(initiative).pendingMessages || []).length,
       });
     }

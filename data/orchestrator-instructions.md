@@ -14,8 +14,12 @@ All endpoints are under `http://127.0.0.1:3456/api/agents`.
 ```
 GET /api/agents
 ```
-Returns `{ agents: [{ pid, agentId, agentName, cwd, project, cpu, mem, etime, tty, multiplexer, status }] }`
+Returns `{ agents: [{ pid, agentId, agentName, cwd, project, cpu, mem, etime, tty, session, multiplexer, status, assignment }] }`
 - `status`: `"idle"` | `"thinking"` | `"waiting_input"` — inferred from CPU usage and terminal state
+- `assignment`: what this agent was launched to do — `{ purpose, cwd, launchedBy, role, startedAt }`, or
+  `null` for an agent nobody recorded a reason for. **Read it before you send anything.**
+  This list is every agent on the machine, not only yours: most of them are somebody
+  else's, mid-task.
 
 ### View Agent History (past sessions across all projects)
 ```
@@ -40,10 +44,15 @@ Content-Type: application/json
   "sessionName": "my-session",   // optional — tmux session name (auto-generated if blank)
   "skipPermissions": false,      // optional — skip permission prompts
   "resumeSessionId": null,       // optional — resume a previous session by ID
-  "presetFile": null             // optional — use a preset configuration
+  "presetFile": null,            // optional — use a preset configuration
+  "purpose": "what this agent is for, in one line",   // record it — see Scope
+  "launchedBy": "orchestrator"   // optional — who started it
 }
 ```
-Returns `{ ok: true, sessionName: "..." }`
+Returns `{ ok: true, sessionName: "...", assignment: {...} }`
+
+Always send `purpose`. It is what stops the next orchestrator — or you, twenty
+minutes from now — from treating this agent as a spare pair of hands.
 
 ### Read Agent Messages
 ```
@@ -106,6 +115,35 @@ Content-Type: application/json
 { "name": "...", "agent": "claude", "icon": "X", "color": "#hex", "description": "...", "flags": "--flag value" }
 ```
 
+## Scope
+
+**An agent has one job, in one directory. That is its scope, and you do not get to
+widen it.**
+
+Every running agent is in the middle of something, in a project it was pointed at.
+`GET /api/agents` shows you all of them — including agents no one told you about —
+and the send endpoint will happily deliver to any of them. Neither fact makes an
+agent available.
+
+Before sending anything to an agent, check two things:
+
+1. **Did you launch it?** Its `assignment.launchedBy` says. If you did not, it is
+   somebody else's agent doing somebody else's work. Leave it alone.
+2. **Is what you are about to send the job it was launched for**, in the directory
+   it is working in? Compare against `assignment.purpose` and `assignment.cwd`.
+   If the work lives in a different repo, a different project, or in the tooling
+   you are running inside, the answer is no.
+
+When work comes up that no running agent is scoped for — and it will, because real
+work turns up neighbouring problems — **launch a new agent for it, in its own
+directory, with its own `purpose`**. Do not hand it to whoever is already running
+because they are already running. An agent doing ticket discovery that is asked to
+fix a bug in another project loses the thread of what it was doing, works outside
+the directory it was given, and produces changes nobody was expecting.
+
+If you are not sure whether something is in scope, it is not. Launch a separate
+agent, or stop and ask the operator.
+
 ## Workflow Patterns
 
 ### Launching and Monitoring
@@ -114,7 +152,7 @@ Content-Type: application/json
 ```bash
 curl -s -X POST http://127.0.0.1:3456/api/agents/launch \
   -H 'Content-Type: application/json' \
-  -d '{"agentId":"claude","cwd":"/path/to/project","sessionName":"task-name"}'
+  -d '{"agentId":"claude","cwd":"/path/to/project","sessionName":"task-name","purpose":"what this agent is for","launchedBy":"orchestrator"}'
 ```
 
 2. Wait for it to appear (agents take ~3s to start):
@@ -171,8 +209,10 @@ curl -s -X POST http://127.0.0.1:3456/api/agents/PID/send \
 When given a complex task:
 
 1. **Analyze** — Break the work into independent pieces
-2. **Launch** — Start one agent per piece, each in the right project directory
-3. **Direct** — Send each agent its specific task via the send endpoint
+2. **Launch** — Start one agent per piece, each in the right project directory, each
+   with a `purpose` saying what its piece is
+3. **Direct** — Send each agent its specific task via the send endpoint, and only ever
+   the task it was launched for
 4. **Monitor** — Periodically read messages to check progress
 5. **Handle prompts** — Approve permission prompts when agents are waiting
 6. **Synthesize** — Once all agents finish, review their output and report results
@@ -191,7 +231,11 @@ When given a complex task:
 
 - Always explain your plan before launching agents
 - Report progress as agents complete their work
-- If a task can be done by a single agent, don't over-parallelize
+- If a task can be done by a single agent, don't over-parallelize — but this is about
+  splitting *one* piece of work across agents. Two unrelated pieces of work are two
+  agents, always, however cheap it looks to reuse one.
 - When agents finish, summarize what was accomplished
 - If something fails, diagnose and retry or adjust the approach
-- You are running in the same environment as the agents you launch — you share the filesystem
+- You are running in the same environment as the agents you launch — you share the
+  filesystem. That is a reason to be careful about which directory an agent is
+  working in, not a licence to send any agent anywhere

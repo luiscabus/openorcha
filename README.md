@@ -248,6 +248,63 @@ first, a short LLM judgement call only when no rule fits:
 | `standard` | the above, plus branches and commits | anything leaving the machine |
 | `ship` | the above, plus `git push` and draft PRs | non-draft PRs, PR comments, Jira writes, merges, force pushes, pushes to master |
 
+### Scope: one agent, one job
+
+An agent has one job, in one directory. Real work turns up neighbouring problems —
+a bug in another repo, something broken in the tooling the run is using — and the
+cheapest thing to do with one is hand it to whichever agent is already running.
+That is the wrong thing: the agent loses the thread of what it was doing, works
+outside the directory it was given, and produces changes nobody asked for. An
+agent doing ticket discovery is not a spare pair of hands.
+
+So the orchestrator has a fourth action beside continue, advance and gate:
+
+```
+{"action":"delegate","directory":"/path","task":"what the new agent must do","reason":"why it is not that worker's job"}
+```
+
+**Inside the run's own directory** the supervisor starts it — still this run's
+work. **Anywhere else it is a gate**, defaulting to *Not now*: starting autonomous
+work in a project nobody pointed this run at is the operator's call, and no
+autonomy profile makes it automatic. A delegate gets its own agent, its own
+directory and a brief that says to stay in it; it takes no part in the run's
+stages, and it is killed with the run like anything else the run started.
+
+Three things stop a message reaching the wrong agent in the first place:
+
+- **A decision request names the worker's directory and branch**, so the
+  orchestrator can tell that what it is about to say belongs somewhere else. A
+  `continue` is pasted into that worker word for word, and it is told so.
+- **"Whoever is around" only ever resolves to a stage worker.** The orchestrator
+  and delegates are reachable by name and never by chance.
+- **A message with no unambiguous addressee is held, not redirected.** With
+  several workers running and no orchestrator to address, messaging the run waits
+  and asks which one rather than taking the first. Losing what you typed is not
+  the right answer, but neither is delivering it to someone else.
+
+### Why an agent exists
+
+Every agent looks alike in `ps`: a pid, a binary, a directory. So what an agent
+was launched to do is written down at launch, when it is the one moment the
+reason is actually known, and travels with it afterwards — `GET /api/agents`
+returns it as `assignment` on every row:
+
+```json
+{ "purpose": "SO-97101: Implement", "cwd": "/Users/x/soci-services",
+  "launchedBy": "initiative:i-42", "role": "worker", "startedAt": "…" }
+```
+
+`POST /api/agents/launch` takes `purpose` and `launchedBy` and records them.
+Records live in `data/agents/assignments.json`, keyed by tmux session — a pid
+changes when a CLI restarts in its pane, the session it lives in does not.
+
+This is what the standalone **Orchestrator preset** reads before it sends
+anything: its instructions (`data/orchestrator-instructions.md`) tell it to check
+that it launched the agent and that the work matches the agent's remit and
+directory, and to launch a new agent otherwise. That matters because
+`GET /api/agents` lists every agent on the machine, including ones it knows
+nothing about, and `POST /api/agents/:pid/send` will deliver to any of them.
+
 ### Stages
 
 The default pipeline follows the usual shape of this work: **Plan → Branch →

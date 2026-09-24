@@ -6,11 +6,13 @@ const path = require('path');
 
 const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'openorcha-supervisor-test-'));
 process.env.OPENORCHA_INITIATIVES_DIR = dir;
+process.env.OPENORCHA_ASSIGNMENTS_DIR = path.join(dir, 'agents');
 // Never start a real agent from a test run.
 process.env.OPENORCHA_NO_LAUNCH = '1';
 
 const store = require('../lib/initiativeStore');
 const supervisor = require('../lib/initiativeSupervisor');
+const assignments = require('../lib/agentAssignments');
 
 test.after(() => fs.rmSync(dir, { recursive: true, force: true }));
 
@@ -353,6 +355,73 @@ test('stopping reaches sessions behind workers the supervisor already retired', 
       try { execSync(`tmux kill-session -t ${s} 2>/dev/null`); } catch {}
     }
   }
+});
+
+test('a worker that finishes takes its session with it', () => {
+  const initiative = store.create({ name: 'Reap me', cwd: dir, notifyOnGate: false });
+  const worker = store.normalizeWorker({ id: 'w1', name: 'a', sessionName: 'openorcha-finish-1', status: 'working' }, 0);
+  initiative.workers = [worker];
+  store.save(initiative);
+  assignments.record({ sessionName: 'openorcha-finish-1', cwd: dir, role: 'worker', initiativeId: initiative.id });
+
+  execSync('tmux new-session -d -s openorcha-finish-1 "sleep 60" 2>/dev/null || true');
+
+  try {
+    supervisor.finishWorker(initiative, worker, 'finished the stage');
+
+    assert.equal(worker.status, 'done');
+    assert.equal(tmuxSessions().filter(s => s.startsWith('openorcha-finish-1')).length, 0,
+      'a finished worker must not leave its agent sitting at an idle prompt');
+    assert.equal(assignments.get('openorcha-finish-1'), null,
+      'the record of why an agent exists goes with the agent');
+    assert.equal(worker.sessionName, null,
+      'a closed name goes back into circulation, so the record must stop claiming it');
+    assert.equal(worker.closedSession, 'openorcha-finish-1', 'what it was called is still readable');
+  } finally {
+    try { execSync('tmux kill-session -t openorcha-finish-1 2>/dev/null'); } catch {}
+  }
+});
+
+test('a finished worker cannot take a later agent down with it', () => {
+  // Stage names repeat, so the name a finished worker used comes round again.
+  // The danger is the old record still claiming it: stopping that run would
+  // then kill whatever now answers to the name.
+  const old = store.create({ name: 'Ran yesterday', cwd: dir, notifyOnGate: false });
+  const finished = store.normalizeWorker({ id: 'w1', name: 'a', sessionName: 'openorcha-recycled', status: 'working' }, 0);
+  old.workers = [finished];
+  store.save(old);
+
+  execSync('tmux new-session -d -s openorcha-recycled "sleep 60" 2>/dev/null || true');
+  supervisor.finishWorker(old, finished, 'finished the stage');
+
+  // Someone else takes the freed name.
+  execSync('tmux new-session -d -s openorcha-recycled "sleep 60" 2>/dev/null || true');
+
+  try {
+    assert.deepEqual(supervisor.stopWorkers(old, { kill: true }), [],
+      'the old run must have nothing left to kill');
+    assert.equal(tmuxSessions().filter(s => s.startsWith('openorcha-recycled')).length, 1,
+      'the new owner of the name must still be running');
+  } finally {
+    try { execSync('tmux kill-session -t openorcha-recycled 2>/dev/null'); } catch {}
+  }
+});
+
+test('finishing a worker keeps the transcript it was writing', () => {
+  const initiative = store.create({ name: 'Keep the words', cwd: dir, notifyOnGate: false });
+  const sessionFile = path.join(dir, 'w2.jsonl');
+  fs.writeFileSync(sessionFile, '', 'utf8');
+  const worker = store.normalizeWorker(
+    { id: 'w2', name: 'b', sessionName: 'openorcha-no-such-session', status: 'working', sessionFile },
+    0,
+  );
+  initiative.workers = [worker];
+  store.save(initiative);
+
+  supervisor.finishWorker(initiative, worker, 'done');
+
+  assert.equal(worker.status, 'done');
+  assert.equal(worker.sessionFile, sessionFile, 'the conversation is read from the file, so the pointer must survive');
 });
 
 // ─── What the decider is shown ───────────────────────────────────────────────

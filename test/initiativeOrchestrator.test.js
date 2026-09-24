@@ -152,3 +152,65 @@ test('updates are short and say no reply is needed', () => {
   assert.match(note, /No reply needed/);
   assert.ok(note.length < 500, 'an update should not cost a page of context');
 });
+
+// ─── Scope ───────────────────────────────────────────────────────────────────
+//
+// Everything a "continue" carries is pasted into a worker verbatim. Asked only
+// what should happen next, an orchestrator has no way to notice that what it is
+// about to say belongs to another project entirely.
+
+test('the brief says a worker has one job in one directory, and gives it somewhere else to put the rest', () => {
+  const initiative = store.normalize({ name: 'SO-1 discovery', goal: 'find out', cwd: '/Users/x/soci-services' });
+  const brief = orch.openingBrief(initiative, initiative.stages);
+
+  assert.match(brief, /SCOPE:/);
+  assert.match(brief, /one job and one directory/);
+  assert.match(brief, /\/Users\/x\/soci-services/);
+  assert.match(brief, /"action":"delegate"/, 'out-of-scope work has an action of its own');
+  assert.match(brief, /it is not: gate it/, 'and the tie-break goes to asking');
+});
+
+test('a decision request says where the worker is and what a message to it may be about', () => {
+  const request = orch.decisionRequest({
+    work: { name: 'Implement', instruction: 'add the child count', check: null },
+    worker: { name: 'Worker 2', cwd: '/Users/x/soci-services', worktree: { branch: 'so-1-counts' } },
+    transcript: 'WORKER: done',
+    hasCheck: false,
+  });
+
+  assert.match(request, /Worker 2/);
+  assert.match(request, /\/Users\/x\/soci-services \(branch so-1-counts\)/);
+  assert.match(request, /add the child count/);
+  assert.match(request, /word for word/);
+  assert.match(request, /never a message to this worker/);
+});
+
+test('a delegation survives being read back', () => {
+  const decision = orch.extractDecision(JSON.stringify({
+    action: 'delegate',
+    directory: '/Users/x/openorcha',
+    task: 'fix the landmark scan',
+    reason: 'different project',
+  }));
+
+  assert.equal(decision.action, 'delegate');
+  assert.equal(decision.directory, '/Users/x/openorcha');
+  assert.equal(decision.task, 'fix the landmark scan');
+});
+
+test('a reply naming a directory is never turned into a message for the worker', () => {
+  const decision = orch.extractDecision(JSON.stringify({
+    action: 'handoff',
+    directory: '/Users/x/openorcha',
+    task: 'fix the landmark scan',
+    message: 'go and fix the landmark scan in openorcha',
+  }));
+
+  assert.equal(decision.action, 'delegate', 'an unknown action that names a place is a delegation, not a nudge');
+});
+
+test('a reply that is only prose for the worker still is one', () => {
+  const decision = orch.extractDecision('{"action":"keep-going","message":"carry on with the fixtures"}');
+  assert.equal(decision.action, 'continue');
+  assert.equal(decision.message, 'carry on with the fixtures');
+});
