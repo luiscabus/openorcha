@@ -279,3 +279,37 @@ test('a stray backtick in the context cannot break the fence', () => {
   const lines = summary.subLines({ context: 'uses ```json blocks``` in the payload' }, 'fixed it');
   assert.ok(!lines[0].includes('`'));
 });
+
+test('several rows for one ticket become one item with every line under it', () => {
+  const message = summary.buildDayMessage({
+    date: '2026-09-17',
+    cfg,
+    rows: [
+      entry({ ticket: 'SO-97101', eod: 'preview drops spotlight section when client has no data' }),
+      entry({ ticket: 'SO-97101', title: 'Content Spotlight template editor issues', status: 'in review', eod: 'preview now opens the edited template\'s own page' }),
+    ],
+  });
+  const lines = body(message);
+  assert.equal(lines.filter(l => l.startsWith('- SO-97101')).length, 1);
+  assert.match(message, /^- SO-97101 Content Spotlight template editor issues \(in review\)$/m);
+  assert.match(message, /^ {2}- preview drops spotlight section/m);
+  assert.match(message, /^ {2}- preview now opens/m);
+});
+
+test('a line typed by hand prints what was typed rather than a bare key', () => {
+  const message = summary.buildDayMessage({
+    date: '2026-09-14',
+    cfg,
+    rows: [entry({ ticket: 'SO-97101', origin: 'manual', summary: 'spotlight not visible after save' })],
+  });
+  assert.match(message, /^ {2}- spotlight not visible after save$/m);
+});
+
+test('work with no ticket carries no status', () => {
+  const message = summary.buildDayMessage({
+    date: '2026-09-16',
+    cfg,
+    rows: [entry({ ticket: null, label: 'Cloudflare ticket and side questions', status: 'in discovery', eod: 'raised devops ticket' })],
+  });
+  assert.match(message, /^- Cloudflare ticket and side questions$/m);
+});
