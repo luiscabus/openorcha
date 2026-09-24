@@ -173,6 +173,11 @@ JIRA_EMAIL=you@example.com
 JIRA_API_TOKEN=…            # id.atlassian.com/manage-profile/security/api-tokens
 ```
 
+Or set them in .env and export it
+```
+set -a && source .env && set +a
+```
+
 Nothing reaches Jira on its own. There is no scheduler, no hook, and no
 supervisor path to it: a push happens when you press the button on one row and
 confirm it. A row that already carries a worklog id is **updated in place**, so
