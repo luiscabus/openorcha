@@ -8,6 +8,7 @@ const { getSessionResolver } = require('../lib/sessionResolvers');
 const { buildProcTable, findAncestorApp, getCwdMap } = require('../lib/processTree');
 const { getCachedSession, setCachedSession } = require('../lib/sessionCache');
 const { readJsonSafe, readTextSafe, getGitInfo, getClaudeContext, getCodexContext, getGeminiContext, getClaudeDrawerExtras } = require('../lib/agentContext');
+const assignments = require('../lib/agentAssignments');
 const {
   shellEscape,
   uniqueTmuxSessionName,
@@ -173,6 +174,11 @@ router.get('/', (req, res) => {
     const screenMap = buildScreenMap();
     for (const a of agents) {
       a.multiplexer = detectMultiplexer(a.pid, a.tty, procs, tmuxMap, screenMap);
+      a.session = tmuxSessionNameFromMux(a.multiplexer);
+      // What this agent was started to do. Without it every agent in the list
+      // looks interchangeable, and whoever is reading the list will treat them
+      // that way.
+      a.assignment = assignments.get(a.session);
       a.status = inferAgentStatus(a, procs, tmuxMap, screenMap);
       const paneText = ['claude', 'codex'].includes(a.agentId) ? captureMuxText(a.multiplexer, a.pid, -80) : '';
       a.historySessionId = findAgentHistorySessionId(a, paneText);
@@ -306,7 +312,17 @@ router.post('/launch', (req, res) => {
     const { sessionName: started } = launchAgent({
       agentId, cwd, sessionName, skipPermissions, resumeSessionId, presetFlags,
     });
-    res.json({ ok: true, sessionName: started });
+    // Launch is the one moment the reason is known. Recorded here, it travels
+    // with the agent instead of living only in the head of whoever started it.
+    const assignment = assignments.record({
+      sessionName: started,
+      agentId,
+      cwd,
+      purpose: req.body?.purpose,
+      launchedBy: req.body?.launchedBy,
+      role: req.body?.role,
+    });
+    res.json({ ok: true, sessionName: started, assignment });
   } catch (e) {
     res.status(500).json({ error: e.message });
   }
