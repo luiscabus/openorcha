@@ -49,18 +49,19 @@ test('the ticket prefix is stripped from the summary it already labels', () => {
   assert.equal(candidate.summary, 'Enqueue the 2-year backfill');
 });
 
-test('a day that overshoots is scaled back, keeping its shape', () => {
+test('a day longer than the target keeps every minute it was worked', () => {
+  // Three tickets worked side by side from 12:00 to 15:00, nine hours in all.
   const long = [];
   for (const ticket of ['SO-1', 'SO-2', 'SO-3']) {
-    for (let hour = 12; hour < 22; hour++) {
-      long.push(signal(`2026-08-13T${String(hour).padStart(2, '0')}:00:00Z`, ticket, `${ticket} work`));
+    for (let minute = 0; minute <= 180; minute += 10) {
+      long.push(signal(new Date(Date.parse('2026-08-13T17:00:00Z') + minute * 60000).toISOString(), ticket, `${ticket} work`));
     }
   }
-  const scaled = detect.scaleToDay(detect.buildCandidates(long, cfg), cfg);
-  const total = scaled.reduce((sum, c) => sum + c.minutes, 0);
+  const day = detect.assembleDay({ dayKey: '2026-08-13', signals: long, cfg });
 
-  assert.ok(total <= cfg.dayMinutes + cfg.roundToMinutes * scaled.length, `total ${total} should sit near the day target`);
-  assert.ok(scaled.every(c => c.scaledFrom > c.minutes));
+  assert.deepEqual(day.rows.map(r => r.minutes), [180, 180, 180]);
+  assert.equal(day.totals.suggested, 540);
+  assert.equal(day.totals.dayTarget, cfg.dayMinutes);
 });
 
 test('an unattributed signal still produces a line to fix by hand', () => {

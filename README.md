@@ -130,9 +130,9 @@ line that tells the reader nothing costs a line.
 ### Time estimates
 
 Signals are clustered into blocks of continuous work — a gap longer than
-`idleGapMinutes` starts a new block — and each block's span is its duration. A
-day that overshoots `dayMinutes` is scaled back proportionally, keeping its
-shape. Every number is editable, and a scaled row says so when expanded.
+`idleGapMinutes` starts a new block — and each block's span is its duration.
+`dayMinutes` is the day you aim to account for, not a ceiling: a longer day
+keeps every minute it was worked. Every number is editable.
 
 A Claude session only counts the stretches someone spoke in. Records Claude
 Code writes while nobody is there — a Remote Control disconnect, a queued

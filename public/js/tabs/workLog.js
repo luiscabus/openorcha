@@ -264,14 +264,11 @@ function renderEvidence(row) {
   const total = row.evidenceTotal ?? signals.length;
   const hidden = total - Math.min(signals.length, 40);
   const more = hidden > 0 ? `<li><em>…and ${hidden} more</em></li>` : '';
-  const scaled = row.scaledFrom
-    ? `<p class="worklog-evidence-note">Estimated ${fmtDuration(row.scaledFrom)} from activity, scaled down to fit the day.</p>`
-    : '';
   const covered = row.coveredByJiraMinutes
     ? `<p class="worklog-evidence-warn">${escHtml(row.ticket || '')} already has ${fmtDuration(row.coveredByJiraMinutes)} in Jira for this day. Logging this too would double-count.</p>`
     : '';
 
-  return `<tr class="worklog-evidence-row"><td colspan="${WORKLOG_COLUMNS}"><div class="worklog-evidence">${covered}${scaled}<ul>${items}${more}</ul></div></td></tr>`;
+  return `<tr class="worklog-evidence-row"><td colspan="${WORKLOG_COLUMNS}"><div class="worklog-evidence">${covered}<ul>${items}${more}</ul></div></td></tr>`;
 }
 
 // Which of the source names a row's evidence came from, in words — the glyphs
