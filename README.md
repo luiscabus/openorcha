@@ -134,6 +134,11 @@ Signals are clustered into blocks of continuous work — a gap longer than
 day that overshoots `dayMinutes` is scaled back proportionally, keeping its
 shape. Every number is editable, and a scaled row says so when expanded.
 
+A Claude session only counts the stretches someone spoke in. Records Claude
+Code writes while nobody is there — a Remote Control disconnect, a queued
+notification, an away summary — would otherwise put a session on a day it was
+never opened.
+
 ### The clock
 
 Jira decides a worklog's day by your Jira account timezone, which may not be

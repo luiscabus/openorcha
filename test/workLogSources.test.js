@@ -71,6 +71,31 @@ test('a transcript yields its timestamps and what the operator actually said', (
   fs.rmSync(dir, { recursive: true, force: true });
 });
 
+test('a stretch nobody spoke in is not time, but harness records inside a sitting still are', () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'openorcha-transcript-'));
+  const file = path.join(dir, 'session.jsonl');
+  fs.writeFileSync(file, [
+    JSON.stringify({ type: 'user', timestamp: '2026-10-21T17:17:00Z', message: { content: 'debug account 3805' } }),
+    JSON.stringify({ type: 'assistant', timestamp: '2026-10-21T17:40:00Z', message: { content: 'found it' } }),
+    // Written after the last reply, within the sitting: it stays.
+    JSON.stringify({ type: 'system', subtype: 'away_summary', timestamp: '2026-10-21T18:05:00Z', content: 'recap' }),
+    // The next day, nobody there: it goes.
+    JSON.stringify({ type: 'system', subtype: 'informational', timestamp: '2026-10-22T15:20:00Z', content: 'Remote Control disconnected' }),
+    // A slash command is the operator at the keyboard: it stays.
+    JSON.stringify({ type: 'system', subtype: 'local_command', timestamp: '2026-10-23T12:00:00Z', content: '/model' }),
+  ].join('\n'));
+
+  const parsed = sources.readTranscript(file, { idleGapMinutes: 30 });
+  assert.deepEqual(parsed.stamps, [
+    '2026-10-21T17:17:00Z',
+    '2026-10-21T17:40:00Z',
+    '2026-10-21T18:05:00Z',
+    '2026-10-23T12:00:00Z',
+  ]);
+
+  fs.rmSync(dir, { recursive: true, force: true });
+});
+
 test('an unreadable transcript degrades to nothing instead of throwing', () => {
   const parsed = sources.readTranscript('/definitely/not/here.jsonl');
   assert.deepEqual(parsed.stamps, []);
