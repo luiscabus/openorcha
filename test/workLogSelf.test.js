@@ -1,7 +1,8 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
 
-const { isOwnSession } = require('../lib/workLogSelf');
+const self = require('../lib/workLogSelf');
+const { isOwnSession } = self;
 
 // Reading a day runs claude over the day's evidence, and that prompt quotes the
 // ticket keys it was given. Counted as work, the description of Tuesday becomes
@@ -101,4 +102,13 @@ test('an operator message relayed through the tool still counts as you', () => {
 
 test('without the turns, an agent briefing alone is not enough to exclude', () => {
   assert.equal(isOwnSession(BRIEFING, '-Users-soci-soci-soci'), true, 'first prompt matches [OpenOrcha ·');
+});
+
+test('a session working on this tool itself is recognised by its project directory', () => {
+  const own = self.OWN_REPO_PROJECT;
+  assert.equal(self.isOwnRepoSession(own), true);
+  // A worktree or a folder inside it.
+  assert.equal(self.isOwnRepoSession(`${own}-website`), true);
+  assert.equal(self.isOwnRepoSession('-Users-soci-soci-soci'), false);
+  assert.equal(self.isOwnRepoSession(`${own}x`), false);
 });
