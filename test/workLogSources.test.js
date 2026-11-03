@@ -71,6 +71,25 @@ test('a transcript yields its timestamps and what the operator actually said', (
   fs.rmSync(dir, { recursive: true, force: true });
 });
 
+test('text Claude Code inserted, like a loaded skill, is not something you said', () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'openorcha-transcript-'));
+  const file = path.join(dir, 'session.jsonl');
+  fs.writeFileSync(file, [
+    JSON.stringify({ type: 'user', timestamp: '2026-10-30T20:45:00Z', message: { content: 'regarding work on GA4, the customer facing flag' } }),
+    JSON.stringify({ type: 'user', isMeta: true, timestamp: '2026-11-01T21:26:16Z', message: { content: [{ type: 'text', text: 'Base directory for this skill: ~/.claude/skills/jira-adf\n\nIt happened on 2026-09-02 (SO-96611).' }] } }),
+  ].join('\n'));
+
+  const parsed = sources.readTranscript(file);
+  assert.equal(parsed.prompts.length, 1);
+  assert.equal(sources.ticketFrom(parsed.text, cfg), null);
+
+  // A subagent reporting back is about this session's work, so it counts.
+  fs.appendFileSync(file, '\n' + JSON.stringify({ type: 'user', isMeta: true, origin: { kind: 'peer' }, timestamp: '2026-11-01T21:40:00Z', message: { content: 'Another Claude session sent a message: created SO-98317 and opened the PR' } }));
+  assert.equal(sources.ticketFrom(sources.readTranscript(file).text, cfg), 'SO-98317');
+
+  fs.rmSync(dir, { recursive: true, force: true });
+});
+
 test('a stretch nobody spoke in is not time, but harness records inside a sitting still are', () => {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'openorcha-transcript-'));
   const file = path.join(dir, 'session.jsonl');
