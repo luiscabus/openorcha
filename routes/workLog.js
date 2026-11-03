@@ -345,6 +345,14 @@ router.post('/eod/import', (req, res) => {
   }
 });
 
+// A worklog's day and both neighbours: updating one can move it across
+// midnight, off the day it used to be filed under.
+function invalidateAround(dayKey) {
+  for (const day of [time.shiftDay(dayKey, -1), dayKey, time.shiftDay(dayKey, 1)]) {
+    jiraCache.invalidateWorklogDay(day);
+  }
+}
+
 // The only path that writes to Jira.
 //
 // It runs for one entry, only when called, and only with an explicit confirm
@@ -366,8 +374,16 @@ router.post('/day/:date/entries/:id/push', async (req, res) => {
     if (!entry.ticket) return res.status(400).json({ error: 'This entry has no ticket to log against' });
     if (!entry.minutes) return res.status(400).json({ error: 'This entry has no time to log' });
 
+    // Jira dates a worklog in your Jira profile's zone. Without it the start
+    // is sent as is, which is right whenever the two zones agree on the date.
+    let jiraZone = null;
+    try {
+      jiraZone = (await jiraCache.read('me', { ttlMs: ME_TTL_MS, loader: () => jira.currentUser() })).timeZone || null;
+    } catch {
+      // Pushing still works; only the day-edge adjustment is skipped.
+    }
     const started = time.jiraStarted(
-      time.instantFor(entry.date, entry.startTime || cfg.defaultStartHour, cfg.workTimezone),
+      time.startedForDay(entry.date, entry.startTime || cfg.defaultStartHour, cfg.workTimezone, jiraZone),
       cfg.workTimezone,
     );
 
@@ -388,7 +404,7 @@ router.post('/day/:date/entries/:id/push', async (req, res) => {
 
     // What Jira holds for this day just changed; the next view must not
     // show the copy from before it.
-    jiraCache.invalidateWorklogDay(req.params.date);
+    invalidateAround(req.params.date);
 
     const saved = store.setPush(req.params.date, entry.id, {
       state: 'pushed',
@@ -402,7 +418,7 @@ router.post('/day/:date/entries/:id/push', async (req, res) => {
   } catch (err) {
     // A failure may still have landed (a timeout after Jira wrote it), so the
     // next view asks Jira rather than trusting the cached copy.
-    jiraCache.invalidateWorklogDay(req.params.date);
+    invalidateAround(req.params.date);
     store.setPush(req.params.date, req.params.id, { state: 'failed', error: err.message });
     res.status(err.statusCode || 500).json({ error: err.message });
   }

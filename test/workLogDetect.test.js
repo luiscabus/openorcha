@@ -219,7 +219,7 @@ test('an entry whose worklog vanished from Jira is flagged, not left claiming su
 
   const day = detect.assembleDay({ dayKey: '2026-08-13', signals: [], jiraWorklogs: [], cfg });
   assert.equal(day.rows[0].push.state, 'failed');
-  assert.match(day.rows[0].push.error, /no longer exists/);
+  assert.match(day.rows[0].push.error, /Not in Jira on this day/);
 });
 
 test('a candidate for a ticket that already has Jira time warns about double-logging', () => {

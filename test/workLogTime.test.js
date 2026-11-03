@@ -21,6 +21,23 @@ test('instantFor round-trips through dayKey and wallClock', () => {
   assert.equal(time.wallClock(instant, TZ), '09:30');
 });
 
+test('a worklog lands on its own day in Jira, whatever zone Jira shows it in', () => {
+  const work = 'America/Maceio';
+  // 00:54 in Maceio on Nov 2 is still Nov 1 in Chicago: moved to the start of Nov 2 there.
+  const early = time.startedForDay('2026-11-02', '00:54', work, TZ);
+  assert.equal(time.dayKey(early, TZ), '2026-11-02');
+  assert.equal(time.wallClock(early, TZ), '00:00');
+  // A start both zones agree on is left exactly where it was.
+  const midday = time.startedForDay('2026-11-02', '14:00', work, TZ);
+  assert.equal(midday.getTime(), time.instantFor('2026-11-02', '14:00', work).getTime());
+  // Jira ahead of the work zone: late work is held to the end of the day there.
+  const late = time.startedForDay('2026-11-02', '23:30', TZ, work);
+  assert.equal(time.dayKey(late, work), '2026-11-02');
+  assert.equal(time.wallClock(late, work), '23:59');
+  // Not knowing Jira's zone changes nothing.
+  assert.equal(time.startedForDay('2026-11-02', '00:54', work, null).getTime(), time.instantFor('2026-11-02', '00:54', work).getTime());
+});
+
 test('a day is bucketed by the work timezone, not the machine clock', () => {
   // 00:30 on Aug 20 in Chicago is 02:30 on a UTC-3 machine, same Chicago day.
   assert.equal(time.dayKey('2026-08-20T05:30:00Z', TZ), '2026-08-20');

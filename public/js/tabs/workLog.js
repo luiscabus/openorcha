@@ -260,7 +260,7 @@ function rowActions(row) {
 
   if (push.state === 'pushed') {
     parts.push('<span class="worklog-action-note">logged</span>');
-  } else if (push.state === 'stale') {
+  } else if (push.state === 'stale' || push.worklogId) {
     parts.push(`<button class="btn btn-primary btn-sm" onclick="pushWorkLogRow('${key}')">Update Jira</button>`);
   } else {
     parts.push(`<button class="btn btn-primary btn-sm" onclick="pushWorkLogRow('${key}')">Log to Jira</button>`);
