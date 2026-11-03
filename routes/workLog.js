@@ -128,7 +128,10 @@ router.get('/day/:date', async (req, res) => {
     const dayKey = req.params.date;
 
     const refresh = req.query.refresh === '1';
-    const collected = await cache.collectDays({ dayKeys: [dayKey], cfg, refresh });
+    // After an edit the page re-reads the day it is showing; re-collecting it
+    // then would turn a saved field into a minute's wait.
+    const reuse = req.query.reuse === '1';
+    const collected = await cache.collectDays({ dayKeys: [dayKey], cfg, refresh, reuse });
     const signals = collected.byDay.get(dayKey)?.signals || [];
     const narration = collected.byDay.get(dayKey)?.narration || null;
 
@@ -186,7 +189,7 @@ router.get('/week/:date', async (req, res) => {
     const dayKeys = Array.from({ length: 7 }, (_, i) => time.shiftDay(start, i));
 
     const [collected, jiraResult] = await Promise.all([
-      cache.collectDays({ dayKeys, cfg, refresh: req.query.refresh === '1' }),
+      cache.collectDays({ dayKeys, cfg, refresh: req.query.refresh === '1', reuse: req.query.reuse === '1' }),
       readJira(dayKeys[0], dayKeys[6], { refresh: req.query.refresh === '1' }),
     ]);
 

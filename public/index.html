@@ -309,6 +309,7 @@
 
       <!-- Work Log Tab -->
       <div id="tab-worklog" class="tab-content">
+        <div id="worklog-activity" class="worklog-activity" aria-hidden="true"></div>
         <div class="page-header">
           <div>
             <h1>Work Log</h1>
@@ -326,7 +327,7 @@
               <button class="btn btn-ghost btn-sm" onclick="goToWorkLogYesterday()">Yesterday</button>
               <button class="btn btn-ghost btn-sm" onclick="goToWorkLogToday()">Today</button>
             </div>
-            <button class="btn btn-primary btn-sm" onclick="rescanWorkLog()">Rescan</button>
+            <button id="worklog-rescan" class="btn btn-primary btn-sm" onclick="rescanWorkLog()">Rescan</button>
           </div>
         </div>
 
@@ -366,12 +367,12 @@
               <p class="subtitle">Generated from the lines you kept. Rewrite it, or paste what you posted in Slack, and save it as yours — the generated text is kept beside it.</p>
             </div>
             <div class="worklog-eod-actions">
-              <button class="btn btn-ghost btn-sm" onclick="saveWorkLogPosted()" title="Keep this text as what you posted for the day">Save as mine</button>
+              <button class="btn btn-ghost btn-sm" onclick="saveWorkLogPosted(this)" title="Keep this text as what you posted for the day">Save as mine</button>
               <button class="btn btn-primary btn-sm" onclick="copyWorkLogMessage()">Copy for Slack</button>
             </div>
           </div>
           <div id="worklog-eod-meta" class="worklog-eod-meta"></div>
-          <textarea id="worklog-message" class="worklog-message" rows="8" spellcheck="false"></textarea>
+          <textarea id="worklog-message" class="worklog-message" rows="8" spellcheck="false" oninput="markWorkLogEodEdited()"></textarea>
           <div id="worklog-eod-compare" class="worklog-eod-compare" style="display:none"></div>
         </div>
       </div>

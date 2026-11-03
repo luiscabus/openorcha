@@ -12,7 +12,7 @@ import {
   toggleWorkLogSource, shiftWorkLogDate, openWorkLogDay, setWorkLogMode,
   goToWorkLogToday, goToWorkLogYesterday, rescanWorkLog, copyWorkLogMessage,
   growWorkLogField, revertWorkLogRow, setWorkLogEodView, saveWorkLogPosted,
-  clearWorkLogPosted,
+  clearWorkLogPosted, markWorkLogEodEdited,
 } from './tabs/workLog.js';
 import {
   loadSessions,
@@ -220,6 +220,7 @@ window.revertWorkLogRow = revertWorkLogRow;
 window.setWorkLogEodView = setWorkLogEodView;
 window.saveWorkLogPosted = saveWorkLogPosted;
 window.clearWorkLogPosted = clearWorkLogPosted;
+window.markWorkLogEodEdited = markWorkLogEodEdited;
 
 // Sessions
 window.loadSessions = loadSessions;

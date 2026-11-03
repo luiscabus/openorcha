@@ -1,9 +1,14 @@
 import { api, escHtml, toast } from '../utils.js';
+import { morphInner } from '../morph.js';
 
 // The work log tab.
 //
 // One merged list per day: time already in Jira, entries you have kept, and
 // candidates detection is offering. Nothing reaches Jira without a click.
+//
+// It behaves like an app rather than a page: an action changes the row it was
+// taken on, says so while it runs, and then re-reads the day quietly behind
+// the screen. Nothing blanks, so the row you were on stays where it was.
 
 const state = {
   date: null,
@@ -12,10 +17,32 @@ const state = {
   sources: [],
   day: null,
   week: null,
+  // The date and mode the screen currently holds; null while switching.
+  shown: null,
+  // Rows are tracked by their screen key (see keyRows), not their id.
   expanded: new Set(),
-  busy: new Set(),
+  // Row key → what the row is doing, shown in place of its buttons.
+  busy: new Map(),
+  // `${row key}|${field}` → 'saving' or 'saved'.
+  fields: new Map(),
+  // Rows that appeared with the last re-read, briefly highlighted.
+  fresh: new Set(),
+  // Writes still running, and writes answered, per day. A read asked for
+  // before a write was answered may predate it, so it is not drawn.
+  pending: new Map(),
+  writes: new Map(),
+  // Row key → the tail of that row's writes, so they land in order.
+  queues: new Map(),
+  // Candidate key → the entry id it was saved as, until the screen catches up.
+  materialized: new Map(),
+  reads: 0,
+  rescanning: false,
+  togglingSource: null,
+  switchTimer: null,
   // Which EOD text is on screen: 'posted', 'generated' or 'compare'.
   eodView: 'posted',
+  // You have typed in the EOD box since it was last filled.
+  eodDirty: false,
 };
 
 // Columns in the day table: Start, Ticket, Attention, Time, Status, Actions.
@@ -165,8 +192,9 @@ function renderSourceBar() {
     const cls = !source.available ? 'worklog-chip-off'
       : source.enabled ? 'worklog-chip-on' : 'worklog-chip-idle';
     const title = source.available ? source.description : source.reason;
+    const toggling = state.togglingSource === source.id ? ' worklog-chip-busy' : '';
     return `
-      <button class="worklog-chip ${cls}" title="${escHtml(title)}"
+      <button class="worklog-chip ${cls}${toggling}" title="${escHtml(title)}"
               onclick="toggleWorkLogSource('${source.id}')" ${source.available ? '' : 'disabled'}>
         <span class="worklog-chip-icon">${SOURCE_ICONS[source.id] || '•'}</span>${escHtml(source.label)}
       </button>`;
@@ -179,7 +207,15 @@ function renderSourceBar() {
       ? `<span class="worklog-source-error" title="${escHtml(current.narration.error)}">descriptions unavailable</span>`
       : '');
 
-  return `<div class="worklog-sources">${chips}${errors}${renderCacheNote(current?.cache)}</div>`;
+  const note = state.rescanning
+    ? '<span class="worklog-cache-note worklog-cache-live"><span class="worklog-spinner"></span> reading git, sessions and Jira…</span>'
+    : renderCacheNote(current?.cache);
+
+  return `<div class="worklog-sources">${chips}${errors}${note}</div>`;
+}
+
+function renderSources() {
+  morphInner(document.getElementById('worklog-source-bar'), renderSourceBar());
 }
 
 function pushBadge(row) {
@@ -203,36 +239,37 @@ function attentionChip(row) {
 }
 
 function rowActions(row) {
-  const busy = state.busy.has(row.id);
-  const disabled = busy ? 'disabled' : '';
-  const id = escHtml(row.id);
+  const busy = state.busy.get(row.key);
+  if (busy) return `<span class="worklog-busy"><span class="worklog-spinner"></span>${escHtml(busy)}</span>`;
+
+  const key = escHtml(row.key);
 
   if (row.kind === 'jira') {
-    return `<button class="btn btn-ghost btn-sm" onclick="adoptWorkLogJiraRow('${id}')" ${disabled}>Track locally</button>`;
+    return `<button class="btn btn-ghost btn-sm" onclick="adoptWorkLogJiraRow('${key}')">Track locally</button>`;
   }
 
   const push = row.push || {};
   const parts = [];
 
   if (row.kind === 'candidate') {
-    parts.push(`<button class="btn btn-ghost btn-sm" onclick="keepWorkLogRow('${id}')" ${disabled}>Keep</button>`);
-    parts.push(`<button class="btn btn-primary btn-sm" onclick="pushWorkLogRow('${id}')" ${disabled}>${busy ? '…' : 'Log to Jira'}</button>`);
-    parts.push(`<button class="btn btn-ghost btn-sm" onclick="dismissWorkLogRow('${id}')" ${disabled} title="Hide this suggestion">✕</button>`);
+    parts.push(`<button class="btn btn-ghost btn-sm" onclick="keepWorkLogRow('${key}')">Keep</button>`);
+    parts.push(`<button class="btn btn-primary btn-sm" onclick="pushWorkLogRow('${key}')">Log to Jira</button>`);
+    parts.push(`<button class="btn btn-ghost btn-sm" onclick="dismissWorkLogRow('${key}')" title="Hide this suggestion">✕</button>`);
     return parts.join('');
   }
 
   if (push.state === 'pushed') {
     parts.push('<span class="worklog-action-note">logged</span>');
   } else if (push.state === 'stale') {
-    parts.push(`<button class="btn btn-primary btn-sm" onclick="pushWorkLogRow('${id}')" ${disabled}>${busy ? '…' : 'Update Jira'}</button>`);
+    parts.push(`<button class="btn btn-primary btn-sm" onclick="pushWorkLogRow('${key}')">Update Jira</button>`);
   } else {
-    parts.push(`<button class="btn btn-primary btn-sm" onclick="pushWorkLogRow('${id}')" ${disabled}>${busy ? '…' : 'Log to Jira'}</button>`);
+    parts.push(`<button class="btn btn-primary btn-sm" onclick="pushWorkLogRow('${key}')">Log to Jira</button>`);
   }
   if (row.edited?.length) {
-    parts.push(`<button class="btn btn-ghost btn-sm" onclick="revertWorkLogRow('${id}')" ${disabled}
+    parts.push(`<button class="btn btn-ghost btn-sm" onclick="revertWorkLogRow('${key}')"
       title="${escHtml(originalTitle(row))}">↺ original</button>`);
   }
-  parts.push(`<button class="btn btn-ghost btn-sm" onclick="deleteWorkLogRow('${id}')" ${disabled} title="Remove this line">✕</button>`);
+  parts.push(`<button class="btn btn-ghost btn-sm" onclick="deleteWorkLogRow('${key}')" title="Remove this line">✕</button>`);
   return parts.join('');
 }
 
@@ -247,10 +284,11 @@ function originalTitle(row) {
 }
 
 function renderEvidence(row) {
-  if (!state.expanded.has(row.id)) return '';
+  if (!state.expanded.has(row.key)) return '';
+  const key = escHtml(`${row.key}:evidence`);
   const signals = row.evidence || [];
   if (!signals.length) {
-    return `<tr class="worklog-evidence-row"><td colspan="${WORKLOG_COLUMNS}"><div class="worklog-evidence"><em>No recorded signals — this line was entered by hand.</em></div></td></tr>`;
+    return `<tr class="worklog-evidence-row" data-key="${key}"><td colspan="${WORKLOG_COLUMNS}"><div class="worklog-evidence"><em>No recorded signals — this line was entered by hand.</em></div></td></tr>`;
   }
 
   const items = signals.slice(0, 40).map(signal => `
@@ -268,7 +306,7 @@ function renderEvidence(row) {
     ? `<p class="worklog-evidence-warn">${escHtml(row.ticket || '')} already has ${fmtDuration(row.coveredByJiraMinutes)} in Jira for this day. Logging this too would double-count.</p>`
     : '';
 
-  return `<tr class="worklog-evidence-row"><td colspan="${WORKLOG_COLUMNS}"><div class="worklog-evidence">${covered}<ul>${items}${more}</ul></div></td></tr>`;
+  return `<tr class="worklog-evidence-row" data-key="${key}"><td colspan="${WORKLOG_COLUMNS}"><div class="worklog-evidence">${covered}<ul>${items}${more}</ul></div></td></tr>`;
 }
 
 // Which of the source names a row's evidence came from, in words — the glyphs
@@ -295,9 +333,12 @@ function headingName(row) {
 }
 
 function renderRow(row) {
-  const id = escHtml(row.id);
+  const key = escHtml(row.key);
   const readOnly = row.kind === 'jira';
   const warn = row.coveredByJiraMinutes ? ' worklog-row-warn' : '';
+  const busy = state.busy.has(row.key) ? ' worklog-row-busy' : '';
+  const fresh = state.fresh.has(row.key) ? ' worklog-row-fresh' : '';
+  const rowClass = `worklog-row-${row.kind}${warn}${busy}${fresh}`;
   const name = headingName(row);
 
   // Facts on the first line; below it, the three texts a row carries, each
@@ -311,52 +352,52 @@ function renderRow(row) {
        </div>`
     : `<div class="worklog-block worklog-block-did">
          <div class="worklog-block-head"><span>What you did</span><small>private</small>${sourceSummary(row)}</div>
-         <textarea class="worklog-input worklog-input-summary${editedClass(row, 'summary')}" rows="1" placeholder="What you did"
+         <textarea class="worklog-input worklog-input-summary${fieldClass(row, 'summary')}" rows="1" placeholder="What you did"
                    oninput="growWorkLogField(this)"
                    onkeydown="if (event.key === 'Enter' && !event.shiftKey) { event.preventDefault(); this.blur(); }"
-                   onchange="editWorkLogRow('${id}','summary',this.value)">${escHtml(row.summary || '')}</textarea>
+                   onchange="editWorkLogRow('${key}','summary',this.value)">${escHtml(row.summary || '')}</textarea>
        </div>
        <div class="worklog-block worklog-block-eod">
          <div class="worklog-block-head"><span>EOD post</span>${eodPlacement(row) ? `<small>${escHtml(eodPlacement(row))}</small>` : ''}</div>
          <label class="worklog-eod-line"><span>about</span>
-           <input class="worklog-input${editedClass(row, 'context')}" value="${escHtml(row.context || '')}"
-                  placeholder="${row.ticket ? 'what the ticket is about' : 'what this effort is about'}" onchange="editWorkLogRow('${id}','context',this.value)"></label>
+           <input class="worklog-input${fieldClass(row, 'context')}" value="${escHtml(row.context || '')}"
+                  placeholder="${row.ticket ? 'what the ticket is about' : 'what this effort is about'}" onchange="editWorkLogRow('${key}','context',this.value)"></label>
          <label class="worklog-eod-line"><span>today</span>
-           <input class="worklog-input${editedClass(row, 'eod')}" value="${escHtml(row.eod || '')}"
-                  placeholder="what moved today" onchange="editWorkLogRow('${id}','eod',this.value)"></label>
+           <input class="worklog-input${fieldClass(row, 'eod')}" value="${escHtml(row.eod || '')}"
+                  placeholder="what moved today" onchange="editWorkLogRow('${key}','eod',this.value)"></label>
        </div>
        <div class="worklog-block worklog-block-jira">
          <div class="worklog-block-head"><span>Jira note</span></div>
-         <input class="worklog-input${editedClass(row, 'note')}" value="${escHtml(row.note || '')}"
-                placeholder="brief note" onchange="editWorkLogRow('${id}','note',this.value)">
+         <input class="worklog-input${fieldClass(row, 'note')}" value="${escHtml(row.note || '')}"
+                placeholder="brief note" onchange="editWorkLogRow('${key}','note',this.value)">
        </div>`;
 
   return `
-    <tr class="worklog-row worklog-row-facts worklog-row-${row.kind}${warn}">
+    <tr class="worklog-row worklog-row-facts ${rowClass}" data-key="${key}">
       <td class="worklog-cell-time">
-        <button class="worklog-expand" onclick="toggleWorkLogEvidence('${id}')" title="Show what this came from">
-          ${state.expanded.has(row.id) ? '▾' : '▸'}
+        <button class="worklog-expand" onclick="toggleWorkLogEvidence('${key}')" title="Show what this came from">
+          ${state.expanded.has(row.key) ? '▾' : '▸'}
         </button>
         ${escHtml(row.startTime || '—')}
       </td>
       <td class="worklog-cell-ticket"><div class="worklog-ticket-line">
         ${readOnly
           ? `<strong>${escHtml(row.ticket || '—')}</strong>`
-          : `<input class="worklog-input worklog-input-ticket" value="${escHtml(row.ticket || '')}"
-                    placeholder="no ticket" onchange="editWorkLogRow('${id}','ticket',this.value)">`}
+          : `<input class="worklog-input worklog-input-ticket${savingClass(row, 'ticket')}" value="${escHtml(row.ticket || '')}"
+                    placeholder="no ticket" onchange="editWorkLogRow('${key}','ticket',this.value)">`}
         ${name ? `<span class="worklog-row-name" title="${escHtml(name)}">${escHtml(name)}</span>` : ''}
       </div></td>
       <td class="worklog-cell-attention">${attentionChip(row)}</td>
       <td class="worklog-cell-duration">
         ${readOnly
           ? fmtDuration(row.minutes)
-          : `<input class="worklog-input worklog-input-duration" value="${fmtDuration(row.minutes)}"
-                    onchange="editWorkLogRow('${id}','minutes',this.value)">`}
+          : `<input class="worklog-input worklog-input-duration${savingClass(row, 'minutes')}" value="${fmtDuration(row.minutes)}"
+                    onchange="editWorkLogRow('${key}','minutes',this.value)">`}
       </td>
       <td class="worklog-cell-status">${pushBadge(row)}</td>
       <td class="worklog-cell-actions"><div class="worklog-actions">${rowActions(row)}</div></td>
     </tr>
-    <tr class="worklog-row worklog-row-said worklog-row-${row.kind}${warn}">
+    <tr class="worklog-row worklog-row-said ${rowClass}" data-key="${escHtml(`${row.key}:said`)}">
       <td class="worklog-cell-summary" colspan="${WORKLOG_COLUMNS}">
         <div class="worklog-said${readOnly ? ' worklog-said-readonly' : ''}">${said}</div>
       </td>
@@ -367,6 +408,16 @@ function renderRow(row) {
 
 function editedClass(row, field) {
   return row.edited?.includes(field) ? ' worklog-input-edited' : '';
+}
+
+// A field being saved, or just saved, says so on the field itself.
+function savingClass(row, field) {
+  const status = state.fields.get(`${row.key}|${field}`);
+  return status ? ` worklog-input-${status}` : '';
+}
+
+function fieldClass(row, field) {
+  return editedClass(row, field) + savingClass(row, field);
 }
 
 /** Size a description field to its content — these run to a sentence or two. */
@@ -387,14 +438,14 @@ function renderDay() {
 
   const rows = day.rows.length
     ? day.rows.map(renderRow).join('')
-    : `<tr><td colspan="${WORKLOG_COLUMNS}"><div class="empty-state"><p>Nothing found for this day</p>
+    : `<tr data-key="notice"><td colspan="${WORKLOG_COLUMNS}"><div class="empty-state"><p>Nothing found for this day</p>
         <small>No commits, sessions or Jira time. Add a line by hand below, or turn on more sources.</small></div></td></tr>`;
 
-  container.innerHTML = rows;
+  morphInner(container, rows);
   growAllWorkLogFields();
-  document.getElementById('worklog-summary').innerHTML = renderTotals(day.totals, day.jira || {});
-  document.getElementById('worklog-attention').innerHTML = renderAttention(day.byAttention);
-  document.getElementById('worklog-source-bar').innerHTML = renderSourceBar();
+  morphInner(document.getElementById('worklog-summary'), renderTotals(day.totals, day.jira || {}));
+  morphInner(document.getElementById('worklog-attention'), renderAttention(day.byAttention));
+  renderSources();
   renderEod();
 
   const jiraWarning = document.getElementById('worklog-jira-warning');
@@ -427,7 +478,10 @@ function renderEod() {
   } else {
     field.style.display = '';
     compare.style.display = 'none';
-    field.value = showing === 'posted' ? posted.text : (day?.message || '');
+    // Text you are rewriting is yours until you save it or switch views; a
+    // re-read after a row edit must not put the generated message back over it.
+    const text = showing === 'posted' ? posted.text : (day?.message || '');
+    if (!state.eodDirty && field.value !== text) field.value = text;
   }
 
   const views = posted
@@ -435,13 +489,22 @@ function renderEod() {
         <button class="btn btn-ghost btn-sm${(state.eodView || 'posted') === view ? ' active' : ''}"
                 onclick="setWorkLogEodView('${view}')">${view === 'posted' ? 'Yours' : view === 'generated' ? 'Generated' : 'Compare'}</button>`).join('')
     : '';
-  const note = posted
+  const note = state.eodDirty
+    ? '<span class="worklog-cache-note worklog-eod-unsaved">edited · not saved</span>'
+    : posted
     ? `<span class="worklog-cache-note">yours · ${posted.source === 'slack' ? 'from Slack' : 'saved'} ${escHtml(relativeTime(posted.savedAt))}${posted.history?.length ? ` · ${posted.history.length} earlier version${posted.history.length === 1 ? '' : 's'}` : ''}</span>`
     : '<span class="worklog-cache-note">generated from your kept lines · edit it and save to keep your version</span>';
   const reset = posted
     ? '<button class="btn btn-ghost btn-sm" onclick="clearWorkLogPosted()" title="Go back to the generated text. Yours is kept in history.">Use generated</button>'
     : '';
-  meta.innerHTML = `${views}${note}${reset}`;
+  morphInner(meta, `${views}${note}${reset}`);
+}
+
+/** The EOD box was typed in: keep the text over re-reads until it is saved. */
+export function markWorkLogEodEdited() {
+  if (state.eodDirty) return;
+  state.eodDirty = true;
+  render();
 }
 
 // A line-level comparison: what only the generated text has, and what only
@@ -470,7 +533,7 @@ function renderWeek() {
     const suggested = day.rows.filter(r => r.kind === 'candidate').reduce((s, r) => s + r.minutes, 0);
     const tickets = [...new Set(day.rows.filter(r => r.kind !== 'candidate' && r.ticket).map(r => r.ticket))];
     return `
-      <tr class="worklog-row">
+      <tr class="worklog-row" data-key="week|${day.date}">
         <td class="worklog-cell-time"><a href="#" onclick="openWorkLogDay('${day.date}');return false;">${escHtml(prettyDate(day.date))}</a></td>
         <td colspan="2" class="worklog-cell-summary">${tickets.length ? tickets.map(t => `<code>${escHtml(t)}</code>`).join(' ') : '<em>nothing logged</em>'}</td>
         <td class="worklog-cell-duration">${fmtDuration(logged)}</td>
@@ -479,8 +542,7 @@ function renderWeek() {
       </tr>`;
   }).join('');
 
-  container.innerHTML = rows;
-  growAllWorkLogFields();
+  morphInner(container, rows);
 
   const totals = week.days.reduce((acc, day) => {
     acc.logged += day.totals.logged;
@@ -497,13 +559,42 @@ function renderWeek() {
       weekAttention[kind].suggested += split.suggested || 0;
     }
   }
-  document.getElementById('worklog-summary').innerHTML = renderTotals(totals, week.jira || {});
-  document.getElementById('worklog-attention').innerHTML = renderAttention(weekAttention);
-  document.getElementById('worklog-source-bar').innerHTML = renderSourceBar();
-  document.getElementById('worklog-message').style.display = '';
+  morphInner(document.getElementById('worklog-summary'), renderTotals(totals, week.jira || {}));
+  morphInner(document.getElementById('worklog-attention'), renderAttention(weekAttention));
+  renderSources();
+  const field = document.getElementById('worklog-message');
+  field.style.display = '';
   document.getElementById('worklog-eod-compare').style.display = 'none';
-  document.getElementById('worklog-eod-meta').innerHTML = '';
-  document.getElementById('worklog-message').value = week.message || '';
+  morphInner(document.getElementById('worklog-eod-meta'), state.eodDirty
+    ? '<span class="worklog-cache-note worklog-eod-unsaved">edited · not saved</span>'
+    : '');
+  if (!state.eodDirty && field.value !== (week.message || '')) field.value = week.message || '';
+}
+
+function isShown() {
+  return state.shown?.date === state.date && state.shown?.mode === state.mode;
+}
+
+// Draws what is in state, but only when it is what the screen should hold —
+// mid-switch it still describes the day you just left.
+function render() {
+  if (!isShown()) return;
+  if (state.mode === 'week') renderWeek();
+  else renderDay();
+}
+
+// A thin bar along the top while anything is read or saved, so work happening
+// behind the screen is visible without blanking it.
+function renderActivity() {
+  const active = state.reads > 0 || [...state.pending.values()].some(n => n > 0);
+  document.getElementById('worklog-activity')?.classList.toggle('active', active);
+}
+
+function renderRescanButton() {
+  const button = document.getElementById('worklog-rescan');
+  if (!button) return;
+  button.disabled = state.rescanning;
+  button.textContent = state.rescanning ? 'Rescanning…' : 'Rescan';
 }
 
 function renderHeader() {
@@ -517,20 +608,118 @@ function renderHeader() {
 
 // -------------------------------------------------------------------- loading
 
-export async function loadWorkLog(options = {}) {
-  const body = document.getElementById('worklog-body');
+function countFor(counts, date) {
+  return counts.get(date) || 0;
+}
 
+function bump(counts, date, by) {
+  counts.set(date, countFor(counts, date) + by);
+}
+
+// A row's identity on screen. A suggestion and the entry it becomes share the
+// candidate key, so keeping or editing one keeps its place, its focus and its
+// open evidence rather than being swapped for a new row.
+function keyRows(rows) {
+  const seen = new Set();
+  for (const row of rows) {
+    let key = row.candidateKey || row.id;
+    if (seen.has(key)) key = row.id;
+    seen.add(key);
+    row.key = key;
+  }
+}
+
+// What is on screen belongs to another day. It stops being editable at once,
+// and gives way to the reading notice only if the new one is slow to come — a
+// cached day simply replaces it, without a flash of empty page.
+function beginSwitch() {
+  state.shown = null;
+  state.eodDirty = false;
+  document.getElementById('tab-worklog').classList.add('worklog-switching');
+  clearTimeout(state.switchTimer);
+  state.switchTimer = setTimeout(showReading, 180);
+}
+
+function showNotice(title, detail) {
+  clearTimeout(state.switchTimer);
+  document.getElementById('tab-worklog').classList.remove('worklog-switching');
+  morphInner(document.getElementById('worklog-body'),
+    `<tr data-key="notice"><td colspan="${WORKLOG_COLUMNS}"><div class="empty-state"><p>${escHtml(title)}</p><small>${escHtml(detail)}</small></div></td></tr>`);
+  document.getElementById('worklog-summary').innerHTML = '';
+  document.getElementById('worklog-attention').innerHTML = '';
+  document.getElementById('worklog-message').value = '';
+  document.getElementById('worklog-eod-meta').innerHTML = '';
+}
+
+function showReading() {
+  const scope = state.mode === 'week' ? 'week' : 'day';
+  showNotice(`Reading your ${scope}…`, 'Scanning git, sessions and Jira, then describing the work.');
+}
+
+function applyView(data) {
+  clearTimeout(state.switchTimer);
+  document.getElementById('tab-worklog').classList.remove('worklog-switching');
+
+  if (state.mode === 'week') {
+    state.week = data;
+    state.fresh = new Set();
+  } else {
+    keyRows(data.rows);
+    const before = isShown() && state.day ? new Set(state.day.rows.map(r => r.key)) : null;
+    state.fresh = new Set(before ? data.rows.filter(r => !before.has(r.key)).map(r => r.key) : []);
+    state.day = data;
+  }
+  state.shown = { date: state.date, mode: state.mode };
+
+  // Only drawn with nothing in flight for this day, so whatever a row was
+  // doing has finished and the read already shows the result.
+  state.busy.clear();
+  state.materialized.clear();
+
+  renderHeader();
+  render();
+}
+
+// Every read of the view goes through here, and a response is drawn only
+// while it still describes the screen: the same day and mode, no write in
+// flight, and none answered since it was asked for. A read a write overtook
+// is followed by a quick one from the cache it has just filled, rather than
+// painting back what you had just changed.
+async function readView({ refresh = false, reuse = false } = {}) {
+  const { date, mode } = state;
+  const writes = countFor(state.writes, date);
+  const query = refresh ? '?refresh=1' : reuse ? '?reuse=1' : '';
+  const current = () => date === state.date && mode === state.mode;
+
+  state.reads += 1;
+  renderActivity();
+  try {
+    const data = await api('GET', `/api/worklog/${mode}/${date}${query}`);
+    if (!current() || countFor(state.pending, date)) return;
+    if (writes !== countFor(state.writes, date)) {
+      await readView({ reuse: true });
+      return;
+    }
+    applyView(data);
+  } catch (err) {
+    // A day you have already moved away from has nothing to report.
+    if (current()) throw err;
+  } finally {
+    state.reads -= 1;
+    renderActivity();
+  }
+}
+
+function readFailed(err) {
+  if (isShown()) toast(err.message, 'error');
+  else showNotice('Could not build the log', err.message);
+}
+
+export async function loadWorkLog(options = {}) {
   // Paint the date you asked for straight away. A cold read takes a minute, and
   // leaving the previous day on screen the whole time reads as a dead button.
-  if (state.date) {
-    renderHeader();
-    document.getElementById('worklog-summary').innerHTML = '';
-    document.getElementById('worklog-attention').innerHTML = '';
-    document.getElementById('worklog-message').value = '';
-  }
-
-  const scope = state.mode === 'week' ? 'week' : 'day';
-  body.innerHTML = `<tr><td colspan="${WORKLOG_COLUMNS}"><div class="empty-state"><p>Reading your ${scope}…</p><small>Scanning git, sessions and Jira, then describing the work.</small></div></td></tr>`;
+  if (state.date) renderHeader();
+  if (!isShown()) beginSwitch();
 
   try {
     if (!state.config) {
@@ -544,57 +733,147 @@ export async function loadWorkLog(options = {}) {
         renderHeader();
       }
     }
-
-    const refresh = options.refresh ? '?refresh=1' : '';
-    if (state.mode === 'week') {
-      state.week = await api('GET', `/api/worklog/week/${state.date}${refresh}`);
-      renderHeader();
-      renderWeek();
-    } else {
-      state.day = await api('GET', `/api/worklog/day/${state.date}${refresh}`);
-      renderHeader();
-      renderDay();
-    }
   } catch (err) {
-    body.innerHTML = `<tr><td colspan="${WORKLOG_COLUMNS}"><div class="empty-state"><p>Could not build the log</p><small>${escHtml(err.message)}</small></div></td></tr>`;
+    readFailed(err);
+    return;
+  }
+
+  if (options.refresh) {
+    await rescan();
+    return;
+  }
+  // Coming back to a view already on screen re-reads it behind what you see.
+  try {
+    await readView();
+  } catch (err) {
+    readFailed(err);
   }
 }
 
-function findRow(id) {
-  return (state.day?.rows || []).find(r => r.id === id) || null;
+// Reads every source again, with the current view left in place and usable
+// while it runs — it takes about a minute.
+async function rescan() {
+  state.rescanning = true;
+  renderRescanButton();
+  renderSources();
+  try {
+    await readView({ refresh: true });
+  } catch (err) {
+    readFailed(err);
+  } finally {
+    state.rescanning = false;
+    renderRescanButton();
+    renderSources();
+  }
+}
+
+function findRow(key) {
+  return (state.day?.rows || []).find(r => r.key === key) || null;
 }
 
 // A candidate is only a suggestion until it is saved. Anything that acts on
-// one — editing, keeping, logging — makes it a real entry first.
-async function materialize(row) {
-  if (row.kind !== 'candidate') return row.id;
-  const saved = await api('POST', `/api/worklog/day/${state.date}/entries`, {
-    date: row.date,
-    ticket: row.ticket,
-    label: row.label,
-    attention: row.attention,
-    note: row.note,
-    minutes: row.minutes,
-    summary: row.summary,
-    // What the ticket is, its name, where it stands and the clause the EOD post
-    // prints. Detection worked all four out; dropping them here meant a kept
-    // row went back to the day cache for them, and lost them when it was pruned.
-    context: row.context,
-    title: row.title,
-    status: row.status,
-    eod: row.eod,
-    startTime: row.startTime,
-    origin: 'detected',
-    candidateKey: row.candidateKey,
-    sources: row.evidence,
+// one — editing, keeping, logging — makes it a real entry first, and only
+// once: a second action taken before the screen catches up must not save the
+// same suggestion twice.
+function materialize(row, date) {
+  if (row.kind !== 'candidate') return Promise.resolve(row.id);
+  if (!state.materialized.has(row.candidateKey)) {
+    const saving = api('POST', `/api/worklog/day/${date}/entries`, {
+      date: row.date,
+      ticket: row.ticket,
+      label: row.label,
+      attention: row.attention,
+      note: row.note,
+      minutes: row.minutes,
+      summary: row.summary,
+      // What the ticket is, its name, where it stands and the clause the EOD post
+      // prints. Detection worked all four out; dropping them here meant a kept
+      // row went back to the day cache for them, and lost them when it was pruned.
+      context: row.context,
+      title: row.title,
+      status: row.status,
+      eod: row.eod,
+      startTime: row.startTime,
+      origin: 'detected',
+      candidateKey: row.candidateKey,
+      sources: row.evidence,
+    }).then(saved => saved.id);
+    saving.catch(() => state.materialized.delete(row.candidateKey));
+    state.materialized.set(row.candidateKey, saving);
+  }
+  return state.materialized.get(row.candidateKey);
+}
+
+// Runs one write. Writes to the same row queue behind each other; the row or
+// field says what is happening while they run; and once the day has nothing
+// left in flight it is re-read quietly, from the read already on screen, so
+// the totals and the EOD text catch up in a moment rather than a minute.
+// Resolves to whether the write worked.
+function write({ date, key = null, label = null, field = null }, work) {
+  const fieldId = field ? `${key}|${field}` : null;
+  if (label) state.busy.set(key, label);
+  if (fieldId) state.fields.set(fieldId, 'saving');
+  bump(state.pending, date, 1);
+  renderActivity();
+  render();
+
+  const previous = (key && state.queues.get(key)) || Promise.resolve();
+  const run = previous
+    .then(work)
+    .then(() => {
+      if (fieldId) flashSaved(fieldId);
+      return true;
+    }, err => {
+      if (fieldId) state.fields.delete(fieldId);
+      toast(err.message, 'error');
+      return false;
+    })
+    .finally(() => {
+      if (key && state.queues.get(key) === run) state.queues.delete(key);
+      bump(state.pending, date, -1);
+      bump(state.writes, date, 1);
+      renderActivity();
+      settle(date);
+    });
+  if (key) state.queues.set(key, run);
+  return run;
+}
+
+function settle(date) {
+  if (countFor(state.pending, date) || date !== state.date) return;
+  readView({ reuse: true }).catch(err => {
+    state.busy.clear();
+    render();
+    toast(err.message, 'error');
   });
-  return saved.id;
+}
+
+function flashSaved(fieldId) {
+  state.fields.set(fieldId, 'saved');
+  render();
+  setTimeout(() => {
+    if (state.fields.get(fieldId) !== 'saved') return;
+    state.fields.delete(fieldId);
+    render();
+  }, 1400);
+}
+
+// A static button that says what it is doing until the work is done.
+function holdButton(button, label) {
+  if (!button) return () => {};
+  const text = button.textContent;
+  button.disabled = true;
+  button.textContent = label;
+  return () => {
+    button.disabled = false;
+    button.textContent = text;
+  };
 }
 
 // --------------------------------------------------------------------- actions
 
-export async function editWorkLogRow(id, field, value) {
-  const row = findRow(id);
+export function editWorkLogRow(key, field, value) {
+  const row = findRow(key);
   if (!row) return;
 
   const patch = {};
@@ -602,63 +881,53 @@ export async function editWorkLogRow(id, field, value) {
   else if (field === 'ticket') patch.ticket = value.trim().toUpperCase();
   else patch[field] = value;
 
-  try {
-    if (row.kind === 'candidate') {
-      // Saved as offered first, then edited, so the entry's original is the
-      // suggestion rather than your rewrite of it.
-      const entryId = await materialize(row);
-      await api('PUT', `/api/worklog/day/${state.date}/entries/${entryId}`, patch);
-    } else {
-      await api('PUT', `/api/worklog/day/${state.date}/entries/${id}`, patch);
-    }
-    await loadWorkLog();
-  } catch (err) {
-    toast(err.message, 'error');
-  }
+  // A candidate is saved as offered first, then edited, so the entry's
+  // original is the suggestion rather than your rewrite of it.
+  const offered = { ...row };
+  const date = state.day.date;
+  // Shown at once; the re-read after the save confirms it.
+  Object.assign(row, patch);
+
+  write({ date, key: row.key, field }, async () => {
+    const entryId = await materialize(offered, date);
+    await api('PUT', `/api/worklog/day/${date}/entries/${entryId}`, patch);
+  });
 }
 
-export async function keepWorkLogRow(id) {
-  const row = findRow(id);
+export function keepWorkLogRow(key) {
+  const row = findRow(key);
   if (!row) return;
-  try {
-    await materialize(row);
+  const date = state.day.date;
+  write({ date, key: row.key, label: 'Keeping…' }, async () => {
+    await materialize(row, date);
     toast('Kept in your log');
-    await loadWorkLog();
-  } catch (err) {
-    toast(err.message, 'error');
-  }
+  });
 }
 
-export async function dismissWorkLogRow(id) {
-  const row = findRow(id);
+export function dismissWorkLogRow(key) {
+  const row = findRow(key);
   if (!row?.candidateKey) return;
-  try {
-    await api('POST', `/api/worklog/day/${state.date}/dismiss`, { candidateKey: row.candidateKey });
-    await loadWorkLog();
-  } catch (err) {
-    toast(err.message, 'error');
-  }
+  const date = state.day.date;
+  write({ date, key: row.key, label: 'Hiding…' }, () =>
+    api('POST', `/api/worklog/day/${date}/dismiss`, { candidateKey: row.candidateKey }));
 }
 
-export async function deleteWorkLogRow(id) {
-  const row = findRow(id);
+export function deleteWorkLogRow(key) {
+  const row = findRow(key);
   if (!row) return;
   if (row.push?.state === 'pushed' && !confirm(
     `This line is logged in Jira as worklog ${row.push.worklogId}.\n\n`
     + 'Removing it here does NOT remove it from Jira — delete it there too if that is what you want.\n\nRemove the local line?')) {
     return;
   }
-  try {
-    await api('DELETE', `/api/worklog/day/${state.date}/entries/${id}`);
-    await loadWorkLog();
-  } catch (err) {
-    toast(err.message, 'error');
-  }
+  const date = state.day.date;
+  write({ date, key: row.key, label: 'Removing…' }, () =>
+    api('DELETE', `/api/worklog/day/${date}/entries/${row.id}`));
 }
 
 // The only thing in this tab that writes to Jira, and it asks first.
-export async function pushWorkLogRow(id) {
-  const row = findRow(id);
+export function pushWorkLogRow(key) {
+  const row = findRow(key);
   if (!row) return;
 
   if (!row.ticket) {
@@ -666,6 +935,7 @@ export async function pushWorkLogRow(id) {
     return;
   }
 
+  const date = state.day.date;
   const updating = row.push?.state === 'stale' || row.push?.worklogId;
   const warning = row.coveredByJiraMinutes && !updating
     ? `\n\nNote: ${row.ticket} already has ${fmtDuration(row.coveredByJiraMinutes)} logged today.`
@@ -675,42 +945,31 @@ export async function pushWorkLogRow(id) {
   const noteLine = `\n\nNote posted to the ticket: ${note ? `"${note}"` : '(none)'}`;
   const question = updating
     ? `Update the Jira worklog on ${row.ticket} to ${fmtDuration(row.minutes)}?${noteLine}`
-    : `Log ${fmtDuration(row.minutes)} to ${row.ticket} on ${state.date}?${noteLine}${warning}`;
+    : `Log ${fmtDuration(row.minutes)} to ${row.ticket} on ${date}?${noteLine}${warning}`;
 
   if (!confirm(question)) return;
 
-  state.busy.add(id);
-  renderDay();
-
-  try {
-    const entryId = await materialize(row);
-    const result = await api('POST', `/api/worklog/day/${state.date}/entries/${entryId}/push`, { confirm: true });
+  write({ date, key: row.key, label: updating ? 'Updating Jira…' : 'Logging to Jira…' }, async () => {
+    const entryId = await materialize(row, date);
+    const result = await api('POST', `/api/worklog/day/${date}/entries/${entryId}/push`, { confirm: true });
     toast(`${updating ? 'Updated' : 'Logged'} ${fmtDuration(result.jira.minutes)} on ${row.ticket}`);
-  } catch (err) {
-    toast(err.message, 'error');
-  } finally {
-    state.busy.delete(id);
-    await loadWorkLog();
-  }
+  });
 }
 
-export async function adoptWorkLogJiraRow(id) {
-  const row = findRow(id);
+export function adoptWorkLogJiraRow(key) {
+  const row = findRow(key);
   if (!row?.jira) return;
-  try {
-    await api('POST', `/api/worklog/day/${state.date}/entries`, {
-      date: state.date,
+  const date = state.day.date;
+  write({ date, key: row.key, label: 'Tracking…' }, () =>
+    api('POST', `/api/worklog/day/${date}/entries`, {
+      date,
       ticket: row.ticket,
       minutes: row.minutes,
       summary: row.summary,
       startTime: row.startTime,
       origin: 'manual',
       push: { state: 'pushed', worklogId: row.jira.worklogId, pushedMinutes: row.minutes, pushedAt: row.jira.started },
-    });
-    await loadWorkLog();
-  } catch (err) {
-    toast(err.message, 'error');
-  }
+    }));
 }
 
 export async function addWorkLogLine(event) {
@@ -726,44 +985,54 @@ export async function addWorkLogLine(event) {
     return;
   }
 
-  try {
-    await api('POST', `/api/worklog/day/${state.date}/entries`, {
-      date: state.date,
-      ticket: ticket.value.trim().toUpperCase() || null,
-      summary: summaryField.value.trim(),
-      // A hand-typed line still needs something terse for the ticket; fall
-      // back to the description rather than pushing an empty comment.
-      note: noteField.value.trim() || summaryField.value.trim().slice(0, 60),
-      minutes,
-      origin: 'manual',
-    });
+  const date = state.date;
+  const release = holdButton(event.submitter || event.target.querySelector('[type="submit"]'), 'Adding…');
+  const added = await write({ date }, () => api('POST', `/api/worklog/day/${date}/entries`, {
+    date,
+    ticket: ticket.value.trim().toUpperCase() || null,
+    summary: summaryField.value.trim(),
+    // A hand-typed line still needs something terse for the ticket; fall
+    // back to the description rather than pushing an empty comment.
+    note: noteField.value.trim() || summaryField.value.trim().slice(0, 60),
+    minutes,
+    origin: 'manual',
+  }));
+  release();
+
+  if (added) {
     ticket.value = '';
     summaryField.value = '';
     noteField.value = '';
     duration.value = '';
-    await loadWorkLog();
-  } catch (err) {
-    toast(err.message, 'error');
+    // Ready for the next one.
+    ticket.focus();
   }
 }
 
-export function toggleWorkLogEvidence(id) {
-  if (state.expanded.has(id)) state.expanded.delete(id);
-  else state.expanded.add(id);
-  if (state.mode === 'day') renderDay();
+export function toggleWorkLogEvidence(key) {
+  if (state.expanded.has(key)) state.expanded.delete(key);
+  else state.expanded.add(key);
+  render();
 }
 
 export async function toggleWorkLogSource(sourceId) {
   const source = state.sources.find(s => s.id === sourceId);
-  if (!source || !source.available) return;
+  if (!source || !source.available || state.togglingSource) return;
+
+  state.togglingSource = sourceId;
+  renderSources();
   try {
     const result = await api('PUT', '/api/worklog/config', { sources: { [sourceId]: !source.enabled } });
     state.config = result.config;
     state.sources = result.sources;
-    await loadWorkLog({ refresh: true });
   } catch (err) {
     toast(err.message, 'error');
+    return;
+  } finally {
+    state.togglingSource = null;
+    renderSources();
   }
+  await rescan();
 }
 
 export function shiftWorkLogDate(days) {
@@ -795,57 +1064,68 @@ export async function goToWorkLogYesterday() {
 }
 
 export function rescanWorkLog() {
-  loadWorkLog({ refresh: true });
+  return rescan();
 }
 
-export async function revertWorkLogRow(id) {
-  try {
-    await api('POST', `/api/worklog/day/${state.date}/entries/${id}/revert`, {});
+export function revertWorkLogRow(key) {
+  const row = findRow(key);
+  if (!row) return;
+  const date = state.day.date;
+  write({ date, key: row.key, label: 'Reverting…' }, async () => {
+    await api('POST', `/api/worklog/day/${date}/entries/${row.id}/revert`, {});
     toast('Back to the original text');
-    await loadWorkLog();
-  } catch (err) {
-    toast(err.message, 'error');
-  }
+  });
 }
 
 export function setWorkLogEodView(view) {
   state.eodView = view;
+  state.eodDirty = false;
   renderEod();
 }
 
 // Saves what is in the box as the day's posted EOD. A paste covering other
 // days — one Slack message often carries two — is filed under each date.
-export async function saveWorkLogPosted() {
+export async function saveWorkLogPosted(button) {
   const text = document.getElementById('worklog-message').value;
+  const date = state.date;
   const dates = [...text.matchAll(/(?:^|```\s*)(\d{4}-\d{2}-\d{2})/gm)].map(m => m[1]);
-  const otherDays = dates.some(d => d !== state.date);
-  try {
+  const otherDays = dates.some(d => d !== date);
+
+  const release = holdButton(button, 'Saving…');
+  await write({ date }, async () => {
+    let posted;
     if (otherDays) {
       const result = await api('POST', '/api/worklog/eod/import', { text });
+      posted = result.saved.find(s => s.date === date)?.eod;
       toast(`Saved yours for ${result.saved.map(s => s.date).join(', ')}`);
     } else {
-      await api('PUT', `/api/worklog/day/${state.date}/eod`, {
+      posted = await api('PUT', `/api/worklog/day/${date}/eod`, {
         text,
         drafted: state.day?.message || null,
         source: 'typed',
       });
       toast('Saved as what you posted — the generated text is kept too');
     }
+    // Shown as saved now, so the box does not fall back to the generated
+    // text for the moment before the re-read lands.
+    if (posted && state.day?.date === date) state.day.posted = posted;
     state.eodView = 'posted';
-    await loadWorkLog();
-  } catch (err) {
-    toast(err.message, 'error');
-  }
+    state.eodDirty = false;
+    render();
+  });
+  release();
 }
 
 export async function clearWorkLogPosted() {
   if (!confirm('Go back to the generated EOD text? Your version is kept in the day\'s history.')) return;
-  try {
-    await api('DELETE', `/api/worklog/day/${state.date}/eod`);
-    await loadWorkLog();
-  } catch (err) {
-    toast(err.message, 'error');
-  }
+  const date = state.date;
+  await write({ date }, async () => {
+    await api('DELETE', `/api/worklog/day/${date}/eod`);
+    if (state.day?.date === date) state.day.posted = null;
+    state.eodView = 'posted';
+    state.eodDirty = false;
+    render();
+  });
 }
 
 export async function copyWorkLogMessage() {

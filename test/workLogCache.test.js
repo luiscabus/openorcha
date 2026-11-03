@@ -187,6 +187,24 @@ test('refresh ignores a perfectly good cache entry when you insist', async () =>
   assert.equal(result.byDay.get('2026-08-13').signals.length, 0);
 });
 
+test('reuse keeps today\'s read even once it has gone stale', async () => {
+  const quiet = { ...cfg, sources: { ...ALL_OFF } };
+  const today = require('../lib/workLogTime').todayKey(quiet.workTimezone);
+  const stale = new Date(Date.now() - cache.TODAY_TTL_MS * 5).toISOString();
+  seed(today, { fingerprint: cache.fingerprint(quiet), collectedAt: stale, signals: [{ source: 'git', at: new Date().toISOString() }] });
+
+  const result = await cache.collectDays({ dayKeys: [today], cfg: quiet, reuse: true });
+  assert.deepEqual(result.meta.collected, []);
+  assert.deepEqual(result.meta.fromCache, [today]);
+  assert.equal(result.byDay.get(today).signals.length, 1);
+});
+
+test('reuse still collects a day that was never read', async () => {
+  const quiet = { ...cfg, sources: { ...ALL_OFF } };
+  const result = await cache.collectDays({ dayKeys: ['2026-08-13'], cfg: quiet, reuse: true });
+  assert.deepEqual(result.meta.collected, ['2026-08-13']);
+});
+
 test('a quiet day is recorded as read so it is not collected forever', async () => {
   const quiet = { ...cfg, sources: { ...ALL_OFF } };
   await cache.collectDays({ dayKeys: ['2026-08-13'], cfg: quiet });
