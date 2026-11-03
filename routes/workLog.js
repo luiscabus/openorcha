@@ -34,7 +34,8 @@ async function readJira(fromDay, toDay, { refresh = false } = {}) {
       refresh,
       loader: () => jira.myWorklogs(fromDay, toDay, { accountId: me.accountId }),
     });
-    return { worklogs, error: null, configured: true };
+    // Reads cached before myWorklogs kept to its window still carry other days.
+    return { worklogs: jira.withinDays(worklogs, fromDay, toDay), error: null, configured: true };
   } catch (err) {
     return { worklogs: [], error: err.message, configured: true };
   }

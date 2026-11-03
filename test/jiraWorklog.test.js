@@ -60,3 +60,14 @@ test('nothing in, nothing out', () => {
   assert.equal(jira.firstSentences(null, 160), '');
   assert.equal(jira.firstSentences(undefined, 160), '');
 });
+
+test('only worklogs inside the window are kept, though Jira returns a ticket whole', () => {
+  const logs = [
+    { worklogId: '1', ticket: 'SO-1', startedDate: '2026-10-26' },
+    { worklogId: '2', ticket: 'SO-1', startedDate: '2026-10-27' },
+    { worklogId: '3', ticket: 'SO-1', startedDate: '2026-10-28' },
+    { worklogId: '4', ticket: 'SO-1', startedDate: '2026-10-29' },
+  ];
+  assert.deepEqual(jira.withinDays(logs, '2026-10-28', '2026-10-28').map(w => w.worklogId), ['3']);
+  assert.deepEqual(jira.withinDays(logs, '2026-10-27', '2026-10-28').map(w => w.worklogId), ['2', '3']);
+});
