@@ -295,7 +295,7 @@ function renderEvidence(row) {
     <li>
       <span class="worklog-evidence-time">${escHtml(signal.wall || '')}</span>
       <span class="worklog-evidence-src">${SOURCE_ICONS[signal.source] || '•'} ${escHtml(signal.source)}</span>
-      <span class="worklog-evidence-text">${escHtml(signal.text || '')}</span>
+      <span class="worklog-evidence-text" title="${escHtml(signal.text || '')}">${escHtml(signal.text || '')}</span>
       ${signal.ref ? `<code>${escHtml(signal.ref)}</code>` : ''}
     </li>`).join('');
 

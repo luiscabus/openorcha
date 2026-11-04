@@ -115,6 +115,46 @@ test('a stretch nobody spoke in is not time, but harness records inside a sittin
   fs.rmSync(dir, { recursive: true, force: true });
 });
 
+test('a session is described by what was asked in it that day, not by its first prompt', () => {
+  const home = fs.mkdtempSync(path.join(os.tmpdir(), 'openorcha-home-'));
+  const dir = path.join(home, '.claude', 'projects', '-Users-me-work-soci');
+  fs.mkdirSync(dir, { recursive: true });
+  fs.writeFileSync(path.join(dir, '35eb0198-91b1-4429-ac72-fda49b8ae1aa.jsonl'), [
+    // Opened before midnight, first ask after it: the evening before is not work.
+    JSON.stringify({ type: 'attachment', timestamp: '2026-11-02T05:57:41Z', attachment: { type: 'hook_success' } }),
+    JSON.stringify({ type: 'user', timestamp: '2026-11-02T06:00:18Z', message: { content: 'regarding SO-101422 do discovery and prepare a tech spec' } }),
+    JSON.stringify({ type: 'assistant', timestamp: '2026-11-02T06:09:00Z', message: { content: 'spec published' } }),
+    JSON.stringify({ type: 'user', timestamp: '2026-11-02T06:10:00Z', message: { content: 'add the estimate table' } }),
+    // Still answering that past the next midnight, with nothing new asked.
+    JSON.stringify({ type: 'assistant', timestamp: '2026-11-03T06:05:00Z', message: { content: 'still going' } }),
+    // Resumed a day later with a new ask.
+    JSON.stringify({ type: 'user', timestamp: '2026-11-04T15:16:06Z', message: { content: 'the ticket was re-scoped, adjust our spec' } }),
+    JSON.stringify({ type: 'assistant', timestamp: '2026-11-04T15:20:00Z', message: { content: 'adjusted' } }),
+  ].join('\n'));
+
+  const realHome = process.env.HOME;
+  process.env.HOME = home;
+  try {
+    const signals = sources.byId('sessions').collect({
+      from: new Date('2026-11-01T00:00:00Z'),
+      to: new Date('2026-11-05T00:00:00Z'),
+      cfg: { workTimezone: 'America/Chicago' },
+    });
+    const byDay = {};
+    for (const s of signals) (byDay[s.at.slice(0, 10)] ||= new Set()).add(s.text);
+
+    assert.ok(signals.every(s => s.ticket === 'SO-101422'));
+    // 05:57Z is 23:57 on Nov 1 in Chicago, before anything was asked.
+    assert.ok(!signals.some(s => s.at.startsWith('2026-11-02T05:57')));
+    assert.deepEqual([...byDay['2026-11-02']], ['regarding SO-101422 do discovery and prepare a tech spec · add the estimate table']);
+    assert.deepEqual([...byDay['2026-11-03']], ['add the estimate table']);
+    assert.deepEqual([...byDay['2026-11-04']], ['the ticket was re-scoped, adjust our spec']);
+  } finally {
+    process.env.HOME = realHome;
+    fs.rmSync(home, { recursive: true, force: true });
+  }
+});
+
 test('an unreadable transcript degrades to nothing instead of throwing', () => {
   const parsed = sources.readTranscript('/definitely/not/here.jsonl');
   assert.deepEqual(parsed.stamps, []);
