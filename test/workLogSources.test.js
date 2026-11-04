@@ -155,6 +155,39 @@ test('a session is described by what was asked in it that day, not by its first 
   }
 });
 
+test('the edits Jira makes when you log time are not work on that ticket', async () => {
+  const jira = require('../lib/jiraWorklog');
+  const stubbed = { currentUser: jira.currentUser, search: jira.search };
+  const by = { accountId: 'me' };
+  jira.currentUser = async () => by;
+  jira.search = async () => [{
+    key: 'SO-101422',
+    fields: { comment: { comments: [] } },
+    changelog: {
+      histories: [
+        { author: by, created: '2026-11-03T11:51:20Z', items: [{ field: 'timeestimate' }, { field: 'timespent' }, { field: 'WorklogId' }] },
+        { author: by, created: '2026-11-03T15:18:57Z', items: [{ field: 'timespent' }, { field: 'WorklogTimeSpent' }] },
+        { author: by, created: '2026-11-03T16:00:00Z', items: [{ field: 'status' }] },
+        { author: by, created: '2026-11-03T16:30:00Z', items: [{ field: 'timeoriginalestimate' }] },
+      ],
+    },
+  }];
+  try {
+    const signals = await sources.byId('jira').collect({
+      from: new Date('2026-11-03T00:00:00Z'),
+      to: new Date('2026-11-04T00:00:00Z'),
+      cfg,
+    });
+    assert.deepEqual(signals.map(s => s.text), [
+      'Updated SO-101422 (status)',
+      // Estimating a ticket is planning it, not logging time to it.
+      'Updated SO-101422 (timeoriginalestimate)',
+    ]);
+  } finally {
+    Object.assign(jira, stubbed);
+  }
+});
+
 test('an unreadable transcript degrades to nothing instead of throwing', () => {
   const parsed = sources.readTranscript('/definitely/not/here.jsonl');
   assert.deepEqual(parsed.stamps, []);
