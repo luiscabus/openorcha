@@ -22,9 +22,11 @@ const WORKLOGS_TODAY_TTL_MS = 2 * 60 * 1000;
 const WORKLOGS_PAST_TTL_MS = 15 * 60 * 1000;
 const ISSUE_TTL_MS = 30 * 60 * 1000;
 
+// `worklogs` is null when Jira was not read, so a row whose worklog is
+// missing is not mistaken for one deleted there.
 async function readJira(fromDay, toDay, { refresh = false } = {}) {
   if (!config.jiraEnv().configured) {
-    return { worklogs: [], error: null, configured: false };
+    return { worklogs: null, error: null, configured: false };
   }
   try {
     const today = time.todayKey(config.read().workTimezone);
@@ -37,7 +39,7 @@ async function readJira(fromDay, toDay, { refresh = false } = {}) {
     // Reads cached before myWorklogs kept to its window still carry other days.
     return { worklogs: jira.withinDays(worklogs, fromDay, toDay), error: null, configured: true };
   } catch (err) {
-    return { worklogs: [], error: err.message, configured: true };
+    return { worklogs: null, error: err.message, configured: true };
   }
 }
 
@@ -145,7 +147,7 @@ router.get('/day/:date', async (req, res) => {
     ]);
 
     // Then only what Jira itself added: time logged by hand or elsewhere.
-    const extra = jiraResult.worklogs.map(w => w.ticket).filter(t => t && !(t in localDetails));
+    const extra = (jiraResult.worklogs || []).map(w => w.ticket).filter(t => t && !(t in localDetails));
     const ticketDetails = { ...localDetails, ...(await readTicketDetails(extra, { refresh })) };
 
     const day = detect.assembleDay({
@@ -198,7 +200,7 @@ router.get('/week/:date', async (req, res) => {
       dayKey,
       signals: collected.byDay.get(dayKey)?.signals || [],
       narration: collected.byDay.get(dayKey)?.narration || null,
-      jiraWorklogs: jiraResult.worklogs.filter(w => w.startedDate === dayKey),
+      jiraWorklogs: jiraResult.worklogs && jiraResult.worklogs.filter(w => w.startedDate === dayKey),
       cfg,
       // The week shows totals and tickets, never the evidence panel.
       evidenceLimit: 0,

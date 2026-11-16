@@ -221,6 +221,10 @@ function renderSources() {
 function pushBadge(row) {
   const push = row.push || {};
   if (row.kind === 'candidate') return '<span class="worklog-badge worklog-badge-candidate">suggested</span>';
+  if (push.state === 'pushed' && push.unverified) {
+    return `<span class="worklog-badge worklog-badge-pushed worklog-badge-unverified"
+      title="Logged as Jira worklog ${escHtml(push.worklogId || '')}. Jira could not be read just now, so this is the last known state.">in Jira?</span>`;
+  }
   if (push.state === 'pushed') {
     return `<span class="worklog-badge worklog-badge-pushed" title="Jira worklog ${escHtml(push.worklogId || '')}">in Jira</span>`;
   }

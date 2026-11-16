@@ -4699,6 +4699,8 @@ body {
   white-space: nowrap;
 }
 .worklog-badge-pushed { background: rgba(62, 207, 142, 0.14); color: var(--success); }
+/* Last known, not confirmed: Jira could not be read. */
+.worklog-badge-unverified { background: transparent; box-shadow: inset 0 0 0 1px rgba(62, 207, 142, 0.4); }
 .worklog-badge-unpushed { background: var(--bg3); color: var(--text2); }
 .worklog-badge-candidate { background: rgba(79, 142, 247, 0.12); color: var(--accent); }
 .worklog-badge-stale { background: rgba(243, 179, 76, 0.14); color: var(--warning); }

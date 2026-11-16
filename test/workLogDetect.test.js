@@ -222,6 +222,26 @@ test('an entry whose worklog vanished from Jira is flagged, not left claiming su
   assert.match(day.rows[0].push.error, /Not in Jira on this day/);
 });
 
+test('when Jira could not be read, a logged entry keeps its last known state', () => {
+  store.addEntry('2026-08-13', {
+    ticket: 'SO-93675',
+    minutes: 75,
+    push: { state: 'pushed', worklogId: '21283', pushedMinutes: 75 },
+  });
+  store.addEntry('2026-08-13', { ticket: 'SO-90816', minutes: 30 });
+
+  const day = detect.assembleDay({ dayKey: '2026-08-13', signals: [], jiraWorklogs: null, cfg });
+  const logged = day.rows.find(r => r.ticket === 'SO-93675');
+  const unlogged = day.rows.find(r => r.ticket === 'SO-90816');
+
+  assert.equal(logged.push.state, 'pushed');
+  assert.equal(logged.push.unverified, true);
+  assert.equal(logged.push.error, null);
+  assert.equal(unlogged.push.state, 'unpushed');
+  assert.equal(unlogged.push.unverified, undefined);
+  assert.equal(day.totals.pushed, 75);
+});
+
 test('a candidate for a ticket that already has Jira time warns about double-logging', () => {
   const day = detect.assembleDay({
     dayKey: '2026-08-13',
