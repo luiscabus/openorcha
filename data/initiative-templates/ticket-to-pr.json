@@ -1,0 +1,52 @@
+{
+  "id": "ticket-to-pr",
+  "name": "Ticket → PR",
+  "summary": "Take a ticket from plan to a reviewed-ready draft PR.",
+  "when": "The work is understood and needs building, verifying and shipping.",
+  "profile": "ship",
+  "maxParallel": 3,
+  "fanOutStage": "implement",
+  "fanOutHint": "One independent piece per line — each gets its own worktree (e.g. \"renderer: debounce the draft\").",
+  "stages": [
+    {
+      "id": "plan",
+      "name": "Plan",
+      "instruction": "Read the ticket and the relevant code. Produce a short plan: the files you will touch and how you will verify the change. Do not write code yet.",
+      "maxNudges": 3
+    },
+    {
+      "id": "branch",
+      "name": "Branch",
+      "instruction": "Create the working branch for this initiative, following the repository's branch naming. Never work on master.",
+      "check": { "type": "branch-created" },
+      "maxNudges": 2
+    },
+    {
+      "id": "implement",
+      "name": "Implement",
+      "instruction": "Implement the change. Keep it to the stated goal — no unrelated refactors.",
+      "check": { "type": "git-dirty" },
+      "maxNudges": 8
+    },
+    {
+      "id": "verify",
+      "name": "Verify",
+      "instruction": "Run the verification command for this project and make it pass. Fix what it reports rather than working around it.",
+      "maxNudges": 8
+    },
+    {
+      "id": "commit",
+      "name": "Commit",
+      "instruction": "Commit the work in focused commits following the repository conventions.",
+      "check": { "type": "commits-ahead" },
+      "maxNudges": 3
+    },
+    {
+      "id": "ship",
+      "name": "Push & draft PR",
+      "instruction": "Push the branch and open a draft pull request describing what changed and how it was verified.",
+      "check": { "type": "pr-exists" },
+      "maxNudges": 3
+    }
+  ]
+}

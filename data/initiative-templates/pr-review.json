@@ -1,0 +1,43 @@
+{
+  "id": "pr-review",
+  "name": "PR review",
+  "summary": "Read a pull request, form findings, post the review, then carry the follow-up rounds.",
+  "when": "Reviewing someone's PR, or working through the comments on your own.",
+  "profile": "ship",
+  "maxParallel": 4,
+  "fanOutStage": "assess",
+  "fanOutHint": "One PR per line — each gets its own agent (e.g. \"12502: cross-repo flag\").",
+  "stages": [
+    {
+      "id": "fetch",
+      "name": "Fetch",
+      "instruction": "Pull the pull request and everything already said about it: gh pr view, gh pr diff, and the existing review threads via gh api. Summarise what the PR claims to do and what has already been raised. Do not form opinions yet.",
+      "maxNudges": 3
+    },
+    {
+      "id": "assess",
+      "name": "Assess",
+      "instruction": "Read the diff against the code it changes. Find real defects: wrong behaviour, missing cases, broken contracts, tests that do not exercise the change. Check out the branch and run the tests if that is what it takes to be sure. Separate what is blocking from what is a nitpick, and drop anything you cannot back with evidence.",
+      "maxNudges": 8
+    },
+    {
+      "id": "draft",
+      "name": "Draft the review",
+      "instruction": "Write the review as concrete findings: file and line, what breaks, and the fix. Say plainly which are blocking. Where an earlier round already settled something, concede it rather than relitigating. Do not post anything yet — show me the draft.",
+      "maxNudges": 4
+    },
+    {
+      "id": "post",
+      "name": "Post",
+      "instruction": "Post the review to the PR exactly as approved.",
+      "maxNudges": 2
+    },
+    {
+      "id": "follow-up",
+      "name": "Follow-up round",
+      "instruction": "Work the responses: fix what is agreed, push the changes, reply on each thread, and re-run the checks. Report which threads are settled and which still need me.",
+      "check": { "type": "pushed" },
+      "maxNudges": 6
+    }
+  ]
+}

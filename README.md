@@ -20,6 +20,584 @@ OpenOrcha makes multi-agent work easier to manage. Instead of juggling terminal 
 - Inspect agent context and git state for the current project
 - Manage SSH config, keys, and `known_hosts`
 - Browse terminal, `tmux`, and optional `screen` sessions
+- Track what is **open for you** and what each of those has cost, over time
+- Run **supervised initiatives**: long work an agent carries through on its own
+
+## Work Log
+
+A personal record of what you actually did, assembled from the traces the work
+already leaves, and the place you turn that into an EOD message or time on a
+ticket.
+
+Open the **Work Log** tab. Each row is one ticket on one day — the grain Jira
+logs time at — and is one of three things:
+
+- **suggested** — detection found evidence and estimated the time. Nothing is
+  claimed yet.
+- **kept** — you accepted or typed it. This is what the EOD message reports.
+- **in Jira** — time that exists on the ticket, whether this tool put it there
+  or you logged it by hand.
+
+Expand any row to see the commits, sessions and reviews it was built from, so
+an estimate can always explain itself.
+
+### Where the evidence comes from
+
+Sources are plugins with their own on/off toggle; the chips under the totals
+show which are running and why one cannot. Enabled by default: **git commits**,
+**Claude sessions** and **GitHub PR activity**. Also available: **Jira
+activity**, **OpenOrcha initiatives**, **branch checkouts**, and **shell
+history** (needs `setopt EXTENDED_HISTORY`). Calendar and Slack are declared
+but not wired to a credential yet.
+
+Tickets are read from commit prefixes and branch names, and — for review
+sessions that name no ticket — from the title of any PR the session links to.
+Set `projectKeys` in `data/worklog/config.json` to scope inference to your own
+projects; without it a placeholder like `TICKET-1234` in a prompt can slip in.
+
+### Its own sessions are not work
+
+Reading a day runs `claude` over the day's evidence, and the supervisor runs it
+to make decisions. Those runs leave transcripts like any other, and they quote
+the very ticket keys they were handed — so the sessions source counted them as
+work, invented a row for the ticket they mentioned, and the same tickets came
+back day after day. Describing Tuesday manufactured Tuesday's tickets into
+Wednesday.
+
+They are recognised by what they say, not where they ran: the scratch
+directories only cover runs started since they moved there, and there were
+already dozens in ordinary project directories.
+
+An agent this tool launched is treated the same way — its output is counted as
+commits and through the initiatives source, so counting its session time as
+your attention would be counting the same work twice, and it was never your
+attention to begin with. **Unless you spoke in it**: a worker you took over is
+partly yours and stays. Of the transcripts on this machine, that rule keeps 100
+and drops 59.
+
+### What the lines say
+
+Detection knows *when* you worked and *which* ticket. It cannot say what you
+were doing, so a model reads each block of evidence and writes it up. Two texts
+come out, because they have two audiences:
+
+- **summary** — rich, private, for you. Specific enough that a day still makes
+  sense a month later.
+- **note** — what Jira receives. Deliberately bare: "Code review.",
+  "Implementation." A shared ticket gets the shape of the work, not the detail.
+- **context** — what the ticket *is*, as opposed to what moved on it today. Its
+  standing subject, so a reader who does not know the ticket can follow the
+  post. Taken from Jira's own description when Jira is reachable, otherwise
+  inferred from the evidence. It is kept on the entry rather than recomputed,
+  so the Contexts board can still say what a row was about long after the day
+  cache that wrote the line has been pruned.
+
+The row shows both, so what leaves the machine is never a surprise; the push
+dialog repeats the note before sending. Work with no ticket gets a **name**
+instead of a blank — "local 503 debugging" rather than an empty context.
+
+Each block is also classified by the **kind of attention** it took —
+`prompting`, `coding`, `reviewing`, `re-review`, `peer-review`, `planning`,
+`building`, `testing`, `functional-testing`, `env-prep`, `debugging`,
+`discovery`, `deployment`, `meetings`. Edit `attentionKinds` in
+`data/worklog/config.json` to change the list; an answer outside it becomes
+`other` rather than silently inventing a category. The panel above the table
+totals the day by kind, with claimed time solid and suggestions shaded.
+
+Narration runs through the `claude` CLI — the same transport
+`initiativeSupervisor.js` uses, so there is no extra dependency and no API key:
+it uses the Claude Code auth already on this machine. It runs once per day as
+part of the cached read and is sealed with the evidence it describes, so a
+finished day is described exactly once. Set `narrate: false` to turn it off, or
+`narrateModel` to change the model (default `claude-opus-5`). If it fails, rows
+fall back to the mechanical summary and the source bar says so — nothing breaks.
+
+### The EOD message
+
+An item leads with the ticket and its own title, then says what the ticket is
+and what moved on it, on separate lines:
+
+```
+- SO-89850 Server-side directory level count (in review)
+  - expose child counts at every directory level so pages can render them
+  - threaded a publish-time child count through the asset schema
+```
+
+The two sub-lines answer different questions and run together badly as one
+clause. The first is dropped when it merely repeats the title or the work — a
+line that tells the reader nothing costs a line.
+
+### Time estimates
+
+Signals are clustered into blocks of continuous work — a gap longer than
+`idleGapMinutes` starts a new block — and each block's span is its duration.
+`dayMinutes` is the day you aim to account for, not a ceiling: a longer day
+keeps every minute it was worked. Every number is editable.
+
+A Claude session only counts the stretches someone spoke in. Records Claude
+Code writes while nobody is there — a Remote Control disconnect, a queued
+notification, an away summary — would otherwise put a session on a day it was
+never opened.
+
+### The clock
+
+Jira decides a worklog's day by your Jira account timezone, which may not be
+your machine's. One setting, `workTimezone`, decides both which day a signal
+belongs to and the offset stamped on a push, so evening work cannot silently
+land on the wrong day.
+
+### Cached reads
+
+Reading a day costs about a minute — git log across every checkout, a GitHub
+search plus a call per pull request, and every transcript parsed — so reads are
+cached to disk under `data/worklog/cache/`, gzipped at roughly 5KB a day.
+
+A finished day cannot gain new evidence, so it is **sealed**: read once and kept
+until something actually invalidates it. Today keeps a two-minute TTL because it
+is still being written, and a read where a source failed is retried within the
+hour rather than sealed half-empty. The chip on the right of the source bar says
+which read you are looking at.
+
+Invalidation is automatic where it matters. Each entry records a fingerprint of
+the settings that produced it, so changing sources, repos or ticket inference
+re-reads, while changing rounding or the day target does not — those apply
+during assembly, which stays live. A `COLLECTOR_VERSION` covers the case config
+cannot: bump it when a collector starts producing different signals.
+
+Only raw evidence is cached. Your entries and Jira are read fresh every time.
+**Rescan** forces a re-read of the days in view; `DELETE /api/worklog/cache`
+clears it wholesale.
+
+### Logging to Jira
+
+Set these in the environment before starting the server:
+
+```
+JIRA_BASE_URL=https://your-site.atlassian.net
+JIRA_EMAIL=you@example.com
+JIRA_API_TOKEN=…            # id.atlassian.com/manage-profile/security/api-tokens
+```
+
+Or set them in .env and export it
+```
+set -a && source .env && set +a
+```
+
+Nothing reaches Jira on its own. There is no scheduler, no hook, and no
+supervisor path to it: a push happens when you press the button on one row and
+confirm it. A row that already carries a worklog id is **updated in place**, so
+the worklog keeps its identity and history rather than being replaced.
+
+Jira is read back on every load to reconcile. A row Jira disagrees with is
+marked **drifted** and offers to update; a worklog that vanished is marked
+failed rather than left claiming success; and time in Jira this tool never
+created is still shown, so the day total is the truth rather than a subset.
+
+### EOD message
+
+The panel at the bottom renders the day — or the week — as a fenced code block,
+shaped the way these posts are actually written in `#team-horses-eod`:
+
+```
+2026-08-31
+
+Meeting w/ Gideon
+
+- SO-52569 Let Administrators edit asset type Default Values (in review)
+  - fixed malformed multi-asset defaults from review comments
+- GA4 property spreadsheet mapping (in discovery)
+  - traced account to GA4 property mapping
+
+reviewed PRs SO-93675, SO-93677
+```
+
+The date on the first line, one item per thing that moved, and a short clause
+under it. No durations and no totals — the numbers are Jira's business. Because
+it is a code block Slack renders none of its markup, so ticket keys go in bare
+rather than as links, and a stray backtick in a description is neutralised so it
+cannot end the fence early.
+
+Three details the channel's style depends on:
+
+- **Titles and statuses** come from Jira when it is configured, and are inferred
+  from pull-request titles and the shape of the evidence when it is not.
+- **Reviewing teammates' pull requests** collapses into one `reviewed PRs …`
+  line — six reviews is one fact about the day, not six items. A *re-review* of
+  your own PR stays an item.
+- **Meetings** are bare lines above the list.
+
+Only kept lines appear: a suggestion is still a guess and never goes into
+something you are about to send to a person. The week is the same shape, one
+dated section per day inside a single fence. Copy it and paste it into Slack.
+
+## Contexts
+
+The work log answers what you did. This answers the other half — what is open
+for you, and what each of those has actually cost — on one grid: a row per
+context, a column per day.
+
+A **context** is a piece of work that outlives a day. The ticket where there is
+one, so its Jira issue, its pull requests, its branch and its initiative all
+collapse into a single row, under the same key the work log files time against.
+Work with no ticket keeps a name instead, the way the work log names an
+unattributed block.
+
+### The two halves are collected in opposite directions
+
+Attention is *reconstructed*. Commits, transcripts and review activity are all
+still there tomorrow, so a past day can be read whenever you get round to it —
+which is how the work log can scan a week you never opened it.
+
+Open state cannot be. Jira answers "what is assigned to me now" and keeps no
+memory of what it would have said last Tuesday; a branch that was waiting on you
+in August looks like any other merged branch today. So it is **recorded as it is
+observed** — the server takes a look every `observeEveryMinutes` (30 by default)
+and writes down what changed. A context's history begins the first time
+something sees it and is only as fine-grained as the looks behind it.
+
+That asymmetry is the whole design, and the record is built to be honest about
+it:
+
+- Every observation is logged too, so asking what was open on a given day also
+  reports how near the closest look was, and answers `covered: false` when there
+  was none. "Nothing was open" and "nobody looked" must never read the same.
+- A context that stops being reported is marked **gone**, not *done*. Jira is
+  asked for recently finished tickets as well, precisely so that closure can be
+  recorded rather than inferred from an absence.
+- **Absence only counts when the provider answered.** A provider that fails
+  reports nothing, which looks exactly like reporting that nothing is open, and
+  closing a day's whole backlog because Jira was down would corrupt the one
+  history here that cannot be rebuilt afterwards. Contexts that could not be
+  confirmed either way come back as `unverified` on the observation.
+
+Because the history starts when the recording does, the board is thin on the day
+you turn it on and fills in from there. Nothing can back-fill it.
+
+### Where open work comes from
+
+The same providers as the work log, asked a different question. Each is a plugin
+with its own toggle under `contexts.sources` in `data/worklog/config.json`:
+
+- **Jira** — issues assigned to you that are not done, plus the ones finished
+  within `resolvedWithinDays`. Also where a ticket's standing subject is read.
+- **GitHub** — pull requests waiting on your review and your own open ones, with
+  *changes requested* called out. Review is work with no ticket of its own, and
+  it is most of some weeks.
+- **Branches** — your branches with unpushed commits, and any checkout with
+  uncommitted changes. Catches the thing you put down mid-thought.
+- **Initiatives** — runs in flight, and the decisions they have parked for you.
+  A gate is the most literal open task there is.
+
+### Reading the grid
+
+A cell is one context on one day: the minutes the work log kept against it, and
+the state as it stood that evening. Rows are ordered so the ones that repay a
+look come first, because sorting by date buries them:
+
+1. **open, never touched** — the backlog
+2. **open, and cold** — worked once and forgotten, longest gap first
+3. everything else, by the time it took
+
+What the view is for is the rows where the two halves disagree. Open with a cold
+strip is something you have forgotten, not something you are doing. A heavy
+strip that closed is what the work actually cost. Still open and all `debugging`
+is the one eating your week.
+
+A day nobody looked at carries the previous state forward, and `observed` says
+which days those were, so a carried-forward state is never drawn as though it
+had been seen.
+
+### The API
+
+```
+GET    /api/contexts?from=&to=      the grid; takes a look too, unless one is recent
+GET    /api/contexts/open/:date     what was open that day, and how near the nearest look
+GET    /api/contexts/history?key=   one context whole: every state, and every day it took
+GET    /api/contexts/observations   when looks happened, and what failed during them
+GET    /api/contexts/config         sources, why one cannot run, and the last look
+POST   /api/contexts/observe        look now
+DELETE /api/contexts?key=           forget one
+```
+
+Keys carry slashes and hashes (`meetsoci/soci#24754`), so they travel as a query
+rather than a path segment. Records live one file per context in
+`data/contexts/records/`, the observation log in
+`data/contexts/observations.json`; both are local and gitignored.
+
+There is no screen for this yet — `GET /api/contexts` returns rows ready to
+draw, and nothing draws them.
+
+## Initiatives
+
+An initiative is a piece of work that outlives the agent running it. You describe
+the goal, point it at a directory, press Start, and a supervisor in the server
+keeps the agent moving so you are not the thing standing between it and progress.
+
+On each tick the supervisor looks at the agent and decides what to do — rules
+first, a short LLM judgement call only when no rule fits:
+
+- **Permission prompts** matching the initiative's autonomy profile are approved
+  automatically. Anything outward-facing or destructive is never auto-approved.
+- **Offers** ("Want me to run the tests?") get answered instead of waited on —
+  the agent is told to take the reversible option and note the assumption.
+- **"Done" claims are verified**, not believed: each stage has a check the
+  supervisor runs itself (`git status`, commits ahead, a PR exists, or your own
+  verify command). A claim that fails its check is pushed back.
+- **Failures** get one self-repair attempt before they cost you anything.
+- **Real decisions** — irreversible, outward-facing, or product judgement — are
+  parked as a gate with the question and its context, and the supervisor moves
+  on to another initiative instead of idling. You get a macOS notification, and
+  a low-stakes gate with a safe default is taken automatically if you don't
+  answer within the initiative's timeout.
+
+### Autonomy profiles
+
+| Profile | Automatic | Always a gate |
+|---|---|---|
+| `conservative` | read, edit, run tests | every commit |
+| `standard` | the above, plus branches and commits | anything leaving the machine |
+| `ship` | the above, plus `git push` and draft PRs | non-draft PRs, PR comments, Jira writes, merges, force pushes, pushes to master |
+
+### Scope: one agent, one job
+
+An agent has one job, in one directory. Real work turns up neighbouring problems —
+a bug in another repo, something broken in the tooling the run is using — and the
+cheapest thing to do with one is hand it to whichever agent is already running.
+That is the wrong thing: the agent loses the thread of what it was doing, works
+outside the directory it was given, and produces changes nobody asked for. An
+agent doing ticket discovery is not a spare pair of hands.
+
+So the orchestrator has a fourth action beside continue, advance and gate:
+
+```
+{"action":"delegate","directory":"/path","task":"what the new agent must do","reason":"why it is not that worker's job"}
+```
+
+**Inside the run's own directory** the supervisor starts it — still this run's
+work. **Anywhere else it is a gate**, defaulting to *Not now*: starting autonomous
+work in a project nobody pointed this run at is the operator's call, and no
+autonomy profile makes it automatic. A delegate gets its own agent, its own
+directory and a brief that says to stay in it; it takes no part in the run's
+stages, and it is killed with the run like anything else the run started.
+
+Three things stop a message reaching the wrong agent in the first place:
+
+- **A decision request names the worker's directory and branch**, so the
+  orchestrator can tell that what it is about to say belongs somewhere else. A
+  `continue` is pasted into that worker word for word, and it is told so.
+- **"Whoever is around" only ever resolves to a stage worker.** The orchestrator
+  and delegates are reachable by name and never by chance.
+- **A message with no unambiguous addressee is held, not redirected.** With
+  several workers running and no orchestrator to address, messaging the run waits
+  and asks which one rather than taking the first. Losing what you typed is not
+  the right answer, but neither is delivering it to someone else.
+
+### Why an agent exists
+
+Every agent looks alike in `ps`: a pid, a binary, a directory. So what an agent
+was launched to do is written down at launch, when it is the one moment the
+reason is actually known, and travels with it afterwards — `GET /api/agents`
+returns it as `assignment` on every row:
+
+```json
+{ "purpose": "SO-97101: Implement", "cwd": "/Users/x/soci-services",
+  "launchedBy": "initiative:i-42", "role": "worker", "startedAt": "…" }
+```
+
+`POST /api/agents/launch` takes `purpose` and `launchedBy` and records them.
+Records live in `data/agents/assignments.json`, keyed by tmux session — a pid
+changes when a CLI restarts in its pane, the session it lives in does not.
+
+This is what the standalone **Orchestrator preset** reads before it sends
+anything: its instructions (`data/orchestrator-instructions.md`) tell it to check
+that it launched the agent and that the work matches the agent's remit and
+directory, and to launch a new agent otherwise. That matters because
+`GET /api/agents` lists every agent on the machine, including ones it knows
+nothing about, and `POST /api/agents/:pid/send` will deliver to any of them.
+
+### Stages
+
+The default pipeline follows the usual shape of this work: **Plan → Branch →
+Implement → Verify → Commit → Push & draft PR**. Each stage carries its own
+instruction, check and nudge budget, and the run advances only when the check
+passes.
+
+### Defining done before the work starts
+
+A run is only as autonomous as its definition of done. With nothing to check
+against, the supervisor falls back on judgement calls and gates — which is the
+very thing that pulls you back in. So an initiative can carry **acceptance
+criteria**, each with the check that settles it:
+
+```
+✓ The autosave test suite passes            npm test
+✓ Findings cover the risks and open questions   docs/findings.md contains "Risks", "Open questions"
+· The branch is pushed                      branch is pushed
+· Each item exists as a real Jira ticket     your call
+```
+
+Press **Work out what done means** when creating an initiative and one pass
+reads the project and proposes them, along with the open questions worth
+settling first — the ones whose answers would change what "done" means. It
+takes about a minute, runs without tools (the project context it needs is in
+the prompt), and everything it proposes is editable before you accept it.
+
+Criteria that no machine can settle are marked as needing you, rather than
+dressed up as automatic. At the end of the run the supervisor measures rather
+than asks: unmet checkable criteria send the agent back to close the gap, and
+only the human ones become a single sign-off.
+
+### The first launch in a new directory
+
+Claude Code asks *"Is this a project you created or one you trust?"* the first
+time it runs in a directory, and the highlighted answer is **No, exit**. That
+matters here because parallel workers each get a fresh worktree, which is a
+fresh directory: anything typed at that prompt shuts the agent down. The
+supervisor recognises it, never briefs into it, and parks it as a gate for you —
+it will not trust a directory on your behalf, and never on a timeout.
+
+### If no agents show up
+
+The AI Agents tab and the supervisor share one detection path: `ps`, matched
+per line. `ps` prints `%CPU`/`%MEM` in the machine's locale, so on a system that
+writes decimals with a comma (`0,4`) a dot-only pattern matches nothing and the
+app reports zero agents while they are plainly running — and the supervisor,
+seeing none of its own workers, keeps concluding they died and relaunching them.
+`lib/psNumbers.js` parses both conventions; if you ever see an empty Agents tab
+with live sessions, start there.
+
+### The initiative screen
+
+One run, one stream. Your messages, the agents' replies, what the supervisor
+did and every decision it stopped for, in the order they happened:
+
+- a **status strip** across the top — stage and progress, criteria met, agents
+  live, who you are talking to, and how many decisions are waiting
+- the **stream** itself, which keeps up on its own while you are looking at it,
+  opens at the newest message and stays there unless you scroll up to read
+- **gates answered in place**, because a decision is a moment in the story and
+  not a separate inbox
+- mechanical events — every approved prompt, every nudge — folded away behind
+  *More detail*, and repeated ones collapsed into one line with a count
+- the plan, the definition of done and what the run produced behind one
+  disclosure at the bottom, where reference material belongs
+
+Supervisor traffic travels the same pipe as your words: the opening brief, the
+stage updates, the decision requests and the JSON decisions it sends back. An
+operator's message carries its own marker so the two can be told apart —
+without it, a message beginning "Stage finished" is indistinguishable from the
+supervisor saying a stage finished.
+
+### Reading what a run has done
+
+Selecting an initiative opens on **What it has done**, not on the plan:
+
+- how far it got — stages, criteria met, commits, files changed, agent turns
+- the deliverables the definition of done asks for, and whether they exist yet
+- commits and changed files **scoped to this run**, from a baseline recorded when
+  it started. Without that, a checkout already sitting on someone else's feature
+  branch reports their work as the run's; a pull request is likewise only claimed
+  when the run made the branch or the commits on it.
+- every agent it used, with turn and tool-call counts, its last words, and its
+  full conversation readable in place
+
+A worker records which transcript is its own the first time the supervisor
+resolves it, so a finished agent's conversation is still readable after the
+session is gone. Consecutive tool-only turns fold into one line showing what
+the tools actually did — six "agent · Bash" blocks with nothing in them is not
+a conversation.
+
+*Plan & definition of done* and *Supervisor activity* are the other two views.
+
+### Stopping and removing
+
+- **Pause** — stop supervising, leave the agents running so you can take one
+  over by hand.
+- **Stop** — end the run and kill the agent sessions it started. Commits,
+  branches and worktrees are untouched.
+- **Remove** — the initiative record moves to `data/initiatives/.trash/` and can
+  be restored from *Recently removed* at the top of the tab. Its agents are
+  killed, commits and branches always survive, and worktrees are only removed if
+  you ask and only when they are clean. The trash keeps the last 50.
+
+Set `OPENORCHA_NO_LAUNCH=1` to stop the supervisor starting agents at all —
+what the test suite uses, and useful for a dry run.
+
+### Templates — picking the right shape
+
+The stage pipeline is not one shape. Sessions in this workflow fall into a few
+recognisable kinds, and each wants different stages, a different autonomy
+profile, and a different place to fan out:
+
+| Template | For | Autonomy | Fans out on |
+|---|---|---|---|
+| **PR review** | Reviewing a PR, or working the comments on your own | `ship` | one agent per PR |
+| **Spec review → tickets** | Validating a plan against the code, then slicing it | `standard` | one agent per repo/area |
+| **Ticket → PR** | Building understood work and shipping it | `ship` | one agent per independent piece |
+| **PoC / spike** | Answering "is this feasible" | `standard` | one agent per approach |
+| **Discovery** | Understanding how something works, no code changes | `conservative` | one agent per subsystem |
+
+Templates live in `data/initiative-templates/` as JSON — edit them, or drop in
+your own; they show up in the New Initiative picker automatically. `Ticket → PR`
+is also the built-in default pipeline, so there is one definition of it.
+
+### When *not* to make an initiative
+
+Most sessions should stay plain `claude` sessions. An initiative is worth the
+setup when the work has a definition of done and will outlive your attention —
+it needs stages, gates, and someone to keep it moving while you are away. A
+question, a broken container, an env fix, or a five-minute change does not:
+just launch an agent from the AI Agents tab and talk to it.
+
+### The orchestrator
+
+A run can have a standing agent of its own: it holds the goal, the plan and the
+history across stages and workers, decides what happens next when the rules do
+not cover it, and is who you talk to when you message the initiative.
+
+It has **no hands**. It cannot launch, kill or message anything — it answers,
+and the supervisor carries the answer out. That keeps one actuator in the
+system, and means the orchestrator needs no API access, no shell and no extra
+permissions. When a run has one, the supervisor asks it for judgement calls
+instead of making a one-shot `claude -p` call, so you are not paying for both.
+
+It is off by default — one more standing session per initiative, and most runs
+do not need someone to talk to. Turn it on when creating an initiative, or with
+*Add orchestrator* on an existing one.
+
+### Working in parallel
+
+The supervisor runs work on two axes at once.
+
+**Across initiatives** — every initiative has its own workers, and lanes are
+ticked concurrently. A lane waiting at a gate never holds up the others, and a
+judgement call is made off the tick, so a slow decision in one lane cannot
+freeze the rest.
+
+**Inside one initiative** — press *Split stage* and a stage fans out into
+parallel tasks, one agent each. Each parallel worker gets **its own git
+worktree and branch**, because two agents in one working tree fight over the
+branch and the index. The stage completes only when every task's check passes,
+and the branches are then handed to the next stage to merge.
+
+Fan-out is bounded twice over: `maxParallel` per initiative (default 3) and
+`OPENORCHA_MAX_AGENTS` across the machine (default 6). Workers start one per
+tick so a ramp-up never blocks the server, a worker that dies is restarted
+twice before it becomes your problem, and writing history while sitting on
+`master` is refused whatever the profile says.
+
+Finished worktrees are never removed behind your back. `POST
+/api/initiatives/:id/worktrees/prune` removes only the ones whose worker is
+done and whose tree is clean; the branch always survives.
+
+### Where to look
+
+- **AI Agents → Initiatives** — create initiatives, watch stages advance, answer
+  gates, and read the digest of what moved while you were away.
+- **AI Agents** — supervised initiatives appear as lanes alongside your ad-hoc
+  ones, showing run state and any decision waiting on you.
+
+Initiatives are stored as JSON under `data/initiatives/` and are not tracked by git.
 
 ## Requirements
 

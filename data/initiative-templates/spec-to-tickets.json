@@ -1,0 +1,42 @@
+{
+  "id": "spec-to-tickets",
+  "name": "Spec review → tickets",
+  "summary": "Validate a plan or tech spec against the real code, then turn it into a ticket breakdown.",
+  "when": "A ticket or spec landed and the work has to be understood, challenged and sliced before anyone builds it.",
+  "profile": "standard",
+  "maxParallel": 3,
+  "fanOutStage": "read",
+  "fanOutHint": "One repo or area per line — each gets its own agent (e.g. \"llp-renderer: how templates resolve\").",
+  "stages": [
+    {
+      "id": "read",
+      "name": "Read the ground truth",
+      "instruction": "Read the ticket, the linked spec, and the code paths it actually touches. Quote the code, not the spec's description of it. Note where the two disagree.",
+      "maxNudges": 6
+    },
+    {
+      "id": "challenge",
+      "name": "Challenge it",
+      "instruction": "List what the spec gets wrong, what is ambiguous, and what it leaves out — each with the evidence from the code that shows it. Include the risks that would only surface at runtime. Do not soften the findings.",
+      "maxNudges": 5
+    },
+    {
+      "id": "breakdown",
+      "name": "Draft the breakdown",
+      "instruction": "Draft the ticket breakdown: phases, one ticket per shippable deliverable, dependencies stated as links, and what is explicitly out of scope. Show it to me before writing anything to Jira.",
+      "maxNudges": 4
+    },
+    {
+      "id": "create",
+      "name": "Create in Jira",
+      "instruction": "Create the tickets and the issue links exactly as approved, then give me the ticket numbers and URLs.",
+      "maxNudges": 3
+    },
+    {
+      "id": "worklog",
+      "name": "Log the work",
+      "instruction": "Log the time against the right ticket. Keep the description brief and coarse.",
+      "maxNudges": 2
+    }
+  ]
+}

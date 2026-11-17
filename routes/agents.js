@@ -8,6 +8,7 @@ const { getSessionResolver } = require('../lib/sessionResolvers');
 const { buildProcTable, findAncestorApp, getCwdMap } = require('../lib/processTree');
 const { getCachedSession, setCachedSession } = require('../lib/sessionCache');
 const { readJsonSafe, readTextSafe, getGitInfo, getClaudeContext, getCodexContext, getGeminiContext, getClaudeDrawerExtras } = require('../lib/agentContext');
+const assignments = require('../lib/agentAssignments');
 const {
   shellEscape,
   uniqueTmuxSessionName,
@@ -23,6 +24,9 @@ const {
   parsePermissionPrompt,
 } = require('../lib/multiplexer');
 const { router: presetsRouter, loadPresets } = require('./agentPresets');
+const { AGENT_COMMANDS, AGENT_RESUME_FLAG, launchAgent } = require('../lib/agentLauncher');
+const { parsePsLine, parsePsStats, psFloat } = require('../lib/psNumbers');
+const { sendMuxInput } = require('../lib/muxInput');
 
 const router = express.Router();
 
@@ -58,22 +62,6 @@ function findAgentHistorySessionId(agent, paneText = '') {
 
 // ─── Constants ───────────────────────────────────────────────────────────────
 
-const AGENT_COMMANDS = {
-  claude:   'claude',
-  codex:    'codex',
-  gemini:   'gemini',
-  opencode: 'opencode',
-  aider:    'aider',
-};
-
-const AGENT_SKIP_PERMISSIONS_FLAG = {
-  claude: '--dangerously-skip-permissions',
-};
-
-const AGENT_RESUME_FLAG = {
-  claude: (sessionId) => `--resume ${sessionId}`,
-  codex:  (sessionId) => `resume ${sessionId}`,
-};
 
 function captureTmuxSnapshot(target) {
   const metaRaw = execSync(
@@ -99,31 +87,6 @@ function captureTmuxSnapshot(target) {
   };
 }
 
-function sendMuxInput(target, muxType, { message, noEnter = false, paste = false }) {
-  if (muxType === 'tmux') {
-    if (paste) {
-      execSync(`tmux set-buffer -- ${shellEscape(message)}`, { timeout: 3000 });
-      execSync(`tmux paste-buffer -t ${shellEscape(target)} -d`, { timeout: 3000 });
-      return;
-    }
-
-    if (noEnter) {
-      execSync(`tmux send-keys -t ${shellEscape(target)} ${shellEscape(message)}`, { timeout: 3000 });
-      return;
-    }
-
-    execSync(`tmux set-buffer -- ${shellEscape(message)}`, { timeout: 3000 });
-    execSync(`tmux paste-buffer -t ${shellEscape(target)} -d`, { timeout: 3000 });
-    execSync('sleep 0.15');
-    execSync(`tmux send-keys -t ${shellEscape(target)} Enter`, { timeout: 3000 });
-    return;
-  }
-
-  if (muxType === 'screen') {
-    const payload = noEnter ? message : message + '\n';
-    execSync(`screen -S ${shellEscape(target)} -X stuff ${shellEscape(payload)}`, { timeout: 3000 });
-  }
-}
 
 // ─── Routes ──────────────────────────────────────────────────────────────────
 
@@ -131,7 +94,7 @@ function sendMuxInput(target, muxType, { message, noEnter = false, paste = false
 router.get('/debug', (req, res) => {
   try {
     const keywords = Object.values(AGENT_COMMANDS).join('|');
-    const out = execSync(`ps -eo pid,tty,args 2>/dev/null | grep -iE '${keywords}' | grep -v grep`, { encoding: 'utf8' });
+    const out = execSync(`LC_ALL=C ps -eo pid,tty,args 2>/dev/null | grep -iE '${keywords}' | grep -v grep`, { encoding: 'utf8' });
     res.json({ lines: out.trim().split('\n') });
   } catch {
     res.json({ lines: [] });
@@ -140,14 +103,14 @@ router.get('/debug', (req, res) => {
 
 router.get('/', (req, res) => {
   try {
-    const out = execSync('ps -eo pid,pcpu,pmem,tty,etime,args 2>/dev/null', { encoding: 'utf8' });
+    const out = execSync('LC_ALL=C ps -eo pid,pcpu,pmem,tty,etime,args 2>/dev/null', { encoding: 'utf8' });
     const procs = buildProcTable();
     const matched = [];
 
     for (const line of out.trim().split('\n').slice(1)) {
-      const m = line.match(/^\s*(\d+)\s+([\d.]+)\s+([\d.]+)\s+(\S+)\s+(\S+)\s+(.*)/);
-      if (!m) continue;
-      const [, pid, cpu, mem, tty, etime, args] = m;
+      const parsed = parsePsLine(line);
+      if (!parsed) continue;
+      const { pid, cpu, mem, tty, etime, args } = parsed;
       const bin = path.basename(args.split(/\s+/)[0]);
       const def = AGENT_DEFS.find(d => d.match(bin, args));
       if (!def) continue;
@@ -169,8 +132,8 @@ router.get('/', (req, res) => {
         agentId: def.id,
         agentName: def.name,
         pid,
-        cpu: parseFloat(cpu),
-        mem: parseFloat(mem),
+        cpu,
+        mem,
         tty: tty === '??' ? null : tty,
         etime,
         cwd,
@@ -211,6 +174,11 @@ router.get('/', (req, res) => {
     const screenMap = buildScreenMap();
     for (const a of agents) {
       a.multiplexer = detectMultiplexer(a.pid, a.tty, procs, tmuxMap, screenMap);
+      a.session = tmuxSessionNameFromMux(a.multiplexer);
+      // What this agent was started to do. Without it every agent in the list
+      // looks interchangeable, and whoever is reading the list will treat them
+      // that way.
+      a.assignment = assignments.get(a.session);
       a.status = inferAgentStatus(a, procs, tmuxMap, screenMap);
       const paneText = ['claude', 'codex'].includes(a.agentId) ? captureMuxText(a.multiplexer, a.pid, -80) : '';
       a.historySessionId = findAgentHistorySessionId(a, paneText);
@@ -225,7 +193,7 @@ router.get('/', (req, res) => {
 router.get('/:pid/messages', (req, res) => {
   try {
     const { pid } = req.params;
-    const psOut = execSync(`ps -p ${pid} -o args= 2>/dev/null`, { encoding: 'utf8' }).trim();
+    const psOut = execSync(`LC_ALL=C ps -p ${pid} -o args= 2>/dev/null`, { encoding: 'utf8' }).trim();
     if (!psOut) return res.status(404).json({ error: 'Process not found' });
 
     const bin = path.basename(psOut.split(/\s+/)[0]);
@@ -266,9 +234,9 @@ router.get('/:pid/messages', (req, res) => {
     // Get process info for session metadata
     let cpu = null, mem = null, etime = null;
     try {
-      const info = execSync(`ps -p ${pid} -o pcpu=,pmem=,etime= 2>/dev/null`, { encoding: 'utf8' }).trim();
-      const m = info.match(/^\s*([\d.]+)\s+([\d.]+)\s+(\S+)/);
-      if (m) { cpu = parseFloat(m[1]); mem = parseFloat(m[2]); etime = m[3]; }
+      const info = execSync(`LC_ALL=C ps -p ${pid} -o pcpu=,pmem=,etime= 2>/dev/null`, { encoding: 'utf8' }).trim();
+      const stats = parsePsStats(info);
+      if (stats) ({ cpu, mem, etime } = stats);
     } catch {}
 
     // If the last message is from the user, the agent is working on a response
@@ -341,60 +309,20 @@ router.post('/launch', (req, res) => {
       }
     }
 
-    const isTerminal = agentId === 'terminal';
-    let cmd = isTerminal ? null : AGENT_COMMANDS[agentId];
-    if (!isTerminal && !cmd) return res.status(400).json({ error: `Unknown agent: ${agentId}` });
-    if (!cwd || !cwd.trim()) cwd = os.homedir();
-
-    cwd = cwd.trim().replace(/^~(?=\/|$)/, os.homedir());
-    if (!fs.existsSync(cwd)) return res.status(400).json({ error: `Directory does not exist: ${cwd}` });
-
-    // Auto-generate session name if not provided
-    if (!sessionName || !sessionName.trim()) {
-      sessionName = `${agentId}-${path.basename(cwd)}`;
-    }
-    sessionName = sessionName.trim().replace(/[^a-zA-Z0-9_.\-]/g, '-');
-    sessionName = uniqueTmuxSessionName(sessionName);
-
-    if (!isTerminal) {
-      if (skipPermissions && AGENT_SKIP_PERMISSIONS_FLAG[agentId]) {
-        cmd = `${cmd} ${AGENT_SKIP_PERMISSIONS_FLAG[agentId]}`;
-      }
-
-      // Append resume flag if resuming a previous session
-      if (resumeSessionId && AGENT_RESUME_FLAG[agentId]) {
-        cmd = `${cmd} ${AGENT_RESUME_FLAG[agentId](resumeSessionId)}`;
-      }
-
-      // Append preset flags
-      if (presetFlags) {
-        cmd = `${cmd} ${presetFlags}`;
-      }
-    }
-
-    // Use a login shell so the user's PATH (~/.zshrc, nvm, homebrew, etc.) is sourced
-    const userShell = resolveUserShell();
-
-    execSync(`tmux new-session -d -s ${shellEscape(sessionName)} -c ${shellEscape(cwd)} ${shellEscape(userShell)} -l`, { timeout: 5000 });
-    // For terminal-only sessions, just leave the shell open; otherwise send the agent command
-    if (!isTerminal) {
-      // Wait for shell prompt to be ready (handles oh-my-zsh updates, slow init, etc.)
-      const maxWait = 10000;
-      const start = Date.now();
-      while (Date.now() - start < maxWait) {
-        execSync('sleep 0.5');
-        try {
-          const pane = execSync(`tmux capture-pane -t ${shellEscape(sessionName)} -p 2>/dev/null`, { encoding: 'utf8', timeout: 2000 });
-          const lines = pane.split('\n').filter(l => l.trim());
-          const last = lines[lines.length - 1]?.trim() || '';
-          // Shell prompt indicators: ends with $, %, >, ❯, ➜, or #
-          if (/[$%>❯➜#]\s*$/.test(last)) break;
-        } catch {}
-      }
-      execSync(`tmux send-keys -t ${shellEscape(sessionName)} ${shellEscape(cmd)} Enter`, { timeout: 5000 });
-    }
-
-    res.json({ ok: true, sessionName });
+    const { sessionName: started } = launchAgent({
+      agentId, cwd, sessionName, skipPermissions, resumeSessionId, presetFlags,
+    });
+    // Launch is the one moment the reason is known. Recorded here, it travels
+    // with the agent instead of living only in the head of whoever started it.
+    const assignment = assignments.record({
+      sessionName: started,
+      agentId,
+      cwd,
+      purpose: req.body?.purpose,
+      launchedBy: req.body?.launchedBy,
+      role: req.body?.role,
+    });
+    res.json({ ok: true, sessionName: started, assignment });
   } catch (e) {
     res.status(500).json({ error: e.message });
   }
@@ -439,7 +367,7 @@ router.get('/tmux-terminal/:session/snapshot', (req, res) => {
 router.get('/:pid/context', (req, res) => {
   try {
     const { pid } = req.params;
-    const psOut = execSync(`ps -p ${pid} -o args= 2>/dev/null`, { encoding: 'utf8' }).trim();
+    const psOut = execSync(`LC_ALL=C ps -p ${pid} -o args= 2>/dev/null`, { encoding: 'utf8' }).trim();
     if (!psOut) return res.status(404).json({ error: 'Process not found' });
 
     const bin = path.basename(psOut.split(/\s+/)[0]);
@@ -531,7 +459,7 @@ router.post('/:pid/mcp-toggle', (req, res) => {
 router.get('/:pid/git', (req, res) => {
   try {
     const { pid } = req.params;
-    const psOut = execSync(`ps -p ${pid} -o args= 2>/dev/null`, { encoding: 'utf8' }).trim();
+    const psOut = execSync(`LC_ALL=C ps -p ${pid} -o args= 2>/dev/null`, { encoding: 'utf8' }).trim();
     if (!psOut) return res.status(404).json({ error: 'Process not found' });
 
     const cwdMap = getCwdMap([pid]);
@@ -645,10 +573,10 @@ router.get('/:pid/wait', async (req, res) => {
   const checkIdle = () => {
     try {
       // Verify process still exists
-      const psOut = execSync(`ps -p ${pid} -o pcpu= 2>/dev/null`, { encoding: 'utf8' }).trim();
+      const psOut = execSync(`LC_ALL=C ps -p ${pid} -o pcpu= 2>/dev/null`, { encoding: 'utf8' }).trim();
       if (!psOut) return { done: true, reason: 'process_exited' };
 
-      const cpu = parseFloat(psOut);
+      const cpu = psFloat(psOut);
       const procs = buildProcTable();
       const proc = procs[pid];
       if (!proc) return { done: true, reason: 'process_exited' };
@@ -685,7 +613,7 @@ router.get('/:pid/wait', async (req, res) => {
     if (result.done) {
       // Fetch latest messages to return
       try {
-        const psOut = execSync(`ps -p ${pid} -o args= 2>/dev/null`, { encoding: 'utf8' }).trim();
+        const psOut = execSync(`LC_ALL=C ps -p ${pid} -o args= 2>/dev/null`, { encoding: 'utf8' }).trim();
         const bin = path.basename(psOut.split(/\s+/)[0]);
         const def = AGENT_DEFS.find(d => d.match(bin, psOut));
         const cwdMap = getCwdMap([pid]);
@@ -723,7 +651,7 @@ router.post('/:pid/relaunch', (req, res) => {
     if (!pid || pid <= 1) return res.status(400).json({ error: 'Invalid PID' });
 
     // Gather info before killing
-    const psOut = execSync(`ps -p ${pid} -o args= 2>/dev/null`, { encoding: 'utf8' }).trim();
+    const psOut = execSync(`LC_ALL=C ps -p ${pid} -o args= 2>/dev/null`, { encoding: 'utf8' }).trim();
     if (!psOut) return res.status(404).json({ error: 'Process not found' });
 
     const bin = path.basename(psOut.split(/\s+/)[0]);

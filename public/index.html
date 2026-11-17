@@ -36,6 +36,10 @@
             AI Agents
           </a>
           <ul class="nav-sublist">
+            <li><a href="#" class="nav-item nav-subitem" data-tab="initiatives">
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 6h16M4 12h10M4 18h6"/><circle cx="19" cy="17" r="3"/></svg>
+              Initiatives
+            </a></li>
             <li><a href="#" class="nav-item nav-subitem" data-tab="agent-presets">
               <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 3l2.6 5.26L20 9l-4 3.9.94 5.48L12 15.8l-4.94 2.58L8 12.9 4 9l5.4-.74L12 3z"/></svg>
               Presets
@@ -73,6 +77,10 @@
         <li><a href="#" class="nav-item" data-tab="issues">
           <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 12h6"/><path d="M9 16h4"/><path d="M5 3h9l5 5v13a1 1 0 0 1-1 1H5a1 1 0 0 1-1-1V4a1 1 0 0 1 1-1z"/><path d="M14 3v5h5"/></svg>
           GitHub Issues
+        </a></li>
+        <li><a href="#" class="nav-item" data-tab="worklog">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="9"/><polyline points="12 7 12 12 15 14"/><path d="M3 5l3-2M21 5l-3-2"/></svg>
+          Work Log
         </a></li>
         <li class="nav-section-divider">Claude Code</li>
         <li><a href="#" class="nav-item" data-tab="claude-memory">
@@ -190,6 +198,34 @@
         <div id="agents-list" class="agents-grid"></div>
       </div>
 
+      <!-- Initiatives Tab -->
+      <div id="tab-initiatives" class="tab-content">
+        <div class="page-header">
+          <div>
+            <h1>Initiatives</h1>
+            <p class="subtitle">Long-running work the supervisor drives on its own — it only stops you for decisions that actually need you</p>
+          </div>
+          <div class="page-actions">
+            <div id="initiatives-needs-you" class="initiatives-needs-you"></div>
+            <button class="btn btn-ghost btn-sm" onclick="openInitiativeDigest()">
+              <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 5h16M4 10h16M4 15h10"/><circle cx="18" cy="17" r="3"/></svg>
+              Digest
+            </button>
+            <button class="btn btn-primary btn-sm" onclick="openNewInitiativeModal()">
+              <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+              New Initiative
+            </button>
+          </div>
+        </div>
+
+        <div id="initiatives-trash"></div>
+
+        <div class="initiatives-shell">
+          <div id="initiatives-list" class="initiatives-list"></div>
+          <div id="initiative-detail" class="initiative-detail"></div>
+        </div>
+      </div>
+
       <!-- Agent Presets Tab -->
       <div id="tab-agent-presets" class="tab-content">
         <div class="page-header">
@@ -268,6 +304,76 @@
             </thead>
             <tbody id="issues-body"></tbody>
           </table>
+        </div>
+      </div>
+
+      <!-- Work Log Tab -->
+      <div id="tab-worklog" class="tab-content">
+        <div id="worklog-activity" class="worklog-activity" aria-hidden="true"></div>
+        <div class="page-header">
+          <div>
+            <h1>Work Log</h1>
+            <p class="subtitle">What you did, where it came from, and what has reached Jira</p>
+          </div>
+          <div class="worklog-controls">
+            <div class="worklog-mode-group">
+              <button class="btn btn-ghost btn-sm active" data-worklog-mode="day" onclick="setWorkLogMode('day')">Day</button>
+              <button class="btn btn-ghost btn-sm" data-worklog-mode="week" onclick="setWorkLogMode('week')">Week</button>
+            </div>
+            <div class="worklog-date-nav">
+              <button class="btn btn-ghost btn-sm" onclick="shiftWorkLogDate(-1)" title="Previous">&#9664;</button>
+              <span id="worklog-date-label" class="worklog-date-label">&nbsp;</span>
+              <button class="btn btn-ghost btn-sm" onclick="shiftWorkLogDate(1)" title="Next">&#9654;</button>
+              <button class="btn btn-ghost btn-sm" onclick="goToWorkLogYesterday()">Yesterday</button>
+              <button class="btn btn-ghost btn-sm" onclick="goToWorkLogToday()">Today</button>
+            </div>
+            <button id="worklog-rescan" class="btn btn-primary btn-sm" onclick="rescanWorkLog()">Rescan</button>
+          </div>
+        </div>
+
+        <div id="worklog-jira-warning" class="worklog-warning" style="display:none"></div>
+        <div id="worklog-summary" class="worklog-summary"></div>
+        <div id="worklog-attention"></div>
+        <div id="worklog-source-bar"></div>
+
+        <div class="table-wrap">
+          <table class="data-table worklog-table">
+            <thead>
+              <tr>
+                <th style="width:110px">Start</th>
+                <th>Ticket</th>
+                <th style="width:120px">Attention</th>
+                <th style="width:96px">Time</th>
+                <th style="width:104px">Status</th>
+                <th style="width:250px;text-align:right">Actions</th>
+              </tr>
+            </thead>
+            <tbody id="worklog-body"></tbody>
+          </table>
+        </div>
+
+        <form class="worklog-compose" onsubmit="addWorkLogLine(event)">
+          <input type="text" id="worklog-new-ticket" class="worklog-input" placeholder="TICKET" size="10" />
+          <input type="text" id="worklog-new-summary" class="worklog-input worklog-compose-summary" placeholder="Add a line by hand — work that left no trace" />
+          <input type="text" id="worklog-new-note" class="worklog-input" placeholder="Jira note" size="14" />
+          <input type="text" id="worklog-new-duration" class="worklog-input" placeholder="1h 30m" size="8" />
+          <button type="submit" class="btn btn-primary btn-sm">Add line</button>
+        </form>
+
+        <div class="worklog-eod">
+          <div class="worklog-eod-head">
+            <div>
+              <h2>EOD message</h2>
+              <p class="subtitle">Generated from the lines you kept. Rewrite it, or paste what you posted in Slack, and save it as yours — the generated text is kept beside it.</p>
+            </div>
+            <div class="worklog-eod-actions">
+              <button class="btn btn-ghost btn-sm" onclick="saveWorkLogPosted(this)" title="Keep this text as what you posted for the day">Save as mine</button>
+              <button class="btn btn-primary btn-sm" onclick="copyWorkLogMessage()">Copy for Slack</button>
+            </div>
+          </div>
+          <div id="worklog-eod-meta" class="worklog-eod-meta"></div>
+          <textarea id="worklog-message" class="worklog-message" rows="8" spellcheck="false" oninput="markWorkLogEodEdited()"></textarea>
+          <div id="worklog-eod-compare" class="worklog-eod-compare" style="display:none"></div>
         </div>
       </div>
 
@@ -888,6 +994,101 @@
         <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>
         Sending requires the agent to be running inside <strong>tmux</strong> or <strong>screen</strong>
       </div>
+    </div>
+  </div>
+
+  <!-- New Initiative Modal -->
+  <div id="new-initiative-modal" class="modal-overlay" style="display:none">
+    <div class="modal" style="width:560px">
+      <div class="modal-header">
+        <h2>New Initiative</h2>
+        <button class="modal-close" onclick="closeModal('new-initiative-modal')">
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+        </button>
+      </div>
+      <form class="launch-agent-form" onsubmit="createInitiative(event)">
+        <div class="form-group">
+          <label>What kind of work is this?</label>
+          <div id="new-initiative-templates" class="template-picker"></div>
+          <div id="new-initiative-when" class="template-when"></div>
+        </div>
+        <div class="form-group">
+          <label>Name</label>
+          <input type="text" id="new-initiative-name" placeholder="GA4 fetch backfill" required />
+        </div>
+        <div class="form-group">
+          <label>Goal <span style="color:var(--text3);font-weight:400">— what done looks like</span></label>
+          <textarea id="new-initiative-goal" rows="3" placeholder="Backfill GA4 fetch for linked pages, with tests, behind the existing feature flag."></textarea>
+        </div>
+        <div class="form-group">
+          <label>Project Directory</label>
+          <input type="text" id="new-initiative-cwd" placeholder="~/projects/myapp" required />
+        </div>
+        <div class="initiative-form-grid">
+          <div class="form-group">
+            <label>Agent</label>
+            <select id="new-initiative-agent">
+              <option value="claude">Claude Code</option>
+              <option value="codex">Codex</option>
+              <option value="gemini">Gemini</option>
+              <option value="opencode">OpenCode</option>
+              <option value="aider">Aider</option>
+            </select>
+          </div>
+          <div class="form-group">
+            <label>Autonomy</label>
+            <select id="new-initiative-profile">
+              <option value="ship" selected>Ship — commits, pushes, draft PRs</option>
+              <option value="standard">Standard — commits, nothing leaves the machine</option>
+              <option value="conservative">Conservative — every commit is a checkpoint</option>
+            </select>
+          </div>
+          <div class="form-group">
+            <label>Parallel workers</label>
+            <input type="number" id="new-initiative-parallel" value="3" min="1" max="8" />
+          </div>
+          <div class="form-group">
+            <label>Auto-decide after (min)</label>
+            <input type="number" id="new-initiative-autodecide" value="30" min="0" max="720" />
+          </div>
+        </div>
+        <div class="form-group">
+          <label>Verify command <span style="color:var(--text3);font-weight:400">(optional — the supervisor runs this itself to check the work)</span></label>
+          <input type="text" id="new-initiative-verify" placeholder="npm test" />
+        </div>
+        <div class="form-group">
+          <label class="checkbox-label">
+            <input type="checkbox" id="new-initiative-orchestrator" />
+            Give this run an orchestrator
+            <span style="color:var(--text3);font-weight:400">— a standing agent that owns the run, decides what happens next, and is who you talk to (one extra session)</span>
+          </label>
+        </div>
+        <div class="form-group">
+          <label>
+            Definition of done
+            <span style="color:var(--text3);font-weight:400">— the run is only as autonomous as this</span>
+          </label>
+          <button type="button" class="btn btn-sm" onclick="frameNewInitiative()">Work out what done means</button>
+          <div id="new-initiative-dod" class="dod-proposal"></div>
+        </div>
+        <div class="form-actions">
+          <button type="button" class="btn btn-ghost" onclick="closeModal('new-initiative-modal')">Cancel</button>
+          <button type="submit" class="btn btn-primary">Create</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <!-- Initiative Digest Modal -->
+  <div id="initiative-digest-modal" class="modal-overlay" style="display:none">
+    <div class="modal" style="width:620px">
+      <div class="modal-header">
+        <h2>While you were away</h2>
+        <button class="modal-close" onclick="closeModal('initiative-digest-modal')">
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+        </button>
+      </div>
+      <div id="initiative-digest-body" class="initiative-digest-body"></div>
     </div>
   </div>
 

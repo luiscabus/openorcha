@@ -1,0 +1,38 @@
+{
+  "id": "poc-spike",
+  "name": "PoC / spike",
+  "summary": "Prove an approach works, in a throwaway worktree, and report what it cost.",
+  "when": "The question is 'is this feasible' rather than 'ship this'.",
+  "profile": "standard",
+  "maxParallel": 2,
+  "fanOutStage": "build",
+  "fanOutHint": "One approach per line to try them side by side (e.g. \"A: server-side render\").",
+  "stages": [
+    {
+      "id": "frame",
+      "name": "Frame the question",
+      "instruction": "State precisely what this spike has to prove or disprove, and what evidence would settle it. Keep it to one paragraph.",
+      "maxNudges": 2
+    },
+    {
+      "id": "build",
+      "name": "Build the smallest thing",
+      "instruction": "Build the smallest thing that answers the question. Cut corners deliberately and say where — this code is not going to be merged as it stands.",
+      "check": { "type": "git-dirty" },
+      "maxNudges": 8
+    },
+    {
+      "id": "demo",
+      "name": "Show it works",
+      "instruction": "Run it and capture the evidence: output, timings, screenshots, whatever settles the question. If it does not work, say so plainly rather than fixing it into something else.",
+      "maxNudges": 5
+    },
+    {
+      "id": "verdict",
+      "name": "Verdict",
+      "instruction": "Write the verdict: does the approach hold, what did it cost, what would the real version need, and what should be thrown away. Commit the spike on its own branch so it can be found later.",
+      "check": { "type": "commits-ahead" },
+      "maxNudges": 3
+    }
+  ]
+}

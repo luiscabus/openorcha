@@ -7,6 +7,14 @@ import { loadKnownHosts, filterKnownHosts, removeKnownHost } from './tabs/known-
 import { loadRawConfig, saveRawConfig } from './tabs/raw-config.js';
 import { loadIssues, setIssuesFilter } from './tabs/issues.js';
 import {
+  loadWorkLog, editWorkLogRow, keepWorkLogRow, dismissWorkLogRow, deleteWorkLogRow,
+  pushWorkLogRow, adoptWorkLogJiraRow, addWorkLogLine, toggleWorkLogEvidence,
+  toggleWorkLogSource, shiftWorkLogDate, openWorkLogDay, setWorkLogMode,
+  goToWorkLogToday, goToWorkLogYesterday, rescanWorkLog, copyWorkLogMessage,
+  growWorkLogField, revertWorkLogRow, setWorkLogEodView, saveWorkLogPosted,
+  clearWorkLogPosted, markWorkLogEodEdited,
+} from './tabs/workLog.js';
+import {
   loadSessions,
   focusSession,
   launchSSH,
@@ -66,7 +74,40 @@ import {
   openTmuxTerminal,
   toggleContextBlock,
   toggleMcpServer,
+  openInitiativeFromLane,
 } from './tabs/agents.js';
+import {
+  loadInitiatives,
+  startInitiativesAutoRefresh,
+  clearInitiativesAutoRefresh,
+  selectInitiative,
+  startInitiative,
+  pauseInitiative,
+  stopInitiative,
+  advanceInitiative,
+  runInitiativeCheck,
+  deleteInitiative,
+  answerGate,
+  answerGateFree,
+  sendInitiativeMessage,
+  openNewInitiativeModal,
+  createInitiative,
+  openInitiativeDigest,
+  openSplitStage,
+  pickInitiativeTemplate,
+  frameNewInitiative,
+  frameInitiative,
+  checkAcceptance,
+  toggleCriterion,
+  restoreInitiative,
+  toggleOrchestrator,
+  setDetailsOpen,
+  toggleSupervisorDetail,
+  toggleTranscript,
+  loadTrash,
+  sendChat,
+  chatKeydown,
+} from './tabs/initiatives.js';
 import { loadClaudeSettings, loadClaudeProjectSettings, saveClaudeSettings } from './tabs/claudeSettings.js';
 import {
   loadClaudeDiffs,
@@ -155,6 +196,31 @@ window.saveRawConfig = saveRawConfig;
 // GitHub Issues
 window.loadIssues = loadIssues;
 window.setIssuesFilter = setIssuesFilter;
+
+// Work Log
+window.loadWorkLog = loadWorkLog;
+window.growWorkLogField = growWorkLogField;
+window.editWorkLogRow = editWorkLogRow;
+window.keepWorkLogRow = keepWorkLogRow;
+window.dismissWorkLogRow = dismissWorkLogRow;
+window.deleteWorkLogRow = deleteWorkLogRow;
+window.pushWorkLogRow = pushWorkLogRow;
+window.adoptWorkLogJiraRow = adoptWorkLogJiraRow;
+window.addWorkLogLine = addWorkLogLine;
+window.toggleWorkLogEvidence = toggleWorkLogEvidence;
+window.toggleWorkLogSource = toggleWorkLogSource;
+window.shiftWorkLogDate = shiftWorkLogDate;
+window.openWorkLogDay = openWorkLogDay;
+window.setWorkLogMode = setWorkLogMode;
+window.goToWorkLogToday = goToWorkLogToday;
+window.goToWorkLogYesterday = goToWorkLogYesterday;
+window.rescanWorkLog = rescanWorkLog;
+window.copyWorkLogMessage = copyWorkLogMessage;
+window.revertWorkLogRow = revertWorkLogRow;
+window.setWorkLogEodView = setWorkLogEodView;
+window.saveWorkLogPosted = saveWorkLogPosted;
+window.clearWorkLogPosted = clearWorkLogPosted;
+window.markWorkLogEodEdited = markWorkLogEodEdited;
 
 // Sessions
 window.loadSessions = loadSessions;
@@ -256,6 +322,37 @@ window.saveClaudeMemoryFile = saveClaudeMemoryFile;
 window.saveClaudeMemoryEntry = saveClaudeMemoryEntry;
 window.deleteClaudeMemory = deleteClaudeMemory;
 
+// Initiatives
+window.loadInitiatives = loadInitiatives;
+window.openInitiativeFromLane = openInitiativeFromLane;
+window.selectInitiative = selectInitiative;
+window.startInitiative = startInitiative;
+window.pauseInitiative = pauseInitiative;
+window.stopInitiative = stopInitiative;
+window.advanceInitiative = advanceInitiative;
+window.runInitiativeCheck = runInitiativeCheck;
+window.deleteInitiative = deleteInitiative;
+window.answerGate = answerGate;
+window.answerGateFree = answerGateFree;
+window.sendInitiativeMessage = sendInitiativeMessage;
+window.openNewInitiativeModal = openNewInitiativeModal;
+window.createInitiative = createInitiative;
+window.openInitiativeDigest = openInitiativeDigest;
+window.openSplitStage = openSplitStage;
+window.pickInitiativeTemplate = pickInitiativeTemplate;
+window.frameNewInitiative = frameNewInitiative;
+window.frameInitiative = frameInitiative;
+window.checkAcceptance = checkAcceptance;
+window.toggleCriterion = toggleCriterion;
+window.restoreInitiative = restoreInitiative;
+window.toggleOrchestrator = toggleOrchestrator;
+window.setDetailsOpen = setDetailsOpen;
+window.toggleSupervisorDetail = toggleSupervisorDetail;
+window.toggleTranscript = toggleTranscript;
+window.loadTrash = loadTrash;
+window.sendChat = sendChat;
+window.chatKeydown = chatKeydown;
+
 // Claude Code: History
 window.loadClaudeHistory = loadClaudeHistory;
 window.setClaudeHistoryView = setClaudeHistoryView;
@@ -281,16 +378,24 @@ function loadTab(tab) {
   if (tab !== 'claude-tasks') {
     clearClaudeTasksAutoRefresh();
   }
+  if (tab !== 'initiatives') {
+    clearInitiativesAutoRefresh();
+  }
 
   if (tab === 'hosts') loadHosts();
   else if (tab === 'keys') loadKeys();
   else if (tab === 'known-hosts') loadKnownHosts();
   else if (tab === 'raw-config') loadRawConfig();
   else if (tab === 'issues') loadIssues();
+  else if (tab === 'worklog') loadWorkLog();
   else if (tab === 'sessions') loadSessions();
   else if (tab === 'agents') {
     loadAgents();
     toggleAgentAutoRefresh();
+  }
+  else if (tab === 'initiatives') {
+    loadInitiatives();
+    startInitiativesAutoRefresh();
   }
   else if (tab === 'agent-presets') loadAgentPresets();
   else if (tab === 'todo') loadTodos();

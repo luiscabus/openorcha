@@ -1,0 +1,30 @@
+{
+  "id": "discovery",
+  "name": "Discovery",
+  "summary": "Answer a question about how the system actually works, across repos, with citations.",
+  "when": "You need to understand something before deciding anything — no code changes expected.",
+  "profile": "conservative",
+  "maxParallel": 3,
+  "fanOutStage": "trace",
+  "fanOutHint": "One repo or subsystem per line — each gets its own agent.",
+  "stages": [
+    {
+      "id": "questions",
+      "name": "Pin the questions",
+      "instruction": "Turn the goal into the specific questions that have to be answered, in the order they unblock each other.",
+      "maxNudges": 2
+    },
+    {
+      "id": "trace",
+      "name": "Trace the code",
+      "instruction": "Answer each question from the code itself. Cite file and line for every claim. Where the code contradicts the documentation, say which one you trust and why.",
+      "maxNudges": 8
+    },
+    {
+      "id": "writeup",
+      "name": "Write it up",
+      "instruction": "Write the findings: the answers, the parts that are still uncertain, and the decisions they unblock. Keep every claim traceable to a file.",
+      "maxNudges": 4
+    }
+  ]
+}

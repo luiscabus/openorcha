@@ -14,3 +14,7 @@ dist/
 tmp/
 *.tmp
 data/agent-presets/
+data/initiatives/
+data/worklog/
+data/contexts/
+data/agents/
